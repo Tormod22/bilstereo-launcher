@@ -93,8 +93,8 @@ fun SettingsScreen(onClose: () -> Unit) {
             Column(Modifier.weight(1f).fillMaxHeight().verticalScroll(rememberScrollState())) {
                 Text(cat.label, color = TextPrimary, fontSize = 22.sp, fontWeight = FontWeight.Medium, modifier = Modifier.padding(bottom = 12.dp))
                 when (cat) {
-                    SetCat.NET -> NetSettings()
-                    SetCat.BT -> BtSettings()
+                    SetCat.NET -> WifiPanel()
+                    SetCat.BT -> BtPanel()
                     SetCat.SOUND -> SoundSettings()
                     SetCat.SCREEN -> ScreenSettings()
                     SetCat.APPS -> AppsSettings()
@@ -131,47 +131,6 @@ private fun SliderRow(title: String, icon: ImageVector, value: Float, range: Clo
 
 /* ---------- Stereoen ---------- */
 
-@Suppress("DEPRECATION")
-@Composable
-private fun NetSettings() {
-    val context = LocalContext.current
-    val ssid by produceState<String?>(null) {
-        while (true) {
-            value = runCatching {
-                (context.applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager).connectionInfo?.ssid
-                    ?.trim('"')?.takeIf { it.isNotBlank() && it != "<unknown ssid>" }
-            }.getOrNull()
-            delay(3000)
-        }
-    }
-    val wifiOn = remember { runCatching { (context.applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager).isWifiEnabled }.getOrDefault(false) }
-    SettingRow(
-        if (Hub.online) "Tilkoblet internett" else "Ikke tilkoblet",
-        ssid?.let { "Wi-Fi: $it" } ?: if (wifiOn) "Wi-Fi er på" else "Wi-Fi er av",
-    ) { Icon(if (Hub.online) Icons.Default.Wifi else Icons.Default.WifiOff, null, tint = TextMuted) }
-    SettingRow("Velg Wi-Fi-nettverk", "Slå av/på og koble til", onClick = {
-        if (Build.VERSION.SDK_INT >= 29) context.open(Intent(Settings.Panel.ACTION_WIFI)) else context.open(Intent(Settings.ACTION_WIFI_SETTINGS))
-    }) { Chevron() }
-    SettingRow("Internett fra iPhonen", "På iPhonen: Innstillinger → Personlig Wi-Fi-sone → slå på «Tillat andre å koble til». Velg så iPhonen her.")
-    SettingRow("Mobildata og flere valg", onClick = { context.openFirst(Settings.ACTION_WIRELESS_SETTINGS, Settings.ACTION_SETTINGS) }) { Chevron() }
-}
-
-@Composable
-private fun BtSettings() {
-    val context = LocalContext.current
-    val status by produceState(initialValue = btStatus(context)) { while (true) { value = btStatus(context); delay(3000) } }
-    SettingRow(
-        when { !status.available -> "Bluetooth styres av stereoen"; status.on -> "Bluetooth er på"; else -> "Bluetooth er av" },
-        status.devices.firstOrNull { it.connected }?.let { "Tilkoblet: ${it.name}" } ?: "Ingen enhet tilkoblet",
-    ) { Icon(Icons.Default.Bluetooth, null, tint = TextMuted) }
-    if (status.devices.isNotEmpty()) {
-        Section("Kjente enheter")
-        status.devices.forEach { d -> SettingRow(d.name, if (d.connected) "Tilkoblet" + (if (d.battery in 0..100) " · ${d.battery} %" else "") else "Ikke tilkoblet") }
-    }
-    SettingRow("Par ny enhet", "Telefon, OBD-brikke, tuningboks o.l.", onClick = { context.open(Intent(Settings.ACTION_BLUETOOTH_SETTINGS)) }) { Chevron() }
-    SettingRow("Telefon og Bluetooth-musikk", "Stereoens egen Bluetooth-app", onClick = { AppRepository.launchTile(context, Tiles.byPrefix("Tel")) }) { Chevron() }
-}
-
 @Composable
 private fun SoundSettings() {
     val context = LocalContext.current
@@ -185,10 +144,9 @@ private fun SoundSettings() {
     stream("Samtaler", Icons.Default.Call, AudioManager.STREAM_VOICE_CALL)
     stream("Varsler", Icons.Default.Notifications, AudioManager.STREAM_NOTIFICATION)
     stream("Ringelyd", Icons.Default.RingVolume, AudioManager.STREAM_RING)
-    SettingRow("Equalizer", "Bass, diskant og lydbilde", onClick = {
-        val ok = context.open(Intent(AudioEffect.ACTION_DISPLAY_AUDIO_EFFECT_CONTROL_PANEL).putExtra(AudioEffect.EXTRA_CONTENT_TYPE, AudioEffect.CONTENT_TYPE_MUSIC))
-        if (!ok) context.openFirst(Settings.ACTION_SOUND_SETTINGS)
-    }) { Chevron() }
+    Section("Equalizer")
+    EqPanel()
+    Spacer(Modifier.height(8.dp))
     ToggleRow("Lyd når du er over fartsgrensen", "speed_beep", false)
     SettingRow("Flere lydvalg", onClick = { context.openFirst(Settings.ACTION_SOUND_SETTINGS) }) { Chevron() }
 }
@@ -250,6 +208,13 @@ private fun AppsSettings() {
     SettingRow("Startskjerm", "Velg T'OS som startskjerm", onClick = {
         context.openFirst(Settings.ACTION_HOME_SETTINGS, Settings.ACTION_MANAGE_DEFAULT_APPS_SETTINGS, Settings.ACTION_SETTINGS)
     }) { Chevron() }
+    Section("Hvilke apper T'OS bruker")
+    AppChoiceRow("CarPlay-app (f.eks. Car link 2.0)", "carplay_pkg", "Car")
+    AppChoiceRow("Radio-app", "radio_pkg", "Rad")
+    AppChoiceRow("Telefon-app (Bluetooth)", "phone_pkg", "Tel")
+    AppChoiceRow("Bluetooth-musikk", "btmusic_pkg", "Blu")
+    AppChoiceRow("Ryggekamera", "camera_pkg", "Rygg")
+    AppChoiceRow("Musikkapp", "music_pkg", "Mus")
     Section("Alle apper (${apps.size}) – trykk for detaljer, «Skjul» fjerner fra app-lista")
     apps.forEach { a ->
         Row(
@@ -308,6 +273,8 @@ private fun AboutSettings() {
     SettingRow("Android", "${Build.VERSION.RELEASE} (SDK ${Build.VERSION.SDK_INT})")
     SettingRow("Prosessor", "${Build.HARDWARE} · ${Runtime.getRuntime().availableProcessors()} kjerner · ${Hub.cpuTemp?.let { "$it °C" } ?: "temperatur ukjent"}")
     SettingRow("Minne", Hub.memText)
+    SettingRow("Førstegangsoppsett", "Gå gjennom tillatelsene på nytt", onClick = { Nav.screen = Screen.SETUP }) { Chevron() }
+    SettingRow("Takk til", "Radiostyring og app-søk bygger på OpenLauncher (MIT). Kart © OpenStreetMap, Protomaps. Se docs/TREDJEPART.md.")
     Section("Avansert")
     SettingRow("Android-innstillinger", "Stereoens originale innstillinger", onClick = { context.openFirst(Settings.ACTION_SETTINGS) }) { Chevron() }
     SettingRow("Utvikleralternativer", "For ADB og feilsøking", onClick = { context.openFirst(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS, Settings.ACTION_DEVICE_INFO_SETTINGS) }) { Chevron() }
@@ -343,6 +310,8 @@ private fun MapSettings() {
             ctx.open(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:${ctx.packageName}")))
         }) { Chevron() }
     }
+    ChoiceRow("Fartsjustering", "speed_adj", listOf("0" to "Ingen", "-3" to "−3 %", "-5" to "−5 %", "3" to "+3 %", "5" to "+5 %"), "0",
+        "Hvis farten i T'OS ikke stemmer med en fartsmåler du stoler på (idé fra OpenLauncher)")
     ToggleRow("Kartet følger kjøreretningen", "map_rotate", true)
     ToggleRow("Kartet zoomer ut i høy fart", "map_zoom_speed", true)
     ToggleRow("Vis fartsgrense", "speed_limit", true, "Fra OpenStreetMap. Kan mangle eller være feil – skiltene gjelder.")

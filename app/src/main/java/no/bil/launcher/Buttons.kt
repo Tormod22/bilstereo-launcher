@@ -13,12 +13,13 @@ import androidx.compose.runtime.setValue
 
 /* ======================= Skjermene i T'OS ======================= */
 
-enum class Screen { DASH, APPS, BT, KEYS, MUSIC, MAP, NAV, RADIO, CAR, PHONE, SETTINGS, CLOCK, TUNING }
+enum class Screen { DASH, APPS, BT, KEYS, MUSIC, MAP, NAV, RADIO, CAR, PHONE, SETTINGS, CLOCK, TUNING, SETUP }
 
 /** Hvilken skjerm som vises. Kan settes fra knappetjenesten, derfor et globalt objekt. */
 object Nav {
     var screen by mutableStateOf(Screen.DASH)
     var quick by mutableStateOf(false)   // hurtigpanelet (sveip ned)
+    var pick by mutableStateOf<Pair<String, String>?>(null)   // «velg app»: tittel til innstillingsnøkkel
     const val EXTRA = "screen"
 }
 

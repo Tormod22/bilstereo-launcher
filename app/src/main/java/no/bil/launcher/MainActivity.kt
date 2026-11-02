@@ -92,6 +92,7 @@ class MainActivity : ComponentActivity() {
         askPermissions.launch(perms.toTypedArray())
         handle(intent)
         if (Startup.isFreshBoot(this)) Startup.run(applicationContext)
+        if (!Prefs.bool("setup_done")) Nav.screen = Screen.SETUP
         setContent { Root() }
     }
 
@@ -197,11 +198,13 @@ fun Root() {
                     Screen.PHONE -> PhoneScreen(home)
                     Screen.SETTINGS -> SettingsScreen(home)
                     Screen.TUNING -> TuningScreen(home)
+                    Screen.SETUP -> SetupScreen(home)
                     Screen.CLOCK -> {}
                 }
             }
             if (Nav.screen == Screen.CLOCK) ClockScreen(home)
             if (Nav.quick) { BackHandler { Nav.quick = false }; QuickPanel { Nav.quick = false } }
+            Nav.pick?.let { (title, key) -> BackHandler { Nav.pick = null }; AppPicker(title, "Automatisk", { Prefs.set(key, it) }) { Nav.pick = null } }
             if (pickSlot) { BackHandler { pickSlot = false }; AppPicker("Velg app for midtflisa", "Telefon (standard)", { Prefs.set("slot_pkg", it) }) { pickSlot = false } }
             volumeShown?.let { VolumeOverlay(it, Modifier.align(Alignment.Center)) }
             Call.name?.let { CallBanner(it, Modifier.align(Alignment.TopCenter)) }

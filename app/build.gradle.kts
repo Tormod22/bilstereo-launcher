@@ -12,8 +12,8 @@ android {
         applicationId = "no.bil.launcher"
         minSdk = 26          // dekker Android 8–13 som disse enhetene kjører
         targetSdk = 34
-        versionCode = 11
-        versionName = "3.5"
+        versionCode = 12
+        versionName = "4.0"
         // Bilstereoen har ARM-prosessor; dropper x86 for å holde appen mindre (kartmotoren har egne biblioteker)
         ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a") }
     }

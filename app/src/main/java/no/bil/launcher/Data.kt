@@ -38,7 +38,8 @@ data class Gps(val speedKmh: Int, val lat: Double, val lon: Double, val bearing:
 fun gpsFlow(context: Context): Flow<Gps> = callbackFlow {
     val lm = context.getSystemService(Context.LOCATION_SERVICE) as LocationManager
     val listener = LocationListener { loc: Location ->
-        val kmh = if (loc.hasSpeed()) (loc.speed * 3.6f).toInt() else 0
+        val adj = 1f + (Prefs.str("speed_adj", "0").toFloatOrNull() ?: 0f) / 100f   // fartsjustering i Innstillinger
+        val kmh = if (loc.hasSpeed()) (loc.speed * 3.6f * adj).toInt() else 0
         trySend(Gps(kmh, loc.latitude, loc.longitude, loc.bearing))
     }
     if (context.hasPermission(Manifest.permission.ACCESS_FINE_LOCATION)) {

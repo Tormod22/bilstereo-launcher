@@ -15,6 +15,16 @@
     <!-- Bluetooth-siden: vise tilkoblet telefon -->
     <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30" />
     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+    <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" android:maxSdkVersion="30" />
+    <!-- Søke etter og pare Bluetooth-enheter inne i T'OS (ikke for posisjon) -->
+    <uses-permission android:name="android.permission.BLUETOOTH_SCAN" android:usesPermissionFlags="neverForLocation" tools:targetApi="31" />
+    <!-- Wi-Fi-listen inne i T'OS -->
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    <uses-permission android:name="android.permission.CHANGE_WIFI_STATE" />
+    <!-- Equalizer for all lyd -->
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+    <!-- Styre radioen på szchoiceway-stereoer (fra OpenLauncher) -->
+    <uses-permission android:name="com.szchoiceway.permission.broadcast" />
     <!-- Internett-ikon og nettradio -->
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <!-- Favoritter: ringe direkte, og vise siste anrop (hvis stereoen deler dem) -->

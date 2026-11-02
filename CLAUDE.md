@@ -17,14 +17,20 @@ Snakk norsk med brukeren. Han er ikke utvikler – forklar enkelt, ikke bruk fag
 - Løsningen han godkjente: **tre ting** – (1) bilkort med klokke, stort bilbilde og fart som stort tall, (2) ekte kart, (3) én rad nederst: musikk/telefon/apper. Ingen kalender, ingen vær.
 - Kalkulator skal være skjult i app-skuffen (`HiddenApps` i `Apps.kt`).
 
-## Nåværende tilstand (v3.4)
+## Nåværende tilstand (v4.0)
 - `MainActivity.kt`: Compose-UI med de tre tingene + app-skuff + oppdateringsknapp. Skjermvalg via `Nav.screen` (DASH/APPS/BT/KEYS).
 - v3.0 «stor oppdatering» – alle 50 punktene i `docs/IDEER.md` (se Begrensninger der). Nye filer:
   `Prefs.kt` (TosApp, innstillinger m/ Compose-reaktivitet via Prefs.version, sikkerhetskopi JSON, CrashLog),
   `Theme.kt` (palett som getters – dag/natt; Sun-beregning), `Hub.kt` (GPS-singleton, Trip, Parking, SpeedLimit/Overpass,
   NightBrightness, Reminders, Startup, Navigate), `MediaListener.kt` (NotificationListener: NowPlaying, NavInfo, Call; Media-kontroll),
   `Obd.kt` (ELM327 via RFCOMM), `Radio.kt` (nettradio via MediaPlayer), `Pages.kt` (Musikk, Radio, Navigasjon, Kart, Telefon,
-  Bil og tur, Innstillinger, Klokke, Hurtigpanel + felles UI-klosser). Lint (lintDebug) er ren. v3.4: spenning på bilbatteriet (`CarBattery.kt`): OBD2-brikke kun for spenning (ATRV) – brukeren godtok dette etter at OBD
+  Bil og tur, Innstillinger, Klokke, Hurtigpanel + felles UI-klosser). Lint (lintDebug) er ren. v4.0 (etter gjennomgang av OpenLauncher, MIT – se docs/TREDJEPART.md): ekte FM/AM-radio (`HwRadio` i Radio.kt:
+  szchoiceway-MCU eller radio-appens mediaøkt), app-søk finner bil-apper uten startikon + navnesøk (brukerens CarPlay-app
+  heter «Car link 2.0», pakkenavn ukjent), egne valg for CarPlay/radio/telefon/kamera-app (Innstillinger → Apper),
+  Wi-Fi/Bluetooth-paring/equalizer inne i T'OS (`SettingsExtra.kt`), førstegangsoppsett (Screen.SETUP), fartsjustering.
+  Play Protect blokkerer installasjon fra Drive pga. tilgjengelighet + varseltilgang – brukeren må skru av Play Protect midlertidig
+  eller bruke ADB. Lokale bygg i denne sesjonen ble signert med den faste nøkkelen (fra scratchpad, ikke repo).
+  v3.5: Waze-popup (`NaviPopup.kt`). v3.4: spenning på bilbatteriet (`CarBattery.kt`): OBD2-brikke kun for spenning (ATRV) – brukeren godtok dette etter at OBD
   ellers ble fjernet – ellers stereoens egen spenning hvis troverdig (9–16 V). Vises ved «Avensis» i bilkortet, varsel <11,8 V / >15 V.
   v3.3: egen innstillingsapp (`SettingsApp.kt`, to kolonner, kategorier «Stereoen» + «T'OS»; Android-innstillinger skjult
   fra app-lista, nås via Om stereoen → Avansert). OBD2 er FJERNET etter ønske; erstattet av «Tuning og ytelse» (`Tuning.kt`:

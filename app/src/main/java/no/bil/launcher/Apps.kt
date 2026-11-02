@@ -102,7 +102,7 @@ object Tiles {
         ),
         QuickTile(
             "CarPlay / Android Auto",
-            listOf(
+            listOf(                      // + søk etter «Car link»/«CarPlay» i navnet (se AppRepository.tilePackage)
                 "com.zjinnova.zlink",    // Zlink – det vanligste CarPlay-programmet på disse
                 "com.zjinnova.zlink5",
                 "com.autokit.carplay",
@@ -129,39 +129,86 @@ object Tiles {
 
 object AppRepository {
 
+    /** Ord som avslører bil-apper som ikke ligger i app-lista (f.eks. «Car link 2.0»). */
+    private val carWords = listOf("carlink", "car link", "carplay", "zlink", "autokit", "android auto", "projection",
+        "radio", "bluetooth", "bt music", "btmusic", "camera", "kamera", "avm", "dvr", "video", "music", "tpms", "canbus", "equalizer", "eq")
+
+    /** Hvilken app-type hver flis gjelder, og hva brukeren kan ha valgt selv (Innstillinger). */
+    private val tileChoice = mapOf("Mus" to "music_pkg", "Car" to "carplay_pkg", "Rad" to "radio_pkg", "Tel" to "phone_pkg",
+        "Rygg" to "camera_pkg", "Blu" to "btmusic_pkg", "Nav" to "nav_app")
+    private val tileWords = mapOf(
+        "Car" to listOf("carlink", "car link", "carplay", "zlink", "autokit", "cplay"),
+        "Rad" to listOf("radio", "fm "),
+        "Tel" to listOf("bluetooth", "bt phone", "telefon", "phone", "dialer"),
+        "Rygg" to listOf("camera", "kamera", "revers", "avm", "360"),
+        "Blu" to listOf("bt music", "btmusic", "a2dp", "bluetooth music", "bluetooth-musikk"),
+    )
+
+    /**
+     * Startbar måte å åpne en app på: vanlig startikon, ellers første «hoved»-skjerm i appen.
+     * (Idé fra OpenLauncher: CarPlay-apper på stereoer har ofte ikke startikon.)
+     */
+    fun launchIntent(context: Context, pkg: String): Intent? {
+        val pm = context.packageManager
+        return pm.getLaunchIntentForPackage(pkg)
+            ?: runCatching {
+                pm.queryIntentActivities(Intent(Intent.ACTION_MAIN).setPackage(pkg), 0)
+                    .firstOrNull { it.activityInfo.exported }?.activityInfo
+                    ?.let { Intent(Intent.ACTION_MAIN).setClassName(it.packageName, it.name) }
+            }.getOrNull()
+    }
+
     fun installedApps(context: Context, includeHidden: Boolean = false): List<AppEntry> {
         val pm = context.packageManager
         val intent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
-        return pm.queryIntentActivities(intent, 0)
+        val normal = pm.queryIntentActivities(intent, 0)
             .filter { it.activityInfo.packageName != context.packageName }
-            .map {
-                AppEntry(
-                    label = it.loadLabel(pm).toString(),
-                    packageName = it.activityInfo.packageName,
-                    icon = it.loadIcon(pm),
-                )
-            }
+            .map { AppEntry(label = it.loadLabel(pm).toString(), packageName = it.activityInfo.packageName, icon = it.loadIcon(pm)) }
+        val known = normal.map { it.packageName }.toSet()
+        // Bil-apper uten startikon (CarPlay/Car link, radio, kamera …) – ellers usynlige
+        val hidden = runCatching { pm.getInstalledApplications(0) }.getOrDefault(emptyList())
+            .asSequence()
+            .filter { it.packageName !in known && it.packageName != context.packageName }
+            .mapNotNull { ai ->
+                val label = runCatching { pm.getApplicationLabel(ai).toString() }.getOrNull() ?: return@mapNotNull null
+                val hay = (label + " " + ai.packageName).lowercase()
+                if (carWords.none { it in hay }) return@mapNotNull null
+                if (launchIntent(context, ai.packageName) == null) return@mapNotNull null
+                AppEntry(label, ai.packageName, pm.getApplicationIcon(ai))
+            }.toList()
+        return (normal + hidden)
+            .distinctBy { it.packageName }
             .filterNot { !includeHidden && HiddenApps.isHidden(it) }
             .sortedBy { it.label.lowercase() }
     }
 
-    fun isInstalled(context: Context, packageName: String): Boolean =
-        context.packageManager.getLaunchIntentForPackage(packageName) != null
+    fun isInstalled(context: Context, packageName: String): Boolean = launchIntent(context, packageName) != null
 
     fun launch(context: Context, packageName: String) {
-        val intent = context.packageManager.getLaunchIntentForPackage(packageName)
+        val intent = launchIntent(context, packageName)
         if (intent != null) {
             intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            context.startActivity(intent)
+            runCatching { context.startActivity(intent) }.onFailure { Toast.makeText(context, "Fikk ikke åpnet appen", Toast.LENGTH_SHORT).show() }
         } else {
             Toast.makeText(context, "Fant ikke appen", Toast.LENGTH_SHORT).show()
         }
     }
 
-    /** Åpner første installerte kandidat for flisa, ellers fallback-intent. */
+    /** Appen en flis åpner: brukerens valg → kjente pakkenavn → søk på navnet (f.eks. «Car link 2.0»). */
+    fun tilePackage(context: Context, tile: QuickTile): String? {
+        val prefix = tileChoice.keys.firstOrNull { tile.title.startsWith(it) }
+        prefix?.let { p -> Prefs.str(tileChoice.getValue(p)).takeIf { it.isNotBlank() && isInstalled(context, it) }?.let { return it } }
+        tile.candidates.firstOrNull { isInstalled(context, it) }?.let { return it }
+        val words = tileWords[prefix] ?: return null
+        return installedApps(context, includeHidden = true).firstOrNull { a ->
+            val hay = (a.label + " " + a.packageName).lowercase()
+            words.any { it in hay }
+        }?.packageName
+    }
+
+    /** Åpner appen for flisa, ellers fallback-intent. */
     fun launchTile(context: Context, tile: QuickTile) {
-        val chosen = Prefs.str("music_pkg").takeIf { tile.title.startsWith("Mus") && it.isNotBlank() && isInstalled(context, it) }
-        val pkg = chosen ?: tile.candidates.firstOrNull { isInstalled(context, it) }
+        val pkg = tilePackage(context, tile)
         when {
             pkg != null -> launch(context, pkg)
             tile.fallbackIntent != null -> runCatching {
@@ -169,13 +216,13 @@ object AppRepository {
             }.onFailure {
                 Toast.makeText(context, "Ingen app for ${tile.title}", Toast.LENGTH_SHORT).show()
             }
-            else -> Toast.makeText(context, "Ingen app for ${tile.title}", Toast.LENGTH_SHORT).show()
+            else -> Toast.makeText(context, "Ingen app for ${tile.title}. Velg den under Innstillinger → Apper.", Toast.LENGTH_LONG).show()
         }
     }
 
-    /** Ikon fra første installerte kandidat, til visning på flisa. */
+    /** Ikon for appen flisa åpner. */
     fun tileIcon(context: Context, tile: QuickTile): Drawable? {
-        val pkg = tile.candidates.firstOrNull { isInstalled(context, it) } ?: return null
+        val pkg = tilePackage(context, tile) ?: return null
         return runCatching { context.packageManager.getApplicationIcon(pkg) }.getOrNull()
     }
 }

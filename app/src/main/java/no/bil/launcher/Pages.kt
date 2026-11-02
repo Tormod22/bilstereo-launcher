@@ -251,10 +251,33 @@ fun openNotificationAccess(c: Context) {
 fun RadioScreen(onClose: () -> Unit) {
     val context = LocalContext.current
     Page("Radio", onClose, extra = {
-        Pill("Stereoens radio", Icons.Default.Radio) { AppRepository.launchTile(context, Tiles.byPrefix("Rad")) }
-        Spacer(Modifier.width(12.dp))
-        if (NetRadio.active) { Pill("Stopp", Icons.Default.Stop) { NetRadio.stop() }; Spacer(Modifier.width(12.dp)) }
+        if (NetRadio.active) { Pill("Stopp nettradio", Icons.Default.Stop) { NetRadio.stop() }; Spacer(Modifier.width(12.dp)) }
     }) {
+        // Stereoens ekte FM/AM-radio
+        val hw = HwRadio.state
+        Row(
+            Modifier.fillMaxWidth().clip(Small).background(Card).padding(horizontal = 20.dp, vertical = 14.dp),
+            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text("STEREOENS RADIO", color = TextMuted, fontSize = 12.sp, letterSpacing = 1.sp)
+                if (hw != null) {
+                    Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Text(hw.freq, color = TextPrimary, fontSize = 40.sp, fontWeight = FontWeight.Medium)
+                        Text(if (hw.isAm) "kHz" else "MHz", color = TextMuted, fontSize = 16.sp, modifier = Modifier.padding(bottom = 8.dp))
+                        Text(hw.band, color = TextMuted, fontSize = 16.sp, modifier = Modifier.padding(bottom = 8.dp))
+                    }
+                    hw.station?.let { Text(it, color = TextMuted, fontSize = 15.sp, maxLines = 1) }
+                } else Text("Trykk «Start radio». Frekvensen vises her når radioen spiller.", color = TextMuted, fontSize = 15.sp)
+            }
+            if (hw != null) {
+                RoundIcon(Icons.Default.FastRewind, 52.dp) { HwRadio.seekDown() }
+                RoundIcon(Icons.Default.FastForward, 52.dp) { HwRadio.seekUp() }
+                if (hw.canTune) { Pill("FM") { HwRadio.cycleFm() }; Pill("AM") { HwRadio.am() } }
+            }
+            Pill(if (hw != null) "Åpne" else "Start radio", Icons.Default.Radio, strong = hw == null) { HwRadio.open(context) }
+        }
+        Section("Nettradio")
         NetRadio.error?.let { Text(it, color = TextMuted, fontSize = 15.sp, modifier = Modifier.padding(bottom = 10.dp)) }
         LazyVerticalGrid(GridCells.Fixed(4), verticalArrangement = Arrangement.spacedBy(12.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             items(NetRadio.stations) { s ->
