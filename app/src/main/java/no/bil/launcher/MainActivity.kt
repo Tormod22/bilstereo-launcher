@@ -188,7 +188,7 @@ fun Root() {
                     Screen.DASH -> Dashboard(onApps = { Nav.screen = Screen.APPS }, onPickSlot = { pickSlot = true })
                     Screen.APPS -> AppDrawer(home)
                     Screen.BT -> BluetoothScreen(home)
-                    Screen.KEYS -> DrivingLockPage("Knapper", home) { KeysScreen { Learn.cancel(); home() } }
+                    Screen.KEYS -> KeysScreen { Learn.cancel(); home() }
                     Screen.MUSIC -> MusicScreen(home)
                     Screen.MAP -> MapScreen(home)
                     Screen.NAV -> NavScreen(home)
@@ -206,11 +206,6 @@ fun Root() {
             Call.name?.let { CallBanner(it, Modifier.align(Alignment.TopCenter)) }
         }
     }
-}
-
-@Composable
-private fun DrivingLockPage(title: String, onClose: () -> Unit, content: @Composable () -> Unit) {
-    if (Prefs.bool("drive_lock", true) && (Hub.gps?.speedKmh ?: 0) > 10) Page(title, onClose) { DrivingLock {} } else content()
 }
 
 @Composable

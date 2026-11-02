@@ -67,7 +67,7 @@ kompliserte, reklame og betalingsmurer, musikk som slutter å virke (lydfokus), 
 ## System og drift
 41. ★ Rask og lett: ingen reklame, ingen tunge animasjoner (prinsipp)
 42. ★ Viser på forsiden når en ny versjon av T'OS finnes
-43. ★ Sikkerhetslås: kompliserte sider er sperret over 10 km/t
+43. ~~Sikkerhetslås: kompliserte sider er sperret over 10 km/t~~ (fjernet etter ønske i v3.1)
 44. Velg selv hvilke apper som er i bunnraden (langt trykk)
 45. Sikkerhetskopi av innstillinger og lærte knapper
 46. Temperatur og minne på stereoen (varmgang på lange turer)

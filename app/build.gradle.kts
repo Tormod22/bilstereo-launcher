@@ -12,8 +12,8 @@ android {
         applicationId = "no.bil.launcher"
         minSdk = 26          // dekker Android 8–13 som disse enhetene kjører
         targetSdk = 34
-        versionCode = 6
-        versionName = "3.0"
+        versionCode = 7
+        versionName = "3.1"
     }
     buildTypes {
         release { isMinifyEnabled = false }

@@ -170,21 +170,6 @@ fun BigNumber(value: String, label: String, modifier: Modifier = Modifier) {
     }
 }
 
-/** Sider som krever mye lesing/skriving sperres i fart (punkt 43). */
-@Composable
-fun DrivingLock(content: @Composable () -> Unit) {
-    val speed = Hub.gps?.speedKmh ?: 0
-    if (Prefs.bool("drive_lock", true) && speed > 10) {
-        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Icon(Icons.Default.Lock, null, tint = TextMuted, modifier = Modifier.size(40.dp))
-                Text("Ikke tilgjengelig mens du kjører", color = TextPrimary, fontSize = 20.sp)
-                Text("Stopp bilen for å endre dette.", color = TextMuted, fontSize = 15.sp)
-            }
-        }
-    } else content()
-}
-
 fun Context.toast(msg: String) = android.widget.Toast.makeText(this, msg, android.widget.Toast.LENGTH_SHORT).show()
 
 /* ======================= Musikk (punkt 1, 2, 4, 6) ======================= */
@@ -303,12 +288,8 @@ fun NavScreen(onClose: () -> Unit) {
         Spacer(Modifier.width(12.dp))
     }) {
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
-            DrivingLock {
-                Row(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Field(q, "Hvor vil du? Adresse eller sted", Modifier.weight(1f), onDone = { Navigate.to(context, q) }) { q = it }
-                    Pill("Kjør", Icons.Default.Navigation, strong = true) { Navigate.to(context, q) }
-                }
-            }
+            Field(q, "Hvor vil du? Adresse eller sted", Modifier.weight(1f), onDone = { Navigate.to(context, q) }) { q = it }
+            Pill("Kjør", Icons.Default.Navigation, strong = true) { Navigate.to(context, q) }
         }
         Spacer(Modifier.height(14.dp))
         Row(Modifier.height(110.dp), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
@@ -437,7 +418,7 @@ fun PhoneScreen(onClose: () -> Unit) {
                     Text("FAVORITTER", color = TextMuted, fontSize = 12.sp, letterSpacing = 1.sp, modifier = Modifier.weight(1f))
                     Text(if (adding) "Avbryt" else "+ Legg til", color = TextPrimary, fontSize = 15.sp, modifier = Modifier.clickable { adding = !adding }.padding(8.dp))
                 }
-                if (adding) DrivingLock {
+                if (adding) {
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(bottom = 10.dp)) {
                         Field(name, "Navn", Modifier.weight(1f)) { name = it }
                         Field(num, "Nummer", Modifier.weight(1f), KeyboardType.Phone) { num = it }
@@ -579,64 +560,61 @@ fun SettingsScreen(onClose: () -> Unit) {
     }
 
     Page("Innstillinger", onClose) {
-        DrivingLock {
-            Column(Modifier.verticalScroll(rememberScrollState())) {
-                Section("Skjerm")
-                ChoiceRow("Nattmodus", "night_mode", listOf("AUTO" to "Automatisk (etter sola)", "DAY" to "Alltid dag", "NIGHT" to "Alltid natt"), "AUTO")
-                val canWrite = Settings.System.canWrite(context)
-                SettingRow("Demp hele stereoen om natten", if (canWrite) "Senker lysstyrken etter solnedgang" else "Trykk for å gi T'OS lov til å endre lysstyrken",
-                    onClick = {
-                        if (!canWrite) runCatching { context.startActivity(Intent(Settings.ACTION_MANAGE_WRITE_SETTINGS, Uri.parse("package:${context.packageName}")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
-                        else Prefs.set("dim_system", !Prefs.bool("dim_system"))
-                    }) { Toggle(Prefs.bool("dim_system") && canWrite) }
-                ChoiceRow("Tekststørrelse", "text_scale_s", listOf("1.0" to "Normal", "1.1" to "Stor", "1.2" to "Ekstra stor"), "1.0")
-                ChoiceRow("Klokke når bilen står stille", "saver_min", listOf("0" to "Av", "1" to "Etter 1 min", "3" to "Etter 3 min", "5" to "Etter 5 min"), "3")
-                SettingRow("Bilbilde", "Velg et bilde av bilen (PNG med svart eller gjennomsiktig bakgrunn)", onClick = { pickCar.launch(arrayOf("image/*")) }) {
-                    if (File(context.filesDir, "car.png").exists()) Text("Fjern", color = TextPrimary, fontSize = 15.sp,
-                        modifier = Modifier.clickable { File(context.filesDir, "car.png").delete(); Prefs.set("car_image_v", System.currentTimeMillis()) }.padding(8.dp))
-                }
-
-                Section("Kart og kjøring")
-                PrefField("Hjem-adresse", "addr_home", "Gate og sted")
-                PrefField("Jobb-adresse", "addr_work", "Gate og sted")
-                ChoiceRow("Kartapp", "nav_app", listOf("com.google.android.apps.maps" to "Google Maps", "com.waze" to "Waze"), "com.google.android.apps.maps")
-                ToggleRow("Kartet følger kjøreretningen", "map_rotate", true)
-                ToggleRow("Kartet zoomer ut i høy fart", "map_zoom_speed", true)
-                ToggleRow("Vis fartsgrense", "speed_limit", true, "Fra OpenStreetMap. Kan mangle eller være feil – skiltene gjelder.")
-                ToggleRow("Lyd når du er over fartsgrensen", "speed_beep", false)
-                ToggleRow("Lås innstillinger mens du kjører", "drive_lock", true, "Over 10 km/t")
-
-                Section("Musikk og oppstart")
-                if (musicApps.isNotEmpty()) ChoiceRow("Musikkapp", "music_pkg", listOf("" to "Automatisk") + musicApps, "")
-                ToggleRow("Fortsett musikken når bilen starter", "resume_music", true)
-                ToggleRow("Åpne siste app når bilen starter", "resume_last_app", false)
-                SettingRow("Sangtittel og cover", if (MediaListener.enabled(context)) "Slått på" else "Trykk og slå på «T'OS» under varseltilgang", onClick = { openNotificationAccess(context) }) {
-                    Toggle(MediaListener.enabled(context))
-                }
-
-                Section("Telefon")
-                ToggleRow("Åpne CarPlay når iPhonen kobles til", "carplay_auto", false)
-                SettingRow("Favoritter", "${Favorites.all().size} lagret", onClick = { Nav.screen = Screen.PHONE })
-
-                Section("Bil")
-                PrefField("Neste EU-kontroll", "eu_date", "f.eks. 15.3.2027", KeyboardType.Number)
-                PrefField("Neste service", "service_date", "f.eks. 1.6.2027", KeyboardType.Number)
-                ToggleRow("Minn meg på dekkskift", "tire_remind", true, "Midten av oktober og slutten av mars")
-                ToggleRow("Koble til OBD2-brikke automatisk", "obd_auto", false)
-
-                Section("Sikkerhetskopi")
-                SettingRow("Lagre innstillinger til fil", "Velg Google Drive for å ha dem trygt", onClick = { exportFile.launch("tos-innstillinger.json") })
-                SettingRow("Hent innstillinger fra fil", onClick = { importFile.launch(arrayOf("application/json", "text/plain", "*/*")) })
-
-                Section("Hjelp")
-                SettingRow("Del feilrapport", "Send til deg selv og lim inn i Claude", onClick = {
-                    val i = Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_SUBJECT, "T'OS feilrapport").putExtra(Intent.EXTRA_TEXT, CrashLog.report(context))
-                    runCatching { context.startActivity(Intent.createChooser(i, "Del feilrapport").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
-                })
-                SettingRow("Knapper på stereoen", onClick = { Nav.screen = Screen.KEYS })
-                val v = remember { runCatching { context.packageManager.getPackageInfo(context.packageName, 0).versionName }.getOrNull() }
-                SettingRow("T'OS $v", Hub.update?.let { "Ny versjon ${it.versionName} er klar – oppdater under Apper" } ?: "Du har siste versjon")
+        Column(Modifier.verticalScroll(rememberScrollState())) {
+            Section("Skjerm")
+            ChoiceRow("Nattmodus", "night_mode", listOf("AUTO" to "Automatisk (etter sola)", "DAY" to "Alltid dag", "NIGHT" to "Alltid natt"), "AUTO")
+            val canWrite = Settings.System.canWrite(context)
+            SettingRow("Demp hele stereoen om natten", if (canWrite) "Senker lysstyrken etter solnedgang" else "Trykk for å gi T'OS lov til å endre lysstyrken",
+                onClick = {
+                    if (!canWrite) runCatching { context.startActivity(Intent(Settings.ACTION_MANAGE_WRITE_SETTINGS, Uri.parse("package:${context.packageName}")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
+                    else Prefs.set("dim_system", !Prefs.bool("dim_system"))
+                }) { Toggle(Prefs.bool("dim_system") && canWrite) }
+            ChoiceRow("Tekststørrelse", "text_scale_s", listOf("1.0" to "Normal", "1.1" to "Stor", "1.2" to "Ekstra stor"), "1.0")
+            ChoiceRow("Klokke når bilen står stille", "saver_min", listOf("0" to "Av", "1" to "Etter 1 min", "3" to "Etter 3 min", "5" to "Etter 5 min"), "3")
+            SettingRow("Bilbilde", "Velg et bilde av bilen (PNG med svart eller gjennomsiktig bakgrunn)", onClick = { pickCar.launch(arrayOf("image/*")) }) {
+                if (File(context.filesDir, "car.png").exists()) Text("Fjern", color = TextPrimary, fontSize = 15.sp,
+                    modifier = Modifier.clickable { File(context.filesDir, "car.png").delete(); Prefs.set("car_image_v", System.currentTimeMillis()) }.padding(8.dp))
             }
+
+            Section("Kart og kjøring")
+            PrefField("Hjem-adresse", "addr_home", "Gate og sted")
+            PrefField("Jobb-adresse", "addr_work", "Gate og sted")
+            ChoiceRow("Kartapp", "nav_app", listOf("com.google.android.apps.maps" to "Google Maps", "com.waze" to "Waze"), "com.google.android.apps.maps")
+            ToggleRow("Kartet følger kjøreretningen", "map_rotate", true)
+            ToggleRow("Kartet zoomer ut i høy fart", "map_zoom_speed", true)
+            ToggleRow("Vis fartsgrense", "speed_limit", true, "Fra OpenStreetMap. Kan mangle eller være feil – skiltene gjelder.")
+            ToggleRow("Lyd når du er over fartsgrensen", "speed_beep", false)
+
+            Section("Musikk og oppstart")
+            if (musicApps.isNotEmpty()) ChoiceRow("Musikkapp", "music_pkg", listOf("" to "Automatisk") + musicApps, "")
+            ToggleRow("Fortsett musikken når bilen starter", "resume_music", true)
+            ToggleRow("Åpne siste app når bilen starter", "resume_last_app", false)
+            SettingRow("Sangtittel og cover", if (MediaListener.enabled(context)) "Slått på" else "Trykk og slå på «T'OS» under varseltilgang", onClick = { openNotificationAccess(context) }) {
+                Toggle(MediaListener.enabled(context))
+            }
+
+            Section("Telefon")
+            ToggleRow("Åpne CarPlay når iPhonen kobles til", "carplay_auto", false)
+            SettingRow("Favoritter", "${Favorites.all().size} lagret", onClick = { Nav.screen = Screen.PHONE })
+
+            Section("Bil")
+            PrefField("Neste EU-kontroll", "eu_date", "f.eks. 15.3.2027", KeyboardType.Number)
+            PrefField("Neste service", "service_date", "f.eks. 1.6.2027", KeyboardType.Number)
+            ToggleRow("Minn meg på dekkskift", "tire_remind", true, "Midten av oktober og slutten av mars")
+            ToggleRow("Koble til OBD2-brikke automatisk", "obd_auto", false)
+
+            Section("Sikkerhetskopi")
+            SettingRow("Lagre innstillinger til fil", "Velg Google Drive for å ha dem trygt", onClick = { exportFile.launch("tos-innstillinger.json") })
+            SettingRow("Hent innstillinger fra fil", onClick = { importFile.launch(arrayOf("application/json", "text/plain", "*/*")) })
+
+            Section("Hjelp")
+            SettingRow("Del feilrapport", "Send til deg selv og lim inn i Claude", onClick = {
+                val i = Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_SUBJECT, "T'OS feilrapport").putExtra(Intent.EXTRA_TEXT, CrashLog.report(context))
+                runCatching { context.startActivity(Intent.createChooser(i, "Del feilrapport").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
+            })
+            SettingRow("Knapper på stereoen", onClick = { Nav.screen = Screen.KEYS })
+            val v = remember { runCatching { context.packageManager.getPackageInfo(context.packageName, 0).versionName }.getOrNull() }
+            SettingRow("T'OS $v", Hub.update?.let { "Ny versjon ${it.versionName} er klar – oppdater under Apper" } ?: "Du har siste versjon")
         }
     }
 }

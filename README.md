@@ -1,4 +1,4 @@
-# T'OS (v3.0)
+# T'OS (v3.1)
 
 T'OS er navnet på appen. Repoet heter fortsatt `bilstereo-launcher`.
 
