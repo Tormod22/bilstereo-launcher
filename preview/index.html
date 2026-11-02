@@ -302,7 +302,9 @@ svg.i { fill: currentColor; display: block; }
 
   /* ---------- GPS ---------- */
   let gps = null, watch = null, simTimer = null;
-  let sim = { lat: 59.9139, lon: 10.7522, bearing: 40 };   // Oslo sentrum
+  // Simulert tur: en runde på ca. 450 m rundt Oslo sentrum
+  const SIM = { lat: 59.9139, lon: 10.7522, r: 450 };
+  let simAngle = 0;
   function setGps(g) {
     gps = g;
     $('speed').textContent = g ? g.speed : 0;
@@ -322,12 +324,11 @@ svg.i { fill: currentColor; display: block; }
     setGps(null);
     if (mode === 'sim') {
       const step = () => {
-        const v = +$('simspeed').value, m = v / 3.6;          // meter per sekund
-        sim.bearing += (Math.random() - 0.5) * 6;
-        const r = sim.bearing * Math.PI / 180;
-        sim.lat += (m * Math.cos(r)) / 111320;
-        sim.lon += (m * Math.sin(r)) / (111320 * Math.cos(sim.lat * Math.PI / 180));
-        setGps({ speed: v, lat: sim.lat, lon: sim.lon });
+        const v = +$('simspeed').value;
+        simAngle += (v / 3.6) / SIM.r;                         // meter per sekund langs runden
+        const lat = SIM.lat + SIM.r * Math.cos(simAngle) / 111320;
+        const lon = SIM.lon + SIM.r * Math.sin(simAngle) / (111320 * Math.cos(SIM.lat * Math.PI / 180));
+        setGps({ speed: v, lat, lon });
       };
       step(); simTimer = setInterval(step, 1000);
     } else if (mode === 'real') {
@@ -352,7 +353,8 @@ svg.i { fill: currentColor; display: block; }
     const p = new Promise(res => {
       const im = new Image();
       im.onload = () => res(im); im.onerror = () => res(null);
-      im.src = `https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/${z}/${y}/${x}`;
+      const emb = window.EMBED_TILES && window.EMBED_TILES[k];   // innebygde fliser (Claude-versjonen)
+      im.src = emb || `https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/${z}/${y}/${x}`;
     });
     if (tileCache.size > 60) tileCache.clear();
     tileCache.set(k, p); return p;
