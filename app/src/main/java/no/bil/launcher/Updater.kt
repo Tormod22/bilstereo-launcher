@@ -59,7 +59,7 @@ object Updater {
             }.getOrDefault(false)
         }
 
-    private fun open(url: String): HttpURLConnection {
+    internal fun open(url: String): HttpURLConnection {
         var u = URL(url)
         repeat(5) {
             val c = u.openConnection() as HttpURLConnection

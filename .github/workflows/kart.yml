@@ -1,0 +1,61 @@
+name: Lag kart uten nett
+
+# Klipper ut OpenStreetMap-data (fra Protomaps sitt daglige bygg) for en region og legger fila
+# på release-taggen «kart». T'OS laster den ned under Innstillinger → Kart uten nett.
+# Kjør manuelt (Actions → «Lag kart uten nett» → Run workflow), eller automatisk når denne fila endres på main.
+on:
+  workflow_dispatch:
+    inputs:
+      navn:
+        description: "Filnavn (uten .pmtiles)"
+        default: "rogaland"
+      bbox:
+        description: "Område: vest,sør,øst,nord"
+        default: "4.5,58.2,7.3,59.9"
+      maxzoom:
+        description: "Mest detaljerte zoomnivå (15 = gatenivå)"
+        default: "15"
+  push:
+    branches: [ main ]
+    paths: [ ".github/workflows/kart.yml" ]
+
+permissions:
+  contents: write
+
+jobs:
+  kart:
+    runs-on: ubuntu-latest
+    env:
+      NAVN: ${{ inputs.navn || 'rogaland' }}
+      BBOX: ${{ inputs.bbox || '4.5,58.2,7.3,59.9' }}
+      MAXZOOM: ${{ inputs.maxzoom || '15' }}
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - name: Hent pmtiles-verktøyet
+        run: |
+          gh release download -R protomaps/go-pmtiles --pattern '*Linux_x86_64.tar.gz' -O pmtiles.tar.gz
+          tar xzf pmtiles.tar.gz pmtiles
+          ./pmtiles version || true
+
+      - name: Finn siste kartbygg fra Protomaps
+        run: |
+          KEY=$(curl -fsS https://build-metadata.protomaps.dev/builds.json | jq -r '.[-1].key')
+          echo "KEY=$KEY" >> "$GITHUB_ENV"
+          echo "Bruker $KEY"
+
+      - name: Klipp ut området
+        run: |
+          ./pmtiles extract "https://build.protomaps.com/$KEY" "$NAVN.pmtiles" --bbox="$BBOX" --maxzoom="$MAXZOOM"
+          ls -la "$NAVN.pmtiles"
+          echo "{\"bygg\": \"$KEY\", \"bbox\": \"$BBOX\", \"maxzoom\": $MAXZOOM, \"bytes\": $(stat -c%s "$NAVN.pmtiles")}" > "$NAVN.json"
+          cat "$NAVN.json"
+
+      - name: Legg kartet på release «kart»
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: kart
+          name: Kart uten nett
+          body: "Kartdata © OpenStreetMap-bidragsytere (ODbL), bygget av Protomaps. Lastes ned av T'OS under Innstillinger → Kart uten nett."
+          files: |
+            ${{ env.NAVN }}.pmtiles
+            ${{ env.NAVN }}.json

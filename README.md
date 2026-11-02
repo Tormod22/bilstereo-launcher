@@ -1,4 +1,4 @@
-# T'OS (v3.1)
+# T'OS (v3.2)
 
 T'OS er navnet på appen. Repoet heter fortsatt `bilstereo-launcher`.
 
@@ -46,6 +46,12 @@ Musikk med tittel og cover, nettradio, turmåler, parkeringsplass med QR-kode, f
 Hjem/Jobb-navigasjon, favorittkontakter, nattmodus, klokke som skjermsparer, hurtigpanel (sveip ned), sveip til kart/musikk,
 påminnelser (EU-kontroll, service, dekk), OBD2, sikkerhetskopi og feilrapport. Full liste: `docs/IDEER.md`.
 Første gang: Innstillinger → «Sangtittel og cover» → slå på varseltilgang for T'OS.
+
+## Kart uten nett (Rogaland)
+1. Koden må ligge på `main` og repoet være offentlig. Da lager GitHub kartet automatisk
+   (Actions → «Lag kart uten nett»; kan også startes manuelt, med annet område om du vil).
+2. På stereoen: Innstillinger → «Kart uten nett» → Last ned (bruk Wi-Fi).
+Kartdata © OpenStreetMap-bidragsytere, bygget av Protomaps.
 
 ## Knappene på stereoen (MENU, BACK, NAVI, RADIO, MUSIC, BT)
 Apper → «Knapper». Slå på knappestyring (Innstillinger → Tilgjengelighet → «T'OS knapper»).

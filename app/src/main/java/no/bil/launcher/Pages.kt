@@ -180,14 +180,14 @@ fun Cover(size: androidx.compose.ui.unit.Dp, radius: androidx.compose.ui.unit.Dp
     val art = NowPlaying.art
     val icon = remember(NowPlaying.pkg) {
         (NowPlaying.pkg ?: Prefs.str("music_pkg").ifBlank { null })
-            ?.let { runCatching { context.packageManager.getApplicationIcon(it).toBitmap(96, 96) }.getOrNull() }
-            ?: AppRepository.tileIcon(context, Tiles.byPrefix("Mus"))?.toBitmap(96, 96)
+            ?.let { runCatching { context.packageManager.getApplicationIcon(it) }.getOrNull() }
+            ?: AppRepository.tileIcon(context, Tiles.byPrefix("Mus"))
     }
     Box(Modifier.size(size).clip(RoundedCornerShape(radius)).background(Card), contentAlignment = Alignment.Center) {
         when {
             NetRadio.active -> Icon(Icons.Default.Radio, null, tint = TextPrimary, modifier = Modifier.size(size * 0.5f))
             art != null -> Image(art.asImageBitmap(), null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
-            icon != null -> Image(icon.asImageBitmap(), null, Modifier.size(size * 0.6f))
+            icon != null -> AppIcon(icon, size * 0.7f)
             else -> Icon(Icons.Default.MusicNote, null, tint = TextPrimary, modifier = Modifier.size(size * 0.5f))
         }
     }
@@ -574,6 +574,25 @@ fun SettingsScreen(onClose: () -> Unit) {
             SettingRow("Bilbilde", "Velg et bilde av bilen (PNG med svart eller gjennomsiktig bakgrunn)", onClick = { pickCar.launch(arrayOf("image/*")) }) {
                 if (File(context.filesDir, "car.png").exists()) Text("Fjern", color = TextPrimary, fontSize = 15.sp,
                     modifier = Modifier.clickable { File(context.filesDir, "car.png").delete(); Prefs.set("car_image_v", System.currentTimeMillis()) }.padding(8.dp))
+            }
+
+            ChoiceRow("App-ikoner", "icon_style", listOf("DARK" to "Mørke (gråtoner)", "COLOR" to "Originale farger"), "DARK")
+
+            Section("Kart uten nett")
+            LaunchedEffect(Unit) { if (!OfflineMaps.ready(context)) OfflineMaps.checkRemote() }
+            val mapReady = OfflineMaps.ready(context)
+            SettingRow(
+                "Kart for ${OfflineMaps.LABEL}",
+                OfflineMaps.progress?.let { "Laster ned … $it %" }
+                    ?: OfflineMaps.status
+                    ?: if (mapReady) OfflineMaps.downloadedText(context) + " · brukes på forsiden"
+                    else "Tegnes på stereoen og virker uten nett." + (OfflineMaps.remoteBytes?.let { " Ca. ${OfflineMaps.sizeMb(it)} MB – bruk Wi-Fi." } ?: ""),
+            ) {
+                when {
+                    OfflineMaps.progress != null -> {}
+                    mapReady -> { Pill("Oppdater") { OfflineMaps.download(context) }; Spacer(Modifier.width(8.dp)); Pill("Slett") { OfflineMaps.delete(context) } }
+                    else -> Pill("Last ned", Icons.Default.Download, strong = true) { OfflineMaps.download(context) }
+                }
             }
 
             Section("Kart og kjøring")

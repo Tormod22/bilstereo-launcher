@@ -17,14 +17,17 @@ Snakk norsk med brukeren. Han er ikke utvikler – forklar enkelt, ikke bruk fag
 - Løsningen han godkjente: **tre ting** – (1) bilkort med klokke, stort bilbilde og fart som stort tall, (2) ekte kart, (3) én rad nederst: musikk/telefon/apper. Ingen kalender, ingen vær.
 - Kalkulator skal være skjult i app-skuffen (`HiddenApps` i `Apps.kt`).
 
-## Nåværende tilstand (v3.1)
+## Nåværende tilstand (v3.2)
 - `MainActivity.kt`: Compose-UI med de tre tingene + app-skuff + oppdateringsknapp. Skjermvalg via `Nav.screen` (DASH/APPS/BT/KEYS).
 - v3.0 «stor oppdatering» – alle 50 punktene i `docs/IDEER.md` (se Begrensninger der). Nye filer:
   `Prefs.kt` (TosApp, innstillinger m/ Compose-reaktivitet via Prefs.version, sikkerhetskopi JSON, CrashLog),
   `Theme.kt` (palett som getters – dag/natt; Sun-beregning), `Hub.kt` (GPS-singleton, Trip, Parking, SpeedLimit/Overpass,
   NightBrightness, Reminders, Startup, Navigate), `MediaListener.kt` (NotificationListener: NowPlaying, NavInfo, Call; Media-kontroll),
   `Obd.kt` (ELM327 via RFCOMM), `Radio.kt` (nettradio via MediaPlayer), `Pages.kt` (Musikk, Radio, Navigasjon, Kart, Telefon,
-  Bil og tur, Innstillinger, Klokke, Hurtigpanel + felles UI-klosser). Lint (lintDebug) er ren. v3.1: sikkerhetslåsen (punkt 43) er fjernet etter brukerens ønske – ikke legg den inn igjen.
+  Bil og tur, Innstillinger, Klokke, Hurtigpanel + felles UI-klosser). Lint (lintDebug) er ren. v3.2: kart uten nett (`OfflineMap.kt`, MapLibre 11.8.0, PMTiles fra Protomaps, mørk stil, fonter i assets/fonts)
+  – fila lages av `.github/workflows/kart.yml` (release-tag «kart», rogaland.pmtiles) og lastes ned i Innstillinger.
+  Stilen er testet med ekte data i MapLibre GL JS (ser bra ut), men ikke på enheten. App-ikoner i mørkt tema (`Icons.kt`),
+  T'OS-ikonet er nå hvitt/grått på svart. v3.1: sikkerhetslåsen (punkt 43) er fjernet etter brukerens ønske – ikke legg den inn igjen.
 - `Buttons.kt` + `KeyService.kt` + `Screens.kt` (v2.3, utvidet i v3.0 med langt trykk og Ratt 1–4): fysiske knapper på stereoen (MENU, BACK, NAVI venstre; RADIO, MUSIC, BT høyre).
   Standard: MENU→T'OS forside, BACK→tilbake, NAVI→kart, MUSIC→Spotify, BT→egen Bluetooth-side, RADIO→radio-appen (brukeren har IKKE bestemt RADIO ennå – valgbar på Knapper-siden).
   «Lær»-funksjon: lærer enten tastekoden knappen sender, eller hvilken app stereoen åpner (da omdirigerer tjenesten). Krever at tjenesten «T'OS knapper» er slått på under Tilgjengelighet. Omdirigering hoppes over når AudioManager.mode != NORMAL (samtale).
@@ -37,7 +40,7 @@ Snakk norsk med brukeren. Han er ikke utvikler – forklar enkelt, ikke bruk fag
 
 ## Status / gjenstår
 1. ✅ Koden kompilerer (`gradle assembleDebug`, AGP 8.5.2 / Kotlin 2.0.20). Én feil rettet i `Updater.kt` (lese version.json).
-2. ✅ Repoet `Tormod22/bilstereo-launcher` finnes. Koden må ligge på `main` for at GitHub Actions skal bygge og publisere «latest»-release. Repoet må være offentlig for at oppdateringsknappen skal virke.
+2. ✅ Repoet `Tormod22/bilstereo-launcher` finnes. Kartfila krever at workflowen «Lag kart uten nett» er kjørt (går automatisk ved første push til main). Koden må ligge på `main` for at GitHub Actions skal bygge og publisere «latest»-release. Repoet må være offentlig for at oppdateringsknappen skal virke.
 3. Legg inn `car_png.png`.
 4. Når enheten kommer: verifiser pakkenavn, test GPS/kart, test «åpne Maps i delt skjerm» (FLAG_ACTIVITY_LAUNCH_ADJACENT – kan falle tilbake til fullskjerm).
 5. Idéliste med 50 funksjoner: `docs/IDEER.md` (★ = foreslått først). Tidligere ønsker: sangtittel/cover i musikkortet (krever NotificationListener), ryggekamera-knapp.

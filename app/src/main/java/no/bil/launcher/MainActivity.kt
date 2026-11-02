@@ -366,15 +366,23 @@ fun zoomFor(speed: Int): Int =
 
 @Composable
 fun MapView(gps: Gps?, modifier: Modifier, zoomOffset: Int = 0) {
-    var map by remember { mutableStateOf<MapTiles.MapImage?>(null) }
+    val context = LocalContext.current
     val zoom = ((gps?.let { zoomFor(it.speedKmh) } ?: 15) + zoomOffset).coerceIn(11, 18)
+    val rotate = Prefs.bool("map_rotate", true) && (gps?.speedKmh ?: 0) > 8
+    // Nedlastet kart (uten nett) brukes når det finnes, ellers nettkartet
+    if (OfflineMaps.ready(context)) { OfflineMapView(gps, modifier, zoom, rotate); return }
+    OnlineMapView(gps, modifier, zoom, rotate)
+}
+
+@Composable
+private fun OnlineMapView(gps: Gps?, modifier: Modifier, zoom: Int, rotate: Boolean) {
+    var map by remember { mutableStateOf<MapTiles.MapImage?>(null) }
     val f = 1 shl (zoom - 8).coerceAtLeast(0)
     val key = gps?.let { Triple(zoom, (it.lat * f).toInt(), (it.lon * f).toInt()) }
     LaunchedEffect(key) {
         val g = gps ?: return@LaunchedEffect
         MapTiles.around(g.lat, g.lon, zoom)?.let { map = it }
     }
-    val rotate = Prefs.bool("map_rotate", true) && (gps?.speedKmh ?: 0) > 8
 
     Box(modifier) {
         val m = map
@@ -421,8 +429,10 @@ fun MapView(gps: Gps?, modifier: Modifier, zoomOffset: Int = 0) {
 @Composable
 fun MapCard(gps: Gps?, modifier: Modifier) {
     val context = LocalContext.current
-    Box(modifier.clip(Shape).background(Panel).combinedClickable(onClick = { openMaps(context) }, onLongClick = { Nav.screen = Screen.MAP })) {
+    Box(modifier.clip(Shape).background(Panel)) {
         MapView(gps, Modifier.fillMaxSize())
+        // Usynlig lag over kartet tar imot trykk (kartet selv skal ikke dras i)
+        Box(Modifier.matchParentSize().combinedClickable(onClick = { openMaps(context) }, onLongClick = { Nav.screen = Screen.MAP }))
 
         // Neste sving fra Google Maps / Waze
         if (NavInfo.active) {
@@ -475,7 +485,7 @@ fun ActionRow(onApps: () -> Unit, onPickSlot: () -> Unit, modifier: Modifier) {
         slotPkg.takeIf { it.isNotBlank() }?.let { p ->
             runCatching {
                 val pm = context.packageManager
-                pm.getApplicationLabel(pm.getApplicationInfo(p, 0)).toString() to pm.getApplicationIcon(p).toBitmap(96, 96).asImageBitmap()
+                pm.getApplicationLabel(pm.getApplicationInfo(p, 0)).toString() to pm.getApplicationIcon(p)
             }.getOrNull()
         }
     }
@@ -501,7 +511,7 @@ fun ActionRow(onApps: () -> Unit, onPickSlot: () -> Unit, modifier: Modifier) {
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center,
         ) {
-            if (slotApp != null) Image(slotApp.second, null, Modifier.size(32.dp))
+            if (slotApp != null) AppIcon(slotApp.second, 36.dp)
             else Icon(Icons.Default.Phone, null, tint = TextPrimary, modifier = Modifier.size(30.dp))
             Spacer(Modifier.height(6.dp))
             Text(slotApp?.first ?: "Telefon", color = TextMuted, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(horizontal = 8.dp))
@@ -523,7 +533,7 @@ fun SlotPicker(onClose: () -> Unit) {
                 items(apps, key = { it.packageName }) { app ->
                     Column(Modifier.clip(RoundedCornerShape(18.dp)).background(Card).clickable { Prefs.set("slot_pkg", app.packageName); onClose() }
                         .padding(14.dp).fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
-                        Image(app.icon.toBitmap(96, 96).asImageBitmap(), null, Modifier.size(44.dp))
+                        AppIcon(app.icon, 44.dp)
                         Spacer(Modifier.height(6.dp))
                         Text(app.label, color = TextPrimary, fontSize = 13.sp, maxLines = 1)
                     }
@@ -671,7 +681,7 @@ fun AppDrawer(onClose: () -> Unit) {
                         .padding(14.dp).fillMaxWidth(),
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
-                    Image(app.icon.toBitmap(96, 96).asImageBitmap(), null, Modifier.size(52.dp))
+                    AppIcon(app.icon, 52.dp)
                     Spacer(Modifier.height(8.dp))
                     Text(app.label, color = TextPrimary, fontSize = 13.sp, maxLines = 1)
                 }

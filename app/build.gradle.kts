@@ -12,8 +12,10 @@ android {
         applicationId = "no.bil.launcher"
         minSdk = 26          // dekker Android 8–13 som disse enhetene kjører
         targetSdk = 34
-        versionCode = 7
-        versionName = "3.1"
+        versionCode = 8
+        versionName = "3.2"
+        // Bilstereoen har ARM-prosessor; dropper x86 for å holde appen mindre (kartmotoren har egne biblioteker)
+        ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a") }
     }
     buildTypes {
         release { isMinifyEnabled = false }
@@ -37,4 +39,5 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.5")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
     implementation("com.google.zxing:core:3.5.3")   // QR-kode for parkeringsplassen
+    implementation("org.maplibre.gl:android-sdk:11.8.0")   // kart uten nett (PMTiles fra OpenStreetMap)
 }
