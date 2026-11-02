@@ -39,6 +39,8 @@ object HiddenApps {
 }
 
 object Tiles {
+    fun byPrefix(p: String) = defaults.first { it.title.startsWith(p) }
+
     val defaults = listOf(
         QuickTile(
             "Navigasjon",
@@ -77,6 +79,15 @@ object Tiles {
                 "com.google.android.dialer",
             ),
             fallbackIntent = Intent(Intent.ACTION_DIAL),
+        ),
+        QuickTile(
+            "Bluetooth-musikk",
+            listOf(                      // gjetninger – sjekk med «adb shell pm list packages» / Lær-knappen
+                "com.ts.bt",
+                "com.syu.bt",
+                "com.microntek.btmusic",
+                "com.android.bluetooth",
+            ),
         ),
         QuickTile(
             "CarPlay / Android Auto",

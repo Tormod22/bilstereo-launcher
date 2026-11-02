@@ -17,8 +17,12 @@ Snakk norsk med brukeren. Han er ikke utvikler – forklar enkelt, ikke bruk fag
 - Løsningen han godkjente: **tre ting** – (1) bilkort med klokke, stort bilbilde og fart som stort tall, (2) ekte kart, (3) én rad nederst: musikk/telefon/apper. Ingen kalender, ingen vær.
 - Kalkulator skal være skjult i app-skuffen (`HiddenApps` i `Apps.kt`).
 
-## Nåværende tilstand (v2.2)
-- `MainActivity.kt`: Compose-UI med de tre tingene + app-skuff + oppdateringsknapp.
+## Nåværende tilstand (v2.3)
+- `MainActivity.kt`: Compose-UI med de tre tingene + app-skuff + oppdateringsknapp. Skjermvalg via `Nav.screen` (DASH/APPS/BT/KEYS).
+- `Buttons.kt` + `KeyService.kt` + `Screens.kt` (v2.3): fysiske knapper på stereoen (MENU, BACK, NAVI venstre; RADIO, MUSIC, BT høyre).
+  Standard: MENU→T'OS forside, BACK→tilbake, NAVI→kart, MUSIC→Spotify, BT→egen Bluetooth-side, RADIO→radio-appen (brukeren har IKKE bestemt RADIO ennå – valgbar på Knapper-siden).
+  «Lær»-funksjon: lærer enten tastekoden knappen sender, eller hvilken app stereoen åpner (da omdirigerer tjenesten). Krever at tjenesten «T'OS knapper» er slått på under Tilgjengelighet. Omdirigering hoppes over når AudioManager.mode != NORMAL (samtale).
+  UVERIFISERT på enheten: om knappene sender tastekoder eller åpner apper. Be brukeren lære knappene og si hva Knapper-siden viser (kode/pakkenavn).
 - `Data.kt`: GPS-fart/posisjon (LocationManager), ekte kartfliser fra Esri World Dark Gray Base (gratis, ingen nøkkel; CARTO krever nøkkel nå), sentrert på posisjonen og dempet med MapDim, mediaknapper via AudioManager.dispatchMediaKeyEvent.
 - `Updater.kt`: sjekker `https://github.com/Tormod22/bilstereo-launcher/releases/download/latest/version.json`, laster ned `bilstereo.apk` og starter installasjon via FileProvider. Repoet må være OFFENTLIG for at dette virker.
 - `.github/workflows/build.yml`: bygger debug-APK på push til main og publiserer som release med tag `latest` (bilstereo.apk + version.json). Versjon hentes fra `versionCode`/`versionName` i `app/build.gradle.kts` – bump dem ved hver ny versjon.

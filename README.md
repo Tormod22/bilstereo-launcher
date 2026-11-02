@@ -1,4 +1,4 @@
-# T'OS (v2.2)
+# T'OS (v2.3)
 
 T'OS er navnet på appen. Repoet heter fortsatt `bilstereo-launcher`.
 
@@ -40,6 +40,11 @@ Trykk deretter Hjem-knappen, velg «T'OS» og «Alltid». Spør den ikke, åpne 
 - Fliser og hvilke apper de åpner: `Apps.kt` → `Tiles.defaults`
 - Farger: øverst i `MainActivity.kt`
 - Finn pakkenavnet til en app på stereoen: `adb shell pm list packages | grep -i radio`
+
+## Knappene på stereoen (MENU, BACK, NAVI, RADIO, MUSIC, BT)
+Apper → «Knapper». Slå på knappestyring (Innstillinger → Tilgjengelighet → «T'OS knapper»).
+Trykk «Lær» ved en knapp og trykk så knappen på stereoen. Velg hva knappen skal gjøre i lista.
+Android 13: hvis valget er grått, gå til Innstillinger → Apper → T'OS → ⋮ → «Tillat begrensede innstillinger» først.
 
 ## Teste utseendet før du installerer
 `preview/index.html` er en kopi av startskjermen som kjører i nettleseren (PC eller mobil på tvers).

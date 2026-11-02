@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
 import android.os.Bundle
+import android.view.KeyEvent
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
@@ -55,12 +56,12 @@ import java.util.Locale
 import kotlin.math.roundToInt
 
 /* ---------- Palett: svart, to gråtoner, hvit. Ingen farger. ---------- */
-private val Bg = Color(0xFF000000)
-private val Panel = Color(0xFF111113)
-private val Card = Color(0xFF1C1C1F)
-private val Line = Color(0xFF2A2A2E)
-private val TextPrimary = Color(0xFFF5F5F7)
-private val TextMuted = Color(0xFF86868B)
+internal val Bg = Color(0xFF000000)
+internal val Panel = Color(0xFF111113)
+internal val Card = Color(0xFF1C1C1F)
+internal val Line = Color(0xFF2A2A2E)
+internal val TextPrimary = Color(0xFFF5F5F7)
+internal val TextMuted = Color(0xFF86868B)
 private val Shape = RoundedCornerShape(28.dp)
 private val MapDim = ColorFilter.colorMatrix(ColorMatrix().apply { setToScale(0.6f, 0.6f, 0.6f, 1f) })
 
@@ -69,19 +70,50 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-        askPermissions.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION))
+        val perms = mutableListOf(Manifest.permission.ACCESS_FINE_LOCATION)
+        if (android.os.Build.VERSION.SDK_INT >= 31) perms += Manifest.permission.BLUETOOTH_CONNECT
+        askPermissions.launch(perms.toTypedArray())
+        handle(intent)
         setContent { Root() }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        handle(intent)
+    }
+
+    private fun handle(intent: Intent?) {
+        val s = intent?.getStringExtra(Nav.EXTRA)
+        Nav.screen = Screen.entries.firstOrNull { it.name == s } ?: Screen.DASH
+    }
+
+    /** Knappene på stereoen når T'OS er framme og knappestyring (tjenesten) ikke er slått på. */
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        val code = event.keyCode
+        if (Learn.target != null && event.action == KeyEvent.ACTION_DOWN &&
+            code != KeyEvent.KEYCODE_VOLUME_UP && code != KeyEvent.KEYCODE_VOLUME_DOWN) {
+            Learn.offerKey(this, code); return true
+        }
+        val key = Buttons.keyForCode(this, code)
+        if (key != null && Buttons.shouldIntercept(this, key, code)) {
+            if (event.action == KeyEvent.ACTION_UP) Buttons.perform(this, Buttons.action(this, key))
+            return true
+        }
+        return super.dispatchKeyEvent(event)
     }
 }
 
 @Composable
 fun Root() {
-    var drawer by remember { mutableStateOf(false) }
+    val home = { Nav.screen = Screen.DASH }
     Box(Modifier.fillMaxSize().background(Bg).padding(14.dp)) {
-        if (drawer) {
-            BackHandler { drawer = false }
-            AppDrawer { drawer = false }
-        } else Dashboard(onApps = { drawer = true })
+        if (Nav.screen != Screen.DASH) BackHandler { Learn.cancel(); home() }
+        when (Nav.screen) {
+            Screen.DASH -> Dashboard(onApps = { Nav.screen = Screen.APPS })
+            Screen.APPS -> AppDrawer(home)
+            Screen.BT -> BluetoothScreen(home)
+            Screen.KEYS -> KeysScreen { Learn.cancel(); home() }
+        }
     }
 }
 
@@ -218,8 +250,8 @@ fun MapCard(gps: Gps?, modifier: Modifier) {
     }
 }
 
-private fun openMaps(context: Context) {
-    val tile = Tiles.defaults.first { it.title.startsWith("Nav") }
+fun openMaps(context: Context) {
+    val tile = Tiles.byPrefix("Nav")
     val pkg = tile.candidates.firstOrNull { AppRepository.isInstalled(context, it) }
     val intent = pkg?.let { context.packageManager.getLaunchIntentForPackage(it) }
         ?: Intent(Intent.ACTION_VIEW, android.net.Uri.parse("geo:0,0"))
@@ -233,7 +265,7 @@ private fun openMaps(context: Context) {
 @Composable
 fun ActionRow(onApps: () -> Unit, modifier: Modifier) {
     val context = LocalContext.current
-    fun tile(p: String) = Tiles.defaults.first { it.title.startsWith(p) }
+    fun tile(p: String) = Tiles.byPrefix(p)
     val music = tile("Mus")
     val musicIcon = remember { AppRepository.tileIcon(context, music) }
 
@@ -343,15 +375,20 @@ private fun openHomeSettings(context: Context) {
 @Composable
 fun HomeButton() {
     val context = LocalContext.current
+    PillButton(Icons.Default.Home, "Startskjerm") { openHomeSettings(context) }
+}
+
+@Composable
+fun PillButton(icon: ImageVector, label: String, onClick: () -> Unit) {
     Row(
         Modifier.height(48.dp).clip(RoundedCornerShape(24.dp)).background(Card)
-            .clickable { openHomeSettings(context) }
+            .clickable(onClick = onClick)
             .padding(horizontal = 18.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        Icon(Icons.Default.Home, null, tint = TextPrimary, modifier = Modifier.size(20.dp))
-        Text("Velg startskjerm", color = TextPrimary, fontSize = 14.sp)
+        Icon(icon, null, tint = TextPrimary, modifier = Modifier.size(20.dp))
+        Text(label, color = TextPrimary, fontSize = 14.sp)
     }
 }
 
@@ -365,6 +402,10 @@ fun AppDrawer(onClose: () -> Unit) {
     Column(Modifier.fillMaxSize().clip(Shape).background(Panel).padding(24.dp)) {
         Row(Modifier.fillMaxWidth().padding(bottom = 16.dp), verticalAlignment = Alignment.CenterVertically) {
             Text("Apper", color = TextPrimary, fontSize = 28.sp, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f))
+            PillButton(Icons.Default.Tune, "Knapper") { Nav.screen = Screen.KEYS }
+            Spacer(Modifier.width(12.dp))
+            PillButton(Icons.Default.Bluetooth, "Bluetooth") { Nav.screen = Screen.BT }
+            Spacer(Modifier.width(12.dp))
             HomeButton()
             Spacer(Modifier.width(12.dp))
             UpdateButton()
