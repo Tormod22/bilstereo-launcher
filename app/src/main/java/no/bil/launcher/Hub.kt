@@ -66,7 +66,6 @@ object Hub {
                 delay(TimeUnit.HOURS.toMillis(6))
             }
         }
-        scope.launch { delay(5_000); if (Prefs.bool("obd_auto")) Obd.connect(app) }
     }
 
     /** Kalles på nytt når brukeren har gitt posisjonstillatelse. */
@@ -80,6 +79,7 @@ object Hub {
                 Trip.onFix(g)
                 Parking.onFix(g)
                 SpeedLimit.onFix(g)
+                Accel.onFix(g)
                 if (first) Theme.update(g.lat, g.lon)
             }
         }

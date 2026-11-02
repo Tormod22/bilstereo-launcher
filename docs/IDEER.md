@@ -37,8 +37,8 @@ kompliserte, reklame og betalingsmurer, musikk som slutter å virke (lydfokus), 
 18. ★ Turmåler: avstand, tid og snittfart for turen
 19. Høyeste fart på turen
 20. ★ Husker hvor bilen ble parkert (posisjon når strømmen går)
-21. OBD2 via Bluetooth-brikke (ELM327): turtall, motortemperatur, feilkoder
-22. Varsel om lav batterispenning (OBD)
+21. ~~OBD2 via Bluetooth-brikke~~ → erstattet i v3.3 av «Tuning og ytelse» (tuningboks-app + 0–100 med GPS)
+22. ~~Varsel om lav batterispenning (OBD)~~ (fjernet sammen med OBD)
 23. Kompassretning (N, NØ …) diskret ved farten
 
 ## Telefon og Bluetooth
@@ -85,7 +85,6 @@ kompliserte, reklame og betalingsmurer, musikk som slutter å virke (lydfokus), 
 - 1, 2, 4, 14, 25: krever at «Varseltilgang» for T'OS er slått på (Innstillinger → Musikk og oppstart).
 - ⚠ 3, 39: avhenger av om stereoen starter på nytt eller bare sover. Begge tilfeller er dekket (oppstart og skjerm på etter >2 min).
 - ⚠ 12, 13: fartsgrense fra OpenStreetMap (Overpass-API) krever internett. Kan mangle/være feil.
-- ⚠ 21, 22: OBD2 krever en Bluetooth OBD-brikke (ELM327 o.l.) paret med stereoen. Helt utestet.
 - ⚠ 25, 26: hvem som ringer/siste anrop vises bare hvis stereoens BT-app deler det med Android.
 - ⚠ 27: CarPlay-autostart virker hvis Android ser iPhonen (USB med Apple-ID 0x05AC, eller Bluetooth-navn med «iPhone»).
 - ⚠ 28: batteri vises bare der Android selv styrer Bluetooth. Signalstyrke er ikke tilgjengelig for apper.

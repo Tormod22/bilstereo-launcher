@@ -490,18 +490,10 @@ fun CarScreen(onClose: () -> Unit) {
                     BigNumber(Hub.gps?.let { Hub.compass(it.bearing) } ?: "–", "retning", Modifier.weight(1f))
                 }
 
-                Section("Bildata (OBD2)")
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    BigNumber(Obd.rpm?.toString() ?: "–", "turtall", Modifier.weight(1f))
-                    BigNumber(Obd.coolant?.let { "$it °C" } ?: "–", "motortemperatur", Modifier.weight(1f))
-                    BigNumber(Obd.volt?.let { String.format(Locale("nb", "NO"), "%.1f V", it) } ?: "–", "batteri", Modifier.weight(1f))
+                Section("Tuning og ytelse")
+                SettingRow("0–100 km/t: ${Accel.fmt(Accel.last(Accel.runs[0]))}", "Beste: ${Accel.fmt(Accel.best(Accel.runs[0]))} · målt med GPS", onClick = { Nav.screen = Screen.TUNING }) {
+                    Pill("Åpne", Icons.Default.Speed) { Nav.screen = Screen.TUNING }
                 }
-                Spacer(Modifier.height(10.dp))
-                SettingRow(Obd.status, if (Obd.lowVoltage) "Batteriet er svakt – sjekk det snart" else "Krever en OBD2-brikke med Bluetooth, paret med stereoen") {
-                    if (Obd.connected) { Pill("Feilkoder") { Obd.readCodes() }; Spacer(Modifier.width(8.dp)); Pill("Koble fra") { Obd.disconnect() } }
-                    else Pill("Koble til", strong = true) { Obd.connect(context) }
-                }
-                Obd.codes?.let { SettingRow(if (it.isEmpty()) "Ingen feilkoder" else it.joinToString("  "), "Lagrede feilkoder i motorstyringen") }
 
                 Section("Påminnelser")
                 val due = Reminders.due()
@@ -526,114 +518,6 @@ fun CarScreen(onClose: () -> Unit) {
                     Text("Sist stilt: " + SimpleDateFormat("d. MMM HH:mm", Locale("nb", "NO")).format(Date(Parking.time)), color = TextMuted, fontSize = 13.sp)
                 } else Text("Ingen posisjon ennå. Den lagres når bilen står stille.", color = TextMuted, fontSize = 14.sp)
             }
-        }
-    }
-}
-
-/* ======================= Innstillinger ======================= */
-
-@Composable
-fun SettingsScreen(onClose: () -> Unit) {
-    val context = LocalContext.current
-    val pickCar = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        if (uri != null) runCatching {
-            context.contentResolver.openInputStream(uri)?.use { input -> File(context.filesDir, "car.png").outputStream().use { input.copyTo(it) } }
-            Prefs.set("car_image_v", System.currentTimeMillis())
-            context.toast("Bilbildet er lagret")
-        }
-    }
-    val exportFile = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
-        if (uri != null) runCatching {
-            context.contentResolver.openOutputStream(uri)?.use { it.write(Prefs.exportJson(context).toByteArray()) }
-            context.toast("Innstillingene er lagret")
-        }.onFailure { context.toast("Fikk ikke lagret filen") }
-    }
-    val importFile = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        if (uri != null) {
-            val text = runCatching { context.contentResolver.openInputStream(uri)?.bufferedReader()?.readText() }.getOrNull()
-            context.toast(if (text != null && Prefs.importJson(context, text)) "Innstillingene er hentet" else "Fant ingen T'OS-innstillinger i filen")
-        }
-    }
-    val musicApps = remember {
-        Tiles.byPrefix("Mus").candidates.filter { AppRepository.isInstalled(context, it) }
-            .map { it to (runCatching { context.packageManager.getApplicationLabel(context.packageManager.getApplicationInfo(it, 0)).toString() }.getOrDefault(it)) }
-    }
-
-    Page("Innstillinger", onClose) {
-        Column(Modifier.verticalScroll(rememberScrollState())) {
-            Section("Skjerm")
-            ChoiceRow("Nattmodus", "night_mode", listOf("AUTO" to "Automatisk (etter sola)", "DAY" to "Alltid dag", "NIGHT" to "Alltid natt"), "AUTO")
-            val canWrite = Settings.System.canWrite(context)
-            SettingRow("Demp hele stereoen om natten", if (canWrite) "Senker lysstyrken etter solnedgang" else "Trykk for å gi T'OS lov til å endre lysstyrken",
-                onClick = {
-                    if (!canWrite) runCatching { context.startActivity(Intent(Settings.ACTION_MANAGE_WRITE_SETTINGS, Uri.parse("package:${context.packageName}")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
-                    else Prefs.set("dim_system", !Prefs.bool("dim_system"))
-                }) { Toggle(Prefs.bool("dim_system") && canWrite) }
-            ChoiceRow("Tekststørrelse", "text_scale_s", listOf("1.0" to "Normal", "1.1" to "Stor", "1.2" to "Ekstra stor"), "1.0")
-            ChoiceRow("Klokke når bilen står stille", "saver_min", listOf("0" to "Av", "1" to "Etter 1 min", "3" to "Etter 3 min", "5" to "Etter 5 min"), "3")
-            SettingRow("Bilbilde", "Velg et bilde av bilen (PNG med svart eller gjennomsiktig bakgrunn)", onClick = { pickCar.launch(arrayOf("image/*")) }) {
-                if (File(context.filesDir, "car.png").exists()) Text("Fjern", color = TextPrimary, fontSize = 15.sp,
-                    modifier = Modifier.clickable { File(context.filesDir, "car.png").delete(); Prefs.set("car_image_v", System.currentTimeMillis()) }.padding(8.dp))
-            }
-
-            ChoiceRow("App-ikoner", "icon_style", listOf("DARK" to "Mørke (gråtoner)", "COLOR" to "Originale farger"), "DARK")
-
-            Section("Kart uten nett")
-            LaunchedEffect(Unit) { if (!OfflineMaps.ready(context)) OfflineMaps.checkRemote() }
-            val mapReady = OfflineMaps.ready(context)
-            SettingRow(
-                "Kart for ${OfflineMaps.LABEL}",
-                OfflineMaps.progress?.let { "Laster ned … $it %" }
-                    ?: OfflineMaps.status
-                    ?: if (mapReady) OfflineMaps.downloadedText(context) + " · brukes på forsiden"
-                    else "Tegnes på stereoen og virker uten nett." + (OfflineMaps.remoteBytes?.let { " Ca. ${OfflineMaps.sizeMb(it)} MB – bruk Wi-Fi." } ?: ""),
-            ) {
-                when {
-                    OfflineMaps.progress != null -> {}
-                    mapReady -> { Pill("Oppdater") { OfflineMaps.download(context) }; Spacer(Modifier.width(8.dp)); Pill("Slett") { OfflineMaps.delete(context) } }
-                    else -> Pill("Last ned", Icons.Default.Download, strong = true) { OfflineMaps.download(context) }
-                }
-            }
-
-            Section("Kart og kjøring")
-            PrefField("Hjem-adresse", "addr_home", "Gate og sted")
-            PrefField("Jobb-adresse", "addr_work", "Gate og sted")
-            ChoiceRow("Kartapp", "nav_app", listOf("com.google.android.apps.maps" to "Google Maps", "com.waze" to "Waze"), "com.google.android.apps.maps")
-            ToggleRow("Kartet følger kjøreretningen", "map_rotate", true)
-            ToggleRow("Kartet zoomer ut i høy fart", "map_zoom_speed", true)
-            ToggleRow("Vis fartsgrense", "speed_limit", true, "Fra OpenStreetMap. Kan mangle eller være feil – skiltene gjelder.")
-            ToggleRow("Lyd når du er over fartsgrensen", "speed_beep", false)
-
-            Section("Musikk og oppstart")
-            if (musicApps.isNotEmpty()) ChoiceRow("Musikkapp", "music_pkg", listOf("" to "Automatisk") + musicApps, "")
-            ToggleRow("Fortsett musikken når bilen starter", "resume_music", true)
-            ToggleRow("Åpne siste app når bilen starter", "resume_last_app", false)
-            SettingRow("Sangtittel og cover", if (MediaListener.enabled(context)) "Slått på" else "Trykk og slå på «T'OS» under varseltilgang", onClick = { openNotificationAccess(context) }) {
-                Toggle(MediaListener.enabled(context))
-            }
-
-            Section("Telefon")
-            ToggleRow("Åpne CarPlay når iPhonen kobles til", "carplay_auto", false)
-            SettingRow("Favoritter", "${Favorites.all().size} lagret", onClick = { Nav.screen = Screen.PHONE })
-
-            Section("Bil")
-            PrefField("Neste EU-kontroll", "eu_date", "f.eks. 15.3.2027", KeyboardType.Number)
-            PrefField("Neste service", "service_date", "f.eks. 1.6.2027", KeyboardType.Number)
-            ToggleRow("Minn meg på dekkskift", "tire_remind", true, "Midten av oktober og slutten av mars")
-            ToggleRow("Koble til OBD2-brikke automatisk", "obd_auto", false)
-
-            Section("Sikkerhetskopi")
-            SettingRow("Lagre innstillinger til fil", "Velg Google Drive for å ha dem trygt", onClick = { exportFile.launch("tos-innstillinger.json") })
-            SettingRow("Hent innstillinger fra fil", onClick = { importFile.launch(arrayOf("application/json", "text/plain", "*/*")) })
-
-            Section("Hjelp")
-            SettingRow("Del feilrapport", "Send til deg selv og lim inn i Claude", onClick = {
-                val i = Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_SUBJECT, "T'OS feilrapport").putExtra(Intent.EXTRA_TEXT, CrashLog.report(context))
-                runCatching { context.startActivity(Intent.createChooser(i, "Del feilrapport").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
-            })
-            SettingRow("Knapper på stereoen", onClick = { Nav.screen = Screen.KEYS })
-            val v = remember { runCatching { context.packageManager.getPackageInfo(context.packageName, 0).versionName }.getOrNull() }
-            SettingRow("T'OS $v", Hub.update?.let { "Ny versjon ${it.versionName} er klar – oppdater under Apper" } ?: "Du har siste versjon")
         }
     }
 }

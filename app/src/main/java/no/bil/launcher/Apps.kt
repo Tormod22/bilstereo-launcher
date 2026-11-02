@@ -30,12 +30,23 @@ object HiddenApps {
         "com.android.calculator2",
         "com.google.android.calculator",
         "com.ts.calculator",
+        "com.android.settings",          // erstattet av T'OS Innstillinger (finnes under Om stereoen → Avansert)
     )
+
+    /** Apper brukeren har skjult selv (Innstillinger → Apper). */
+    fun userHidden(): Set<String> = Prefs.str("hidden_apps").split("\n").filter { it.isNotBlank() }.toSet()
+    fun toggle(pkg: String) {
+        val cur = userHidden().toMutableSet()
+        if (pkg in cur || pkg in packages) { cur.remove(pkg); Prefs.set("shown_$pkg", true) } else { cur.add(pkg); Prefs.set("shown_$pkg", false) }
+        Prefs.set("hidden_apps", cur.joinToString("\n"))
+    }
     val labelKeywords = listOf("kalkulator", "calculator")
 
-    fun isHidden(app: AppEntry) =
-        app.packageName in packages ||
-            labelKeywords.any { app.label.lowercase().contains(it) }
+    fun isHidden(app: AppEntry): Boolean {
+        if (app.packageName in userHidden()) return true
+        if (Prefs.bool("shown_${app.packageName}", false)) return false
+        return app.packageName in packages || labelKeywords.any { app.label.lowercase().contains(it) }
+    }
 }
 
 object Tiles {
@@ -118,7 +129,7 @@ object Tiles {
 
 object AppRepository {
 
-    fun installedApps(context: Context): List<AppEntry> {
+    fun installedApps(context: Context, includeHidden: Boolean = false): List<AppEntry> {
         val pm = context.packageManager
         val intent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
         return pm.queryIntentActivities(intent, 0)
@@ -130,7 +141,7 @@ object AppRepository {
                     icon = it.loadIcon(pm),
                 )
             }
-            .filterNot { HiddenApps.isHidden(it) }
+            .filterNot { !includeHidden && HiddenApps.isHidden(it) }
             .sortedBy { it.label.lowercase() }
     }
 

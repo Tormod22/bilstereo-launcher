@@ -196,12 +196,13 @@ fun Root() {
                     Screen.CAR -> CarScreen(home)
                     Screen.PHONE -> PhoneScreen(home)
                     Screen.SETTINGS -> SettingsScreen(home)
+                    Screen.TUNING -> TuningScreen(home)
                     Screen.CLOCK -> {}
                 }
             }
             if (Nav.screen == Screen.CLOCK) ClockScreen(home)
             if (Nav.quick) { BackHandler { Nav.quick = false }; QuickPanel { Nav.quick = false } }
-            if (pickSlot) { BackHandler { pickSlot = false }; SlotPicker { pickSlot = false } }
+            if (pickSlot) { BackHandler { pickSlot = false }; AppPicker("Velg app for midtflisa", "Telefon (standard)", { Prefs.set("slot_pkg", it) }) { pickSlot = false } }
             volumeShown?.let { VolumeOverlay(it, Modifier.align(Alignment.Center)) }
             Call.name?.let { CallBanner(it, Modifier.align(Alignment.TopCenter)) }
         }
@@ -279,7 +280,6 @@ private fun carBitmap(): androidx.compose.ui.graphics.ImageBitmap? {
 private fun Notice() {
     val due = Reminders.due().firstOrNull()
     val (text, go) = when {
-        Obd.lowVoltage -> "Svakt batteri (${String.format(Locale("nb", "NO"), "%.1f", Obd.volt)} V)" to Screen.CAR
         due != null -> due.text to Screen.CAR
         Hub.update != null -> "Ny versjon ${Hub.update?.versionName} – trykk for å oppdatere" to Screen.APPS
         else -> return
@@ -520,18 +520,18 @@ fun ActionRow(onApps: () -> Unit, onPickSlot: () -> Unit, modifier: Modifier) {
     }
 }
 
-/** Velg hvilken app midtflisa i bunnraden skal åpne (punkt 44). */
+/** Velg en app (midtflisa i bunnraden, tuning-app o.l.). Tom tekst = standard. */
 @Composable
-fun SlotPicker(onClose: () -> Unit) {
+fun AppPicker(title: String, defaultLabel: String, onPick: (String) -> Unit, onClose: () -> Unit) {
     val context = LocalContext.current
     val apps by produceState(initialValue = emptyList<AppEntry>()) { value = AppRepository.installedApps(context) }
     Box(Modifier.fillMaxSize().background(Bg.copy(alpha = 0.7f)).padding(40.dp)) {
-        Page("Velg app for midtflisa", onClose) {
-            Pill("Telefon (standard)", Icons.Default.Phone) { Prefs.set("slot_pkg", ""); onClose() }
+        Page(title, onClose) {
+            Pill(defaultLabel, Icons.Default.Refresh) { onPick(""); onClose() }
             Spacer(Modifier.height(14.dp))
             LazyVerticalGrid(GridCells.Adaptive(120.dp), verticalArrangement = Arrangement.spacedBy(12.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 items(apps, key = { it.packageName }) { app ->
-                    Column(Modifier.clip(RoundedCornerShape(18.dp)).background(Card).clickable { Prefs.set("slot_pkg", app.packageName); onClose() }
+                    Column(Modifier.clip(RoundedCornerShape(18.dp)).background(Card).clickable { onPick(app.packageName); onClose() }
                         .padding(14.dp).fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
                         AppIcon(app.icon, 44.dp)
                         Spacer(Modifier.height(6.dp))
@@ -661,6 +661,7 @@ fun AppDrawer(onClose: () -> Unit) {
             val own = listOf(
                 Triple(Icons.Default.Radio, "Radio", Screen.RADIO), Triple(Icons.Default.Bluetooth, "Bluetooth", Screen.BT),
                 Triple(Icons.Default.DirectionsCar, "Bil og tur", Screen.CAR), Triple(Icons.Default.Map, "Kart", Screen.MAP),
+                Triple(Icons.Default.Settings, "Innstillinger", Screen.SETTINGS), Triple(Icons.Default.Speed, "Tuning", Screen.TUNING),
             )
             items(own, key = { it.second }) { (icon, label, screen) ->
                 Column(

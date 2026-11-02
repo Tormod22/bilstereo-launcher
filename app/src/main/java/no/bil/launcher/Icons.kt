@@ -2,6 +2,7 @@ package no.bil.launcher
 
 import android.graphics.Bitmap
 import android.graphics.Canvas
+import android.graphics.Color
 import android.graphics.drawable.AdaptiveIconDrawable
 import android.graphics.drawable.Drawable
 import android.os.Build
@@ -16,49 +17,97 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.ColorFilter
-import androidx.compose.ui.graphics.ColorMatrix
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.unit.Dp
 import androidx.core.graphics.drawable.toBitmap
+import kotlin.math.abs
+import kotlin.math.max
 
 /**
- * App-ikoner i mørkt tema: fargebakgrunnen fjernes og symbolet vises i gråtoner på mørk bunn.
- *  - Android 13+: bruker appens eget ensfargede ikon der det finnes (samme som «tema-ikoner»).
- *  - Ellers: bare forgrunnen av ikonet, i gråtoner.
- *  - Gamle ikoner uten lag: hele ikonet i dempede gråtoner.
- * Kan slås av i Innstillinger («App-ikoner: Originale farger»).
+ * Mørke app-ikoner for ALLE apper (også YouTube, Spotify osv.):
+ *  1. Android 13+: appens eget ensfargede ikon når det finnes («tema-ikon»).
+ *  2. Ellers lages et symbol automatisk: ikonets hovedfarge (som oftest bakgrunnen, f.eks. rødt hos YouTube)
+ *     fjernes, og alt som skiller seg fra den (f.eks. play-trekanten) blir et lyst symbol.
+ *     Har ikonet mange farger (Chrome, Gmail, Maps), blir de fargede delene symbolet og hvitt/svart blir hull.
+ *  3. Er ikonet bare én farge (f.eks. en hvit figur), brukes selve formen som symbol.
+ * Symbolet tegnes i T'OS-hvitt på mørk grå bunn, og følger nattmodus.
  */
 object IconStyle {
     val dark get() = Prefs.str("icon_style", "DARK") == "DARK"
+    private const val PX = 128
+    private val cache = HashMap<Drawable, Bitmap>()
 
-    enum class Kind { MONO, GLYPH, FULL }
-    class Prepared(val bitmap: Bitmap, val kind: Kind)
-
-    private val cache = HashMap<Drawable, Prepared>()
-
-    fun prepare(d: Drawable, px: Int = 128): Prepared = cache.getOrPut(d) {
+    /** Ferdig maske: hvit der symbolet er, gjennomsiktig ellers. Farges i Compose. */
+    fun glyph(d: Drawable): Bitmap = cache.getOrPut(d) {
         if (Build.VERSION.SDK_INT >= 33 && d is AdaptiveIconDrawable && d.monochrome != null) {
-            Prepared(layer(d.monochrome!!, px), Kind.MONO)
-        } else if (d is AdaptiveIconDrawable && d.foreground != null) {
-            Prepared(layer(d.foreground, px), Kind.GLYPH)
-        } else Prepared(d.toBitmap(px, px), Kind.FULL)
+            return@getOrPut toMask(layer(d.monochrome!!), alphaOnly = true)
+        }
+        val full = if (d is AdaptiveIconDrawable) {
+            val b = Bitmap.createBitmap(PX, PX, Bitmap.Config.ARGB_8888)
+            val c = Canvas(b)
+            d.background?.let { c.drawBitmap(layer(it), 0f, 0f, null) }
+            d.foreground?.let { c.drawBitmap(layer(it), 0f, 0f, null) }
+            b
+        } else d.toBitmap(PX, PX, Bitmap.Config.ARGB_8888)
+        toMask(full, alphaOnly = false)
     }
 
     /** Tegner et lag (108 enheter, synlig del 72 i midten) og beholder den synlige delen. */
-    private fun layer(l: Drawable, px: Int): Bitmap {
-        val full = (px * 108f / 72f).toInt()
+    private fun layer(l: Drawable): Bitmap {
+        val full = (PX * 108f / 72f).toInt()
         val big = Bitmap.createBitmap(full, full, Bitmap.Config.ARGB_8888)
         l.setBounds(0, 0, full, full); l.draw(Canvas(big))
-        val off = (full - px) / 2
-        return Bitmap.createBitmap(big, off, off, px, px)
+        val off = (full - PX) / 2
+        return Bitmap.createBitmap(big, off, off, PX, PX)
     }
 
-    private val gray = ColorMatrix().apply { setToSaturation(0f) }
-    val grayFilter = ColorFilter.colorMatrix(gray)
-    val dimGrayFilter = ColorFilter.colorMatrix(ColorMatrix().apply {
-        setToSaturation(0f)
-        timesAssign(ColorMatrix().apply { setToScale(0.72f, 0.72f, 0.72f, 1f) })
-    })
+    private fun toMask(src: Bitmap, alphaOnly: Boolean): Bitmap {
+        val w = src.width; val h = src.height
+        val px = IntArray(w * h); src.getPixels(px, 0, w, 0, 0, w, h)
+        val out = IntArray(w * h)
+
+        if (!alphaOnly) {
+            // Hovedfarge: vanligste farge blant tydelige piksler (grovt gruppert)
+            val counts = HashMap<Int, Int>()
+            var opaque = 0
+            for (p in px) {
+                if (Color.alpha(p) >= 10) opaque++
+                if (Color.alpha(p) > 200) {
+                    val k = ((Color.red(p) shr 4) shl 8) or ((Color.green(p) shr 4) shl 4) or (Color.blue(p) shr 4)
+                    counts[k] = (counts[k] ?: 0) + 1
+                }
+            }
+            val dom = counts.maxByOrNull { it.value }
+            if (dom != null && opaque > 0) {
+                val oneColor = dom.value >= opaque * 0.4f
+                val dr = ((dom.key shr 8) and 15) * 16 + 8; val dg = ((dom.key shr 4) and 15) * 16 + 8; val db = (dom.key and 15) * 16 + 8
+                var covered = 0
+                for (i in px.indices) {
+                    val p = px[i]; val a = Color.alpha(p)
+                    if (a < 10) { out[i] = 0; continue }
+                    val r = Color.red(p); val g = Color.green(p); val b = Color.blue(p)
+                    val strength = if (oneColor) {
+                        // Én hovedfarge (f.eks. rød YouTube): alt som skiller seg fra den blir symbolet
+                        val d = max(abs(r - dr), max(abs(g - dg), abs(b - db))) / 255f
+                        ((d - 0.18f) / 0.27f).coerceIn(0f, 1f)
+                    } else {
+                        // Mange farger (f.eks. Chrome): fargede deler blir symbolet, hvitt/grått/svart blir hull
+                        val sat = (max(r, max(g, b)) - minOf(r, g, b)) / 255f
+                        ((sat - 0.12f) / 0.2f).coerceIn(0f, 1f)
+                    }
+                    val alpha = (strength * a).toInt()
+                    if (alpha > 60) covered++
+                    out[i] = Color.argb(alpha, 255, 255, 255)
+                }
+                // Fant vi et tydelig symbol? Ellers: bruk formen (ensfarget ikon)
+                if (covered > opaque * 0.03f && covered < opaque * 0.97f) {
+                    return Bitmap.createBitmap(out, w, h, Bitmap.Config.ARGB_8888)
+                }
+            }
+        }
+        for (i in px.indices) out[i] = Color.argb(Color.alpha(px[i]), 255, 255, 255)
+        return Bitmap.createBitmap(out, w, h, Bitmap.Config.ARGB_8888)
+    }
 }
 
 @Composable
@@ -68,13 +117,8 @@ fun AppIcon(icon: Drawable, size: Dp) {
         Image(bmp, null, Modifier.size(size))
         return
     }
-    val p = remember(icon) { IconStyle.prepare(icon) }
-    val img = remember(p) { p.bitmap.asImageBitmap() }
+    val img = remember(icon) { IconStyle.glyph(icon).asImageBitmap() }
     Box(Modifier.size(size).clip(RoundedCornerShape(size * 0.27f)).background(Line), contentAlignment = Alignment.Center) {
-        when (p.kind) {
-            IconStyle.Kind.MONO -> Image(img, null, Modifier.size(size), colorFilter = ColorFilter.tint(TextPrimary))
-            IconStyle.Kind.GLYPH -> Image(img, null, Modifier.size(size), colorFilter = IconStyle.grayFilter)
-            IconStyle.Kind.FULL -> Image(img, null, Modifier.size(size * 0.78f).clip(RoundedCornerShape(size * 0.2f)), colorFilter = IconStyle.dimGrayFilter)
-        }
+        Image(img, null, Modifier.size(size * 0.86f), colorFilter = ColorFilter.tint(TextPrimary))
     }
 }

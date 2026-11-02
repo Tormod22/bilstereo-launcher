@@ -13,7 +13,7 @@ import androidx.compose.runtime.setValue
 
 /* ======================= Skjermene i T'OS ======================= */
 
-enum class Screen { DASH, APPS, BT, KEYS, MUSIC, MAP, NAV, RADIO, CAR, PHONE, SETTINGS, CLOCK }
+enum class Screen { DASH, APPS, BT, KEYS, MUSIC, MAP, NAV, RADIO, CAR, PHONE, SETTINGS, CLOCK, TUNING }
 
 /** Hvilken skjerm som vises. Kan settes fra knappetjenesten, derfor et globalt objekt. */
 object Nav {
@@ -45,6 +45,8 @@ enum class Action(val label: String) {
     VOICE("Stemmestyring"),
     CAMERA("Ryggekamera"),
     CAR("Bil og tur"),
+    TUNING("Tuning og ytelse"),
+    SETTINGS("Innstillinger"),
     QUICK("Hurtigpanel"),
     NONE("Ingenting (stereoen bestemmer)"),
 }
@@ -104,7 +106,7 @@ object Buttons {
 
     /** Pakkene en handling åpner – brukes for å ikke sende stereoen i ring. */
     fun targets(c: Context, a: Action): List<String> = when (a) {
-        Action.HOME, Action.BT, Action.APPS, Action.RADIO_PAGE, Action.PHONE, Action.MAP_FULL, Action.CAR, Action.QUICK -> listOf(c.packageName)
+        Action.HOME, Action.BT, Action.APPS, Action.RADIO_PAGE, Action.PHONE, Action.MAP_FULL, Action.CAR, Action.QUICK, Action.TUNING, Action.SETTINGS -> listOf(c.packageName)
         Action.NAVI -> Tiles.byPrefix("Nav").candidates
         Action.MUSIC -> Tiles.byPrefix("Mus").candidates
         Action.RADIO -> Tiles.byPrefix("Rad").candidates
@@ -130,6 +132,8 @@ object Buttons {
             Action.NAV_HOME -> Navigate.home(c)
             Action.MAP_FULL -> show(c, Screen.MAP)
             Action.CAR -> show(c, Screen.CAR)
+            Action.TUNING -> show(c, Screen.TUNING)
+            Action.SETTINGS -> show(c, Screen.SETTINGS)
             Action.QUICK -> { show(c, Screen.DASH); Nav.quick = true }
             Action.SPLIT -> splitScreen(c)
             Action.VOICE -> voice(c)

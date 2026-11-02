@@ -17,14 +17,20 @@ Snakk norsk med brukeren. Han er ikke utvikler – forklar enkelt, ikke bruk fag
 - Løsningen han godkjente: **tre ting** – (1) bilkort med klokke, stort bilbilde og fart som stort tall, (2) ekte kart, (3) én rad nederst: musikk/telefon/apper. Ingen kalender, ingen vær.
 - Kalkulator skal være skjult i app-skuffen (`HiddenApps` i `Apps.kt`).
 
-## Nåværende tilstand (v3.2)
+## Nåværende tilstand (v3.3)
 - `MainActivity.kt`: Compose-UI med de tre tingene + app-skuff + oppdateringsknapp. Skjermvalg via `Nav.screen` (DASH/APPS/BT/KEYS).
 - v3.0 «stor oppdatering» – alle 50 punktene i `docs/IDEER.md` (se Begrensninger der). Nye filer:
   `Prefs.kt` (TosApp, innstillinger m/ Compose-reaktivitet via Prefs.version, sikkerhetskopi JSON, CrashLog),
   `Theme.kt` (palett som getters – dag/natt; Sun-beregning), `Hub.kt` (GPS-singleton, Trip, Parking, SpeedLimit/Overpass,
   NightBrightness, Reminders, Startup, Navigate), `MediaListener.kt` (NotificationListener: NowPlaying, NavInfo, Call; Media-kontroll),
   `Obd.kt` (ELM327 via RFCOMM), `Radio.kt` (nettradio via MediaPlayer), `Pages.kt` (Musikk, Radio, Navigasjon, Kart, Telefon,
-  Bil og tur, Innstillinger, Klokke, Hurtigpanel + felles UI-klosser). Lint (lintDebug) er ren. v3.2: kart uten nett (`OfflineMap.kt`, MapLibre 11.8.0, PMTiles fra Protomaps, mørk stil, fonter i assets/fonts)
+  Bil og tur, Innstillinger, Klokke, Hurtigpanel + felles UI-klosser). Lint (lintDebug) er ren. v3.3: egen innstillingsapp (`SettingsApp.kt`, to kolonner, kategorier «Stereoen» + «T'OS»; Android-innstillinger skjult
+  fra app-lista, nås via Om stereoen → Avansert). OBD2 er FJERNET etter ønske; erstattet av «Tuning og ytelse» (`Tuning.kt`:
+  åpner tuningboks-app, f.eks. RaceChip `com.racechip.plus`, + 0–100/80–120 målt med GPS + info om Vegvesen-godkjenning).
+  T'OS kan ikke selv omprogrammere motorstyringen – ikke lov noe sånt. Ikoner: ALLE apper får mørke ikoner (`Icons.kt`:
+  tema-ikon → ellers automatisk symbol: fjern hovedfarge, eller fargede deler = symbol når ikonet er flerfarget; testet på
+  YouTube/Spotify/Chrome/Gmail/Maps/WhatsApp/Netflix). Brukeren kan skjule apper i Innstillinger → Apper.
+  v3.2: kart uten nett (`OfflineMap.kt`, MapLibre 11.8.0, PMTiles fra Protomaps, mørk stil, fonter i assets/fonts)
   – fila lages av `.github/workflows/kart.yml` (release-tag «kart», rogaland.pmtiles) og lastes ned i Innstillinger.
   Stilen er testet med ekte data i MapLibre GL JS (ser bra ut), men ikke på enheten. App-ikoner i mørkt tema (`Icons.kt`),
   T'OS-ikonet er nå hvitt/grått på svart. v3.1: sikkerhetslåsen (punkt 43) er fjernet etter brukerens ønske – ikke legg den inn igjen.
