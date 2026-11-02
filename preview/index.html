@@ -215,6 +215,10 @@ svg.i { fill: currentColor; display: block; }
 .hiddennote { margin-top: 12px; font-size: 12px; color: var(--muted); }
 
 /* Android-aktig «toast» */
+.navipop { position: absolute; top: 24px; right: 24px; z-index: 6; display: flex; align-items: center; gap: 12px; background: rgba(28,28,31,.94);
+  border: 1px solid var(--line); border-radius: 26px; padding: 12px 22px 12px 14px; box-shadow: 0 8px 24px rgba(0,0,0,.5); transition: opacity .6s; }
+.navipop b { display: block; font-size: 17px; font-weight: 400; } .navipop span { color: var(--muted); font-size: 13px; }
+.navipop.fade { opacity: 0; }
 .toast {
   position: absolute; left: 50%; bottom: 40px; transform: translateX(-50%);
   background: #2c2c30; color: var(--text); font-size: 15px; padding: 12px 20px; border-radius: 22px;
@@ -430,6 +434,7 @@ svg.i { fill: currentColor; display: block; }
       <div class="qrow"><div class="pill tap" data-say="Åpner Wi-Fi">Wi-Fi</div><div class="pill tap" data-go="bt">Bluetooth</div><div class="pill tap" id="qnight">Auto lys</div><div class="pill tap" data-say="Åpner ryggekamera">Kamera</div><div class="pill tap" data-go="car">Bil og tur</div><div class="pill tap" data-go="settings">Innstillinger</div></div>
     </div></div>
 
+    <div class="navipop tap" id="navipop" hidden><div class="appicon" style="width:38px;height:38px;font-size:16px">W</div><div><b>Åpne heller Waze</b><span>Trykk her</span></div></div>
     <div class="toast" id="toast"></div>
   </div>
   <div class="side">
@@ -612,7 +617,14 @@ svg.i { fill: currentColor; display: block; }
     g.fillStyle = '#F5F5F7'; g.beginPath(); g.arc(cx, cy, 4.5, 0, 7); g.fill();
     g.strokeStyle = '#111113'; g.lineWidth = 1.5; g.beginPath(); g.arc(cx, cy, 4.5, 0, 7); g.stroke();
   }
-  $('map').onclick = () => toast('Åpner Google Maps / Waze i delt skjerm');
+  let naviT;
+  function openNavi() {
+    toast('Åpner Google Maps');
+    const p = $('navipop'); p.hidden = false; p.classList.remove('fade'); clearTimeout(naviT);
+    naviT = setTimeout(() => { p.classList.add('fade'); naviT = setTimeout(() => { p.hidden = true; }, 600); }, 5000);
+  }
+  $('navipop').onclick = () => { $('navipop').hidden = true; clearTimeout(naviT); toast('Åpner Waze i stedet'); };
+  $('map').onclick = openNavi;
 
   /* ---------- Knapper ---------- */
   let tt;
@@ -710,7 +722,7 @@ svg.i { fill: currentColor; display: block; }
   function perform(a) {
     ({ HOME: () => go('dash'), BT: () => go('bt'), APPS: () => go('apps'),
        BACK: () => go(screen.dataset.view === 'dash' ? 'dash' : 'dash'),
-       NAVI: () => toast('Åpner Google Maps / Waze i delt skjerm'), MUSIC: () => toast('Åpner Spotify'),
+       NAVI: openNavi, MUSIC: () => toast('Åpner Spotify'),
        RADIO: () => toast('Åpner radio-appen'), PHONE: () => toast('Åpner Bluetooth-telefon'),
        CARPLAY: () => toast('Åpner CarPlay'), RADIO_PAGE: () => go('radio'), PLAY_PAUSE: playPause, NEXT_TRACK: nextSong,
        CAR: () => go('car'), QUICK: () => { go('dash'); $('quick').classList.add('show'); },

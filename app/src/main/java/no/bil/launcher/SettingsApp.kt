@@ -336,6 +336,13 @@ private fun MapSettings() {
     PrefField("Hjem-adresse", "addr_home", "Gate og sted")
     PrefField("Jobb-adresse", "addr_work", "Gate og sted")
     ChoiceRow("Kartapp", "nav_app", listOf("com.google.android.apps.maps" to "Google Maps", "com.waze" to "Waze"), "com.google.android.apps.maps")
+    ToggleRow("Tilby den andre kartappen", "navi_popup", true, "Popup øverst til høyre i 5 sekunder: «Åpne heller Waze»")
+    if (Prefs.bool("navi_popup", true) && !NaviPopup.possible(LocalContext.current)) {
+        val ctx = LocalContext.current
+        SettingRow("Popupen trenger tillatelse", "Slå på knappestyring, eller gi T'OS lov til å vises over andre apper", onClick = {
+            ctx.open(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:${ctx.packageName}")))
+        }) { Chevron() }
+    }
     ToggleRow("Kartet følger kjøreretningen", "map_rotate", true)
     ToggleRow("Kartet zoomer ut i høy fart", "map_zoom_speed", true)
     ToggleRow("Vis fartsgrense", "speed_limit", true, "Fra OpenStreetMap. Kan mangle eller være feil – skiltene gjelder.")

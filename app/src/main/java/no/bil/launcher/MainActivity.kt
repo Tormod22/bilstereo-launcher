@@ -471,15 +471,20 @@ private fun MapChip(icon: ImageVector, label: String, onClick: () -> Unit) {
     }
 }
 
+/** Åpner kartappen (Google Maps som standard) og viser «Åpne heller Waze»-popupen i 5 sekunder. */
 fun openMaps(context: Context) {
+    val maps = "com.google.android.apps.maps"; val waze = "com.waze"
     val tile = Tiles.byPrefix("Nav")
-    val chosen = Prefs.str("nav_app").takeIf { it.isNotBlank() && AppRepository.isInstalled(context, it) }
+    val chosen = Prefs.str("nav_app", maps).takeIf { it.isNotBlank() && AppRepository.isInstalled(context, it) }
     val pkg = chosen ?: tile.candidates.firstOrNull { AppRepository.isInstalled(context, it) }
     val intent = pkg?.let { context.packageManager.getLaunchIntentForPackage(it) }
         ?: Intent(Intent.ACTION_VIEW, android.net.Uri.parse("geo:0,0"))
     // LAUNCH_ADJACENT = delt skjerm der enheten støtter det, ellers fullskjerm
     intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_LAUNCH_ADJACENT)
-    runCatching { context.startActivity(intent) }
+    if (runCatching { context.startActivity(intent) }.isFailure) return
+    // Tilby den andre kartappen
+    val other = if (pkg == waze) maps else waze
+    if (AppRepository.isInstalled(context, other)) NaviPopup.show(context, if (other == waze) "Waze" else "Google Maps", other)
 }
 
 /* ---------- 3. Én rad: musikk, telefon (valgfri app), apper ---------- */

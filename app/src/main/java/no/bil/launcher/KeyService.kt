@@ -56,6 +56,7 @@ class KeyService : AccessibilityService() {
     }
 
     override fun onServiceConnected() {
+        instance = this
         val f = IntentFilter().apply {
             addAction(Intent.ACTION_SCREEN_ON); addAction(Intent.ACTION_SCREEN_OFF)
             addAction(UsbManager.ACTION_USB_DEVICE_ATTACHED); addAction(BluetoothDevice.ACTION_ACL_CONNECTED)
@@ -64,6 +65,8 @@ class KeyService : AccessibilityService() {
     }
 
     override fun onDestroy() {
+        if (instance === this) instance = null
+        NaviPopup.hide()
         runCatching { unregisterReceiver(receiver) }
         super.onDestroy()
     }
@@ -112,6 +115,10 @@ class KeyService : AccessibilityService() {
     private val ignored = setOf("android", "com.android.systemui")
 
     companion object {
+        /** Tjenesten når den kjører – brukes til å vise popup over andre apper (uten egen tillatelse). */
+        var instance: KeyService? = null
+            private set
+
         /** Kort trykk = handling ved slipp. Langt trykk (0,6 s) = egen handling, utføres mens knappen holdes. */
         fun handlePress(c: Context, key: PanelKey, e: KeyEvent, downAt: MutableMap<Int, Long>, longDone: MutableSet<Int>) {
             val code = e.keyCode
