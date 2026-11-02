@@ -53,7 +53,8 @@ fun gpsFlow(context: Context): Flow<Gps> = callbackFlow {
     awaitClose { lm.removeUpdates(listener) }
 }
 
-/* ---------- Kart: mørke fliser fra CARTO (OpenStreetMap-data), ingen nøkkel ---------- */
+/* ---------- Kart: mørkegrå fliser fra Esri (World Dark Gray Base), ingen nøkkel ----------
+   CARTO krever API-nøkkel nå (viser «API KEY REQUIRED»), derfor byttet. */
 
 object MapTiles {
     private const val TILE = 256
@@ -68,7 +69,7 @@ object MapTiles {
                 val latR = Math.toRadians(lat)
                 val yf = (1.0 - ln(tan(latR) + 1 / Math.cos(latR)) / PI) / 2.0 * n
                 val cx = xf.toInt(); val cy = yf.toInt()
-                val x0 = cx - cols / 2 + 1; val y0 = cy - rows / 2 + 1   // posisjon nær midten
+                val x0 = cx - cols / 2; val y0 = cy - rows / 2   // minst én hel flis rundt posisjonen
                 val out = Bitmap.createBitmap(TILE * cols, TILE * rows, Bitmap.Config.ARGB_8888)
                 val canvas = Canvas(out)
                 coroutineScope {
@@ -89,8 +90,7 @@ object MapTiles {
     private fun fetch(z: Int, x: Int, y: Int): Bitmap? {
         val key = "$z/$x/$y"
         cache[key]?.let { return it }
-        val sub = listOf("a", "b", "c", "d")[(x + y) % 4]
-        val url = URL("https://$sub.basemaps.cartocdn.com/dark_nolabels/$z/$x/$y.png")
+        val url = URL("https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/$z/$y/$x")
         val conn = url.openConnection() as HttpURLConnection
         conn.setRequestProperty("User-Agent", "BilstereoLauncher/1.0")
         conn.connectTimeout = 5000; conn.readTimeout = 5000

@@ -17,9 +17,10 @@ Snakk norsk med brukeren. Han er ikke utvikler – forklar enkelt, ikke bruk fag
 
 ## Nåværende tilstand (v2.0)
 - `MainActivity.kt`: Compose-UI med de tre tingene + app-skuff + oppdateringsknapp.
-- `Data.kt`: GPS-fart/posisjon (LocationManager), ekte kartfliser fra CARTO dark_nolabels (gratis, ingen nøkkel), mediaknapper via AudioManager.dispatchMediaKeyEvent.
+- `Data.kt`: GPS-fart/posisjon (LocationManager), ekte kartfliser fra Esri World Dark Gray Base (gratis, ingen nøkkel; CARTO krever nøkkel nå), sentrert på posisjonen og dempet med MapDim, mediaknapper via AudioManager.dispatchMediaKeyEvent.
 - `Updater.kt`: sjekker `https://github.com/Tormod22/bilstereo-launcher/releases/download/latest/version.json`, laster ned `bilstereo.apk` og starter installasjon via FileProvider. Repoet må være OFFENTLIG for at dette virker.
 - `.github/workflows/build.yml`: bygger debug-APK på push til main og publiserer som release med tag `latest` (bilstereo.apk + version.json). Versjon hentes fra `versionCode`/`versionName` i `app/build.gradle.kts` – bump dem ved hver ny versjon.
+- `preview/index.html`: nettleserkopi av startskjermen for å teste utseendet (samme farger/mål/kart). Holdes i takt med `MainActivity.kt`. Publiseres til GitHub Pages av `.github/workflows/preview.yml`.
 - Bilbilde: legges i `app/src/main/res/drawable/car_png.png` – koden finner den via `getIdentifier("car_png")`. Et bilde er generert i Canva (svart Avensis forfra på svart bakgrunn): https://www.canva.com/M/MAHZyi7AvB4 – brukeren må laste det ned selv og legge det inn.
 
 ## Status / gjenstår

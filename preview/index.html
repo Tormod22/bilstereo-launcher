@@ -1,0 +1,452 @@
+<!doctype html>
+<html lang="nb">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#000000">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>Bilstereo forhåndsvisning</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500&display=swap">
+<style>
+/* Speiler MainActivity.kt: samme farger, mål (dp = px på 1024×600) og oppsett.
+   Endrer du noe i appen, endre det samme her. */
+:root {
+  --bg: #000000;
+  --panel: #111113;
+  --card: #1C1C1F;
+  --line: #2A2A2E;
+  --text: #F5F5F7;
+  --muted: #86868B;
+  --radius: 28px;
+  --gap: 14px;
+  --font: "Roboto", system-ui, -apple-system, "Segoe UI", sans-serif;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { height: 100%; margin: 0; }
+body {
+  background: var(--bg); color: var(--text); font-family: var(--font);
+  display: flex; flex-direction: column; overflow: hidden;
+  -webkit-tap-highlight-color: transparent; user-select: none;
+}
+
+/* ---------- Testpanel (finnes ikke i appen) ---------- */
+.tools {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px;
+  padding: 8px max(16px, env(safe-area-inset-right, 0px)) 8px max(16px, env(safe-area-inset-left, 0px));
+  padding-top: max(8px, env(safe-area-inset-top, 0px));
+  background: #0A0A0B; border-bottom: 1px solid var(--line);
+  font-size: 13px; color: var(--muted);
+}
+.tools b { color: var(--text); font-weight: 500; margin-right: 4px; }
+.tools label { display: inline-flex; align-items: center; gap: 6px; }
+.tools select, .tools button, .tools .file {
+  font: inherit; color: var(--text); background: var(--card); border: 1px solid var(--line);
+  border-radius: 8px; padding: 5px 10px; cursor: pointer;
+}
+.tools input[type=range] { width: 120px; accent-color: #F5F5F7; }
+.tools .file input { display: none; }
+.tools button:focus-visible, .tools select:focus-visible { outline: 2px solid var(--text); outline-offset: 2px; }
+.tools .num { color: var(--text); font-variant-numeric: tabular-nums; min-width: 3ch; display: inline-block; text-align: right; }
+body.hide-tools .tools { display: none; }
+.showtools {
+  position: fixed; top: calc(6px + env(safe-area-inset-top, 0px)); right: calc(6px + env(safe-area-inset-right, 0px));
+  z-index: 20; display: none; font: 12px var(--font); color: var(--muted);
+  background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 4px 8px; opacity: .6;
+}
+body.hide-tools .showtools { display: block; }
+
+/* ---------- Skjermen (skaleres til vinduet) ---------- */
+.viewport { flex: 1; position: relative; min-height: 0; }
+.screen {
+  position: absolute; left: 50%; top: 50%; transform-origin: 0 0;
+  width: 1024px; height: 600px; background: var(--bg); padding: var(--gap);
+  outline: 1px solid #1a1a1c;
+}
+.rotate {
+  display: none; position: absolute; inset: 0; align-items: center; justify-content: center;
+  text-align: center; color: var(--muted); font-size: 15px; padding: 24px;
+}
+@media (orientation: portrait) and (max-width: 700px) { .rotate { display: flex; } .screen { opacity: .15; } }
+
+.dash { display: flex; gap: var(--gap); height: 100%; }
+.panel { background: var(--panel); border-radius: var(--radius); overflow: hidden; }
+.tap { cursor: pointer; }
+.tap:active { filter: brightness(1.25); }
+svg.i { fill: currentColor; display: block; }
+
+/* 1. Bilkort */
+.car { flex: 1; display: flex; flex-direction: column; padding: 28px; min-width: 0; }
+.car-top { display: flex; align-items: flex-start; }
+.clock { font-size: 40px; font-weight: 500; line-height: 1.15; }
+.date, .model { font-size: 15px; color: var(--muted); }
+.car-top > div:first-child { flex: 1; }
+.stage { flex: 1; position: relative; margin: 12px 0; display: flex; align-items: center; justify-content: center; min-height: 0; }
+.stage::before {
+  content: ""; position: absolute; left: 5%; right: 5%; bottom: 0; height: 50%;
+  border-radius: 9999px; background: radial-gradient(closest-side, #26262A, var(--panel));
+}
+.stage img { position: relative; width: 100%; height: 100%; object-fit: contain; }
+.stage svg { position: relative; width: 55%; height: 55%; color: var(--line); }
+.speed-row { display: flex; align-items: flex-end; gap: 10px; }
+.speed { font-size: 76px; font-weight: 500; line-height: 76px; font-variant-numeric: tabular-nums; }
+.unit, .gps { color: var(--muted); padding-bottom: 14px; }
+.unit { font-size: 18px; }
+.gps { font-size: 13px; margin-left: auto; }
+.speedline { height: 3px; border-radius: 2px; background: var(--line); margin-top: 0; overflow: hidden; }
+.speedline > div { height: 100%; width: 0; background: var(--text); transition: width .6s; }
+
+/* Høyre kolonne */
+.right { flex: 1; display: flex; flex-direction: column; gap: var(--gap); min-width: 0; }
+
+/* 2. Kart */
+.map { flex: 1; position: relative; }
+.map canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+.map .wait { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: var(--muted); font-size: 15px; text-align: center; padding: 20px; }
+.navchip {
+  position: absolute; left: 16px; bottom: 16px; display: flex; align-items: center; gap: 10px;
+  background: rgba(28, 28, 31, .92); border-radius: 18px; padding: 12px 18px; font-size: 17px; font-weight: 500;
+}
+.attrib { position: absolute; right: 10px; bottom: 6px; font-size: 9px; color: #55555a; }
+
+/* 3. Raden nederst */
+.actions { height: 96px; display: flex; gap: var(--gap); }
+.music { flex: 1.6; display: flex; align-items: center; padding: 0 20px; gap: 4px; }
+.music .app { width: 52px; height: 52px; border-radius: 14px; background: var(--card); display: flex; align-items: center; justify-content: center; margin-right: auto; }
+.round { border-radius: 50%; display: flex; align-items: center; justify-content: center; }
+.round.s { width: 44px; height: 44px; }
+.round.l { width: 56px; height: 56px; border: 1.5px solid var(--text); }
+.tile { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; }
+.tile span { color: var(--muted); font-size: 14px; }
+
+/* App-skuff */
+.drawer { height: 100%; display: none; flex-direction: column; padding: 24px; }
+.screen.drawer-open .dash { display: none; }
+.screen.drawer-open .drawer { display: flex; }
+.drawer-head { display: flex; align-items: center; gap: 12px; padding-bottom: 16px; }
+.drawer-head h2 { flex: 1; margin: 0; font-size: 28px; font-weight: 500; }
+.upd { height: 48px; border-radius: 24px; background: var(--card); display: flex; align-items: center; gap: 8px; padding: 0 18px; font-size: 14px; }
+.upd.avail { background: var(--text); color: var(--bg); }
+.close { width: 48px; height: 48px; }
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 12px; overflow-y: auto; align-content: start; }
+.appbox { background: var(--card); border-radius: 18px; padding: 14px; display: flex; flex-direction: column; align-items: center; gap: 8px; }
+.appicon { width: 52px; height: 52px; border-radius: 14px; display: flex; align-items: center; justify-content: center; font-size: 20px; font-weight: 500; background: #2c2c30; color: var(--text); }
+.appbox span { font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+.hiddennote { margin-top: 12px; font-size: 12px; color: var(--muted); }
+
+/* Android-aktig «toast» */
+.toast {
+  position: absolute; left: 50%; bottom: 40px; transform: translateX(-50%);
+  background: #2c2c30; color: var(--text); font-size: 15px; padding: 12px 20px; border-radius: 22px;
+  opacity: 0; transition: opacity .25s; pointer-events: none; white-space: nowrap; max-width: 90%;
+  overflow: hidden; text-overflow: ellipsis;
+}
+.toast.show { opacity: 1; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body>
+
+<div class="tools" id="tools">
+  <b>Test</b>
+  <label for="res">Skjerm
+    <select id="res">
+      <option value="1024x600">1024 × 600 (vanlig 7")</option>
+      <option value="1280x720">1280 × 720</option>
+      <option value="1280x800">1280 × 800</option>
+    </select>
+  </label>
+  <label for="gpsmode">GPS
+    <select id="gpsmode">
+      <option value="sim">Simulert kjøring</option>
+      <option value="real">Ekte (din posisjon)</option>
+      <option value="none">Ingen GPS</option>
+    </select>
+  </label>
+  <label for="simspeed" id="speedwrap">Fart <input id="simspeed" type="range" min="0" max="160" value="60"><span class="num" id="simspeedv">60</span></label>
+  <label class="file" for="carfile">Velg bilbilde…<input id="carfile" type="file" accept="image/*"></label>
+  <button id="fs" type="button">Fullskjerm</button>
+  <button id="hide" type="button">Skjul</button>
+</div>
+<button class="showtools" id="showtools" type="button">Test</button>
+
+<div class="viewport" id="viewport">
+  <div class="screen" id="screen">
+    <div class="dash">
+      <!-- 1. Bilen -->
+      <section class="car panel">
+        <div class="car-top">
+          <div><div class="clock" id="clock">--:--</div><div class="date" id="date"></div></div>
+          <div class="model">Avensis</div>
+        </div>
+        <div class="stage" id="stage">
+          <svg class="i" viewBox="0 0 24 24" id="caricon"><path d="M18.92 6.01C18.72 5.42 18.16 5 17.5 5h-11c-.66 0-1.21.42-1.42 1.01L3 12v8c0 .55.45 1 1 1h1c.55 0 1-.45 1-1v-1h12v1c0 .55.45 1 1 1h1c.55 0 1-.45 1-1v-8l-2.08-5.99zM6.5 16c-.83 0-1.5-.67-1.5-1.5S5.67 13 6.5 13s1.5.67 1.5 1.5S7.33 16 6.5 16zm11 0c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5zM5 11l1.5-4.5h11L19 11H5z"/></svg>
+        </div>
+        <div class="speed-row">
+          <div class="speed" id="speed">0</div><div class="unit">km/t</div><div class="gps" id="gpsstate">Søker GPS</div>
+        </div>
+        <div class="speedline"><div id="speedbar"></div></div>
+      </section>
+
+      <div class="right">
+        <!-- 2. Kart -->
+        <section class="map panel tap" id="map">
+          <canvas id="mapc"></canvas>
+          <div class="wait" id="mapwait">Venter på GPS</div>
+          <div class="navchip">
+            <svg class="i" viewBox="0 0 24 24" width="22" height="22"><path d="M12 2L4.5 20.29l.71.71L12 18l6.79 3 .71-.71z"/></svg>
+            Navigasjon
+          </div>
+          <div class="attrib">© Esri</div>
+        </section>
+
+        <!-- 3. Én rad -->
+        <div class="actions">
+          <div class="music panel">
+            <div class="app tap" data-say="Åpner Spotify (eller YouTube Music / innebygd spiller)">
+              <svg class="i" viewBox="0 0 24 24" width="28" height="28"><path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/></svg>
+            </div>
+            <div class="round s tap" data-say="Forrige sang">
+              <svg class="i" viewBox="0 0 24 24" width="26" height="26"><path d="M6 6h2v12H6zm3.5 6l8.5 6V6z"/></svg>
+            </div>
+            <div class="round l tap" id="play">
+              <svg class="i" viewBox="0 0 24 24" width="30" height="30"><path id="playpath" d="M8 5v14l11-7z"/></svg>
+            </div>
+            <div class="round s tap" data-say="Neste sang">
+              <svg class="i" viewBox="0 0 24 24" width="26" height="26"><path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z"/></svg>
+            </div>
+          </div>
+          <div class="tile panel tap" data-say="Åpner Bluetooth-telefon">
+            <svg class="i" viewBox="0 0 24 24" width="30" height="30"><path d="M6.62 10.79c1.44 2.83 3.76 5.14 6.59 6.59l2.2-2.2c.27-.27.67-.36 1.02-.24 1.12.37 2.33.57 3.57.57.55 0 1 .45 1 1V20c0 .55-.45 1-1 1-9.39 0-17-7.61-17-17 0-.55.45-1 1-1h3.5c.55 0 1 .45 1 1 0 1.25.2 2.45.57 3.57.11.35.03.74-.25 1.02l-2.2 2.2z"/></svg>
+            <span>Telefon</span>
+          </div>
+          <div class="tile panel tap" id="openapps">
+            <svg class="i" viewBox="0 0 24 24" width="30" height="30"><path d="M4 8h4V4H4v4zm6 12h4v-4h-4v4zm-6 0h4v-4H4v4zm0-6h4v-4H4v4zm6 0h4v-4h-4v4zm6-10v4h4V4h-4zm-6 4h4V4h-4v4zm6 6h4v-4h-4v4zm0 6h4v-4h-4v4z"/></svg>
+            <span>Apper</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- App-skuff -->
+    <section class="drawer panel">
+      <div class="drawer-head">
+        <h2>Apper</h2>
+        <div class="upd tap" id="upd">
+          <svg class="i" viewBox="0 0 24 24" width="20" height="20"><path d="M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/></svg>
+          <span id="updtext">Se etter oppdatering</span>
+        </div>
+        <div class="round close tap" id="closeapps">
+          <svg class="i" viewBox="0 0 24 24" width="26" height="26"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </div>
+      </div>
+      <div class="grid" id="grid"></div>
+      <div class="hiddennote">Eksempel-apper. På stereoen vises de som faktisk er installert. Kalkulator er skjult.</div>
+    </section>
+
+    <div class="toast" id="toast"></div>
+  </div>
+  <div class="rotate">Snu telefonen på tvers for å se startskjermen slik den blir på stereoen.</div>
+</div>
+
+<script>
+(() => {
+  const $ = id => document.getElementById(id);
+  const screen = $('screen'), viewport = $('viewport');
+  const store = {
+    get(k) { try { return localStorage.getItem(k); } catch (e) { return null; } },
+    set(k, v) { try { localStorage.setItem(k, v); } catch (e) {} },
+  };
+
+  /* ---------- Skalering til vinduet ---------- */
+  let W = 1024, H = 600;
+  function fit() {
+    screen.style.width = W + 'px'; screen.style.height = H + 'px';
+    const s = Math.min(viewport.clientWidth / W, viewport.clientHeight / H);
+    screen.style.transform = `scale(${s}) translate(-50%, -50%)`;
+    drawMap();
+  }
+  $('res').value = store.get('res') || '1024x600';
+  function setRes() { [W, H] = $('res').value.split('x').map(Number); store.set('res', $('res').value); fit(); }
+  $('res').onchange = setRes;
+  addEventListener('resize', fit);
+
+  /* ---------- Klokke ---------- */
+  function tick() {
+    const d = new Date();
+    $('clock').textContent = d.toLocaleTimeString('nb-NO', { hour: '2-digit', minute: '2-digit' });
+    const s = d.toLocaleDateString('nb-NO', { weekday: 'long', day: 'numeric', month: 'long' });
+    $('date').textContent = s.charAt(0).toUpperCase() + s.slice(1);
+  }
+  tick(); setInterval(tick, 1000);
+
+  /* ---------- Bilbilde: car_png.png ved siden av fila, i appen, eller valgt fil ---------- */
+  function showCar(src) {
+    const img = new Image();
+    img.onload = () => { $('stage').querySelectorAll('img,svg').forEach(e => e.remove()); $('stage').appendChild(img); };
+    img.src = src;
+  }
+  const saved = store.get('car');
+  if (saved) showCar(saved);
+  else ['car_png.png', '../app/src/main/res/drawable/car_png.png'].forEach(p => {
+    const t = new Image(); t.onload = () => showCar(p); t.src = p;
+  });
+  $('carfile').onchange = e => {
+    const f = e.target.files[0]; if (!f) return;
+    const r = new FileReader();
+    r.onload = () => { showCar(r.result); store.set('car', r.result); };
+    r.readAsDataURL(f);
+  };
+
+  /* ---------- GPS ---------- */
+  let gps = null, watch = null, simTimer = null;
+  let sim = { lat: 59.9139, lon: 10.7522, bearing: 40 };   // Oslo sentrum
+  function setGps(g) {
+    gps = g;
+    $('speed').textContent = g ? g.speed : 0;
+    $('speedbar').style.width = Math.min(1, (g ? g.speed : 0) / 160) * 100 + '%';
+    $('gpsstate').textContent = g ? 'GPS' : 'Søker GPS';
+    if (!g) { $('mapwait').textContent = 'Venter på GPS'; $('mapwait').hidden = false; }
+    loadMap();
+  }
+  function stopGps() {
+    if (watch !== null) navigator.geolocation.clearWatch(watch);
+    clearInterval(simTimer); watch = null; simTimer = null;
+  }
+  function startGps() {
+    stopGps();
+    const mode = $('gpsmode').value; store.set('gpsmode', mode);
+    $('speedwrap').style.display = mode === 'sim' ? '' : 'none';
+    setGps(null);
+    if (mode === 'sim') {
+      const step = () => {
+        const v = +$('simspeed').value, m = v / 3.6;          // meter per sekund
+        sim.bearing += (Math.random() - 0.5) * 6;
+        const r = sim.bearing * Math.PI / 180;
+        sim.lat += (m * Math.cos(r)) / 111320;
+        sim.lon += (m * Math.sin(r)) / (111320 * Math.cos(sim.lat * Math.PI / 180));
+        setGps({ speed: v, lat: sim.lat, lon: sim.lon });
+      };
+      step(); simTimer = setInterval(step, 1000);
+    } else if (mode === 'real') {
+      if (!navigator.geolocation) { toast('Nettleseren har ikke GPS'); return; }
+      watch = navigator.geolocation.watchPosition(
+        p => setGps({ speed: Math.round((p.coords.speed || 0) * 3.6), lat: p.coords.latitude, lon: p.coords.longitude }),
+        err => toast(err.code === 1 ? 'Posisjon ble ikke tillatt i nettleseren' : 'Fant ikke posisjon'),
+        { enableHighAccuracy: true, maximumAge: 1000 });
+    }
+  }
+  $('gpsmode').value = store.get('gpsmode') || 'sim';
+  $('gpsmode').onchange = startGps;
+  $('simspeed').oninput = () => { $('simspeedv').textContent = $('simspeed').value; };
+
+  /* ---------- Kart: samme fliser og utregning som Data.kt ---------- */
+  const TILE = 256, COLS = 4, ROWS = 3, ZOOM = 15;
+  const tileCache = new Map();
+  let mapImg = null, mapKey = null, tilesFailed = false;
+  function tile(z, x, y) {
+    const k = `${z}/${x}/${y}`;
+    if (tileCache.has(k)) return tileCache.get(k);
+    const p = new Promise(res => {
+      const im = new Image();
+      im.onload = () => res(im); im.onerror = () => res(null);
+      im.src = `https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/${z}/${y}/${x}`;
+    });
+    if (tileCache.size > 60) tileCache.clear();
+    tileCache.set(k, p); return p;
+  }
+  async function loadMap() {
+    if (!gps) return;
+    const key = `${Math.trunc(gps.lat * 200)},${Math.trunc(gps.lon * 200)}`;
+    if (key !== mapKey) {
+      mapKey = key;
+      const n = 2 ** ZOOM, xf = (gps.lon + 180) / 360 * n;
+      const lr = gps.lat * Math.PI / 180;
+      const yf = (1 - Math.log(Math.tan(lr) + 1 / Math.cos(lr)) / Math.PI) / 2 * n;
+      const x0 = Math.floor(xf) - COLS / 2, y0 = Math.floor(yf) - Math.floor(ROWS / 2);
+      const c = document.createElement('canvas'); c.width = TILE * COLS; c.height = TILE * ROWS;
+      const g = c.getContext('2d'); let ok = 0;
+      await Promise.all([...Array(ROWS * COLS).keys()].map(async i => {
+        const col = i % COLS, row = Math.floor(i / COLS);
+        const im = await tile(ZOOM, x0 + col, y0 + row);
+        if (im) { g.drawImage(im, col * TILE, row * TILE); ok++; }
+      }));
+      if (key !== mapKey) return;
+      tilesFailed = ok === 0;
+      mapImg = tilesFailed ? null : { c, x0, y0 };
+    }
+    if (mapImg) {
+      const n = 2 ** ZOOM, lr = gps.lat * Math.PI / 180;
+      mapImg.px = ((gps.lon + 180) / 360 * n - mapImg.x0) * TILE;
+      mapImg.py = ((1 - Math.log(Math.tan(lr) + 1 / Math.cos(lr)) / Math.PI) / 2 * n - mapImg.y0) * TILE;
+    }
+    $('mapwait').hidden = !!mapImg;
+    if (tilesFailed) $('mapwait').textContent = 'Fikk ikke lastet kartet (trenger internett)';
+    drawMap();
+  }
+  function drawMap() {
+    const cv = $('mapc'), box = $('map');
+    const w = box.clientWidth, h = box.clientHeight, dpr = Math.min(2, devicePixelRatio || 1);
+    cv.width = w * dpr; cv.height = h * dpr;
+    const g = cv.getContext('2d'); g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, w, h);
+    if (!mapImg) return;
+    // Samme som appen: bildet sentreres på posisjonen og skaleres så kortet alltid er fylt
+    const { c, px, py } = mapImg, bw = c.width, bh = c.height;
+    const s = Math.max(w / (2 * Math.max(1, Math.min(px, bw - px))), h / (2 * Math.max(1, Math.min(py, bh - py))));
+    g.filter = 'brightness(0.6)';   // samme demping som MapDim i appen
+    g.drawImage(c, w / 2 - px * s, h / 2 - py * s, bw * s, bh * s);
+    g.filter = 'none';
+    const cx = w / 2, cy = h / 2;
+    g.fillStyle = 'rgba(245,245,247,.18)'; g.beginPath(); g.arc(cx, cy, 14, 0, 7); g.fill();
+    g.fillStyle = '#F5F5F7'; g.beginPath(); g.arc(cx, cy, 4.5, 0, 7); g.fill();
+    g.strokeStyle = '#111113'; g.lineWidth = 1.5; g.beginPath(); g.arc(cx, cy, 4.5, 0, 7); g.stroke();
+  }
+  $('map').onclick = () => toast('Åpner Google Maps / Waze i delt skjerm');
+
+  /* ---------- Knapper ---------- */
+  let tt;
+  function toast(msg) {
+    const t = $('toast'); t.textContent = msg; t.classList.add('show');
+    clearTimeout(tt); tt = setTimeout(() => t.classList.remove('show'), 1800);
+  }
+  document.querySelectorAll('[data-say]').forEach(el => el.onclick = () => toast(el.dataset.say));
+  let playing = false;
+  $('play').onclick = () => {
+    playing = !playing;
+    $('playpath').setAttribute('d', playing ? 'M6 19h4V5H6v14zm8-14v14h4V5h-4z' : 'M8 5v14l11-7z');
+    toast(playing ? 'Spill' : 'Pause');
+  };
+  // NB: i appen er play-knappen alltid ▶ (den vet ikke om noe spiller). Her bytter den for å vise at trykket virker.
+
+  /* ---------- App-skuff ---------- */
+  const apps = ['Bluetooth', 'CarPlay (Zlink)', 'Chrome', 'Filbehandler', 'Google Maps', 'Innstillinger',
+    'Kalkulator', 'Musikk', 'Play Butikk', 'Radio', 'Spotify', 'Waze', 'YouTube Music']
+    .filter(a => !/kalkulator|calculator/i.test(a));
+  $('grid').innerHTML = apps.map(a =>
+    `<div class="appbox tap" data-app="${a}"><div class="appicon">${a[0]}</div><span>${a}</span></div>`).join('');
+  $('grid').onclick = e => { const b = e.target.closest('[data-app]'); if (b) toast('Åpner ' + b.dataset.app); };
+  $('openapps').onclick = () => screen.classList.add('drawer-open');
+  $('closeapps').onclick = () => screen.classList.remove('drawer-open');
+  addEventListener('keydown', e => { if (e.key === 'Escape') screen.classList.remove('drawer-open'); });
+  $('upd').onclick = () => {
+    $('updtext').textContent = 'Ser etter…';
+    setTimeout(() => { $('updtext').textContent = 'Siste versjon'; }, 900);
+  };
+
+  /* ---------- Testpanel ---------- */
+  $('hide').onclick = () => { document.body.classList.add('hide-tools'); fit(); };
+  $('showtools').onclick = () => { document.body.classList.remove('hide-tools'); fit(); };
+  $('fs').onclick = () => {
+    const el = document.documentElement;
+    (el.requestFullscreen || el.webkitRequestFullscreen || (() => Promise.reject())).call(el)
+      ?.catch?.(() => toast('Fullskjerm støttes ikke her'));
+  };
+  try { navigator.wakeLock?.request('screen').catch(() => {}); } catch (e) {}
+
+  setRes(); startGps();
+})();
+</script>
+</body>
+</html>

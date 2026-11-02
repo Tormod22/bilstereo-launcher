@@ -32,6 +32,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.ColorMatrix
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -40,6 +42,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.graphics.drawable.toBitmap
@@ -48,6 +52,7 @@ import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import kotlin.math.roundToInt
 
 /* ---------- Palett: svart, to gråtoner, hvit. Ingen farger. ---------- */
 private val Bg = Color(0xFF000000)
@@ -57,6 +62,7 @@ private val Line = Color(0xFF2A2A2E)
 private val TextPrimary = Color(0xFFF5F5F7)
 private val TextMuted = Color(0xFF86868B)
 private val Shape = RoundedCornerShape(28.dp)
+private val MapDim = ColorFilter.colorMatrix(ColorMatrix().apply { setToScale(0.6f, 0.6f, 0.6f, 1f) })
 
 class MainActivity : ComponentActivity() {
     private val askPermissions = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { }
@@ -174,9 +180,22 @@ fun MapCard(gps: Gps?, modifier: Modifier) {
     Box(modifier.clip(Shape).background(Panel).clickable { openMaps(context) }) {
         val m = map
         if (m != null) {
-            Image(m.asImageBitmap(), null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+            val img = remember(m) { m.asImageBitmap() }
             Canvas(Modifier.fillMaxSize()) {
-                val c = Offset(size.width * pos.first, size.height * pos.second)
+                // Sentrer kartet på posisjonen og skaler så kortet alltid er fylt
+                val bw = img.width.toFloat(); val bh = img.height.toFloat()
+                val x = bw * pos.first; val y = bh * pos.second
+                val s = maxOf(
+                    size.width / (2 * minOf(x, bw - x).coerceAtLeast(1f)),
+                    size.height / (2 * minOf(y, bh - y).coerceAtLeast(1f)),
+                )
+                drawImage(
+                    img,
+                    dstOffset = IntOffset((center.x - x * s).roundToInt(), (center.y - y * s).roundToInt()),
+                    dstSize = IntSize((bw * s).roundToInt(), (bh * s).roundToInt()),
+                    colorFilter = MapDim,   // litt mørkere, så kartet passer de mørke kortene
+                )
+                val c = center
                 drawCircle(TextPrimary.copy(alpha = 0.18f), 28f, c)
                 drawCircle(TextPrimary, 9f, c)
                 drawCircle(Panel, 9f, c, style = Stroke(3f))
