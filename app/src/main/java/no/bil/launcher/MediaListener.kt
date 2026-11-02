@@ -168,5 +168,16 @@ class MediaListener : NotificationListenerService() {
 
         fun enabled(c: Context): Boolean =
             Settings.Secure.getString(c.contentResolver, "enabled_notification_listeners")?.contains(c.packageName) == true
+
+        private fun sessionsOf(c: Context, pkg: String): List<MediaController> = runCatching {
+            (c.getSystemService(Context.MEDIA_SESSION_SERVICE) as MediaSessionManager)
+                .getActiveSessions(ComponentName(c, MediaListener::class.java)).filter { it.packageName == pkg }
+        }.getOrDefault(emptyList())
+
+        /** Stopp avspilling i en bestemt app (f.eks. radio-appen som startet av seg selv). */
+        fun stopSessionsOf(c: Context, pkg: String) = sessionsOf(c, pkg).forEach { runCatching { it.transportControls.pause(); it.transportControls.stop() } }
+
+        /** Start avspilling igjen i en bestemt app. */
+        fun playSessionOf(c: Context, pkg: String) = sessionsOf(c, pkg).firstOrNull()?.let { runCatching { it.transportControls.play() } }
     }
 }

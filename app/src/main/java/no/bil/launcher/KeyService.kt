@@ -30,7 +30,9 @@ class KeyService : AccessibilityService() {
     private var screenOffAt = 0L
     private val homePkgs by lazy {
         packageManager.queryIntentActivities(Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME), 0)
-            .map { it.activityInfo.packageName }.toSet()
+            .map { it.activityInfo.packageName }.toSet() -
+            // Ikke ekte startskjermer (Android-innstillinger brukes kort ved oppstart, oppsettsveivisere)
+            setOf("com.android.settings", "com.android.provision", "com.google.android.setupwizard", "com.android.car.settings")
     }
 
     private val receiver = object : BroadcastReceiver() {
@@ -96,15 +98,27 @@ class KeyService : AccessibilityService() {
         // Husk siste vanlige app (for «Åpne siste app ved oppstart»)
         if (pkg !in homePkgs && packageManager.getLaunchIntentForPackage(pkg) != null) Prefs.setQuiet("last_app", pkg)
 
+        val now = SystemClock.elapsedRealtime()
+
+        // Hold T'OS som startskjerm: dukker stereoens originale startskjerm opp (f.eks. etter «fjern alle faner»),
+        // vises T'OS i stedet. Trengs fordi stereoen ikke lar T'OS bli fast startskjerm.
+        if (pkg in homePkgs && Prefs.bool("keep_home", true) && Buttons.keyForPkg(this, pkg) == null) {
+            if (now - lastRedirect > 1500 && !Buttons.inCall(this)) { lastRedirect = now; Buttons.show(this, Screen.DASH) }
+            return
+        }
+
         val key = Buttons.keyForPkg(this, pkg) ?: return
         val action = Buttons.action(this, key)
-        val now = SystemClock.elapsedRealtime()
         if (action == Action.NONE || action == Action.BACK) return
         if (pkg in Buttons.targets(this, action)) return          // ville gått i ring
         if (Buttons.inCall(this)) return                          // ikke ta bort samtalebildet
         if (now - lastRedirect < 1500) return
         lastRedirect = now
+        // Det som spilte før knappen ble trykket (startes igjen hvis radioen tok over lyden)
+        val resume = NowPlaying.pkg?.takeIf { NowPlaying.playing && it != pkg }
         Buttons.perform(this, action)
+        // Stereoens radio-app rakk å starte radioen: skru den av igjen, så det ikke blir skurr
+        if ((key == PanelKey.RADIO || RadioGuard.looksLikeRadio(pkg)) && action != Action.RADIO) RadioGuard.silence(this, pkg, resume)
     }
 
     override fun onInterrupt() {}

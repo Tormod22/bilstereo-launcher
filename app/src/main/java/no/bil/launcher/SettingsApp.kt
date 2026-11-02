@@ -208,6 +208,7 @@ private fun AppsSettings() {
     SettingRow("Startskjerm", "Velg T'OS som startskjerm", onClick = {
         context.openFirst(Settings.ACTION_HOME_SETTINGS, Settings.ACTION_MANAGE_DEFAULT_APPS_SETTINGS, Settings.ACTION_SETTINGS)
     }) { Chevron() }
+    ToggleRow("Hold T'OS som startskjerm", "keep_home", true, "Viser T'OS i stedet hvis den originale startskjermen dukker opp (krever knappestyring)")
     Section("Hvilke apper T'OS bruker")
     AppChoiceRow("CarPlay-app (f.eks. Car link 2.0)", "carplay_pkg", "Car")
     AppChoiceRow("Radio-app", "radio_pkg", "Rad")

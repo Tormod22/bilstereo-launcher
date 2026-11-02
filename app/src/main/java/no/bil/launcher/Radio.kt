@@ -166,10 +166,57 @@ object HwRadio {
         send(byteArrayOf(0x0d, 0x08) + frame + byteArrayOf(sum))
     }
 
+    /** Skru av radioen (bare szchoiceway; andre stereoer stoppes via mediaøkt/lydfokus i [RadioGuard]). */
+    fun stopMcu() = send(byteArrayOf(0x01, 0x63))
+
     fun open(c: Context) {
         if (hasMcu(c)) send(byteArrayOf(0x01, 0x01))
         NetRadio.stop()
         AppRepository.launchTile(c, Tiles.byPrefix("Rad"))
         sessionControls()?.play()
+    }
+}
+
+/* ======================= Stoppe radioen som startet av seg selv ======================= */
+
+/**
+ * Når RADIO-knappen åpner stereoens radio-app og T'OS bytter til noe annet, har radioen allerede startet.
+ * Uten dette blir det bare skurr. T'OS stopper den på alle måtene som finnes:
+ *  1. ber radio-appens mediaøkt om pause/stopp,
+ *  2. skrur av radioen via MCU på szchoiceway-stereoer,
+ *  3. tar lydfokus et øyeblikk (godt oppdragne apper slutter da å spille),
+ *  4. lukker radio-appen når den er i bakgrunnen,
+ * og starter det som spilte før (f.eks. Spotify) igjen.
+ */
+object RadioGuard {
+    private val handler = android.os.Handler(android.os.Looper.getMainLooper())
+
+    fun looksLikeRadio(pkg: String): Boolean {
+        val chosen = Prefs.str("radio_pkg")
+        if (chosen.isNotBlank() && pkg == chosen) return true
+        val p = pkg.lowercase()
+        return "radio" in p || "fmradio" in p || "tuner" in p || p.endsWith(".fm") || ".fm." in p
+    }
+
+    fun silence(c: Context, pkg: String, resumePkg: String?) {
+        val app = c.applicationContext
+        val am = app.getSystemService(Context.AUDIO_SERVICE) as android.media.AudioManager
+        val req = android.media.AudioFocusRequest.Builder(android.media.AudioManager.AUDIOFOCUS_GAIN)
+            .setAudioAttributes(android.media.AudioAttributes.Builder().setUsage(android.media.AudioAttributes.USAGE_MEDIA).build())
+            .build()
+        fun hush() {
+            MediaListener.stopSessionsOf(app, pkg)
+            if (HwRadio.hasMcu(app)) HwRadio.stopMcu()
+        }
+        hush()
+        runCatching { am.requestAudioFocus(req) }
+        // Radio-appen kan bruke litt tid på å starte – gjenta etter at den er ferdig
+        handler.postDelayed({ hush() }, 600)
+        handler.postDelayed({
+            hush()
+            runCatching { am.abandonAudioFocusRequest(req) }
+            runCatching { (app.getSystemService(Context.ACTIVITY_SERVICE) as android.app.ActivityManager).killBackgroundProcesses(pkg) }
+            if (resumePkg != null && !NetRadio.active) MediaListener.playSessionOf(app, resumePkg)
+        }, 1500)
     }
 }
