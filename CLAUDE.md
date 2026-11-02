@@ -1,10 +1,12 @@
-# Bilstereo-launcher – kontekst for Claude Code
+# T'OS (bilstereo-launcher) – kontekst for Claude Code
 
 Dette er en egen startskjerm (Android-launcher) for brukerens bilstereo. Les denne fila før du gjør noe.
+
+**Navn: appen heter «T'OS»** (bestemt av brukeren). Bruk det navnet overalt brukeren ser det. Visningsnavnet ligger i `res/values/strings.xml` (`app_name`). Pakkenavnet `no.bil.launcher`, reponavnet og `bilstereo.apk` beholdes med vilje: endres de, kan ikke nye versjoner installeres oppå den gamle, og oppdateringsknappen slutter å virke.
 Snakk norsk med brukeren. Han er ikke utvikler – forklar enkelt, ikke bruk fagsjargong unødig.
 
 ## Enheten
-- LEHX L6 Pro, 7" Android-bilstereo (4 GB RAM / 64 GB, åttekjerners, CarPlay/Android Auto). Bestilt fra AliExpress, ikke levert ennå.
+- LEHX L6 Pro, 7" Android-bilstereo (4 GB RAM / 64 GB, åttekjerners, CarPlay/Android Auto). Levert og i bruk. T'OS er installert via Google Drive.
 - Kjører sannsynligvis Android 12–13 på Unisoc (UIS7862/UIS8581) eller Allwinner. Pakkenavn for innebygd radio/BT-telefon/CarPlay er UKJENT inntil enheten kommer – se `Tiles.defaults` i `Apps.kt`, der ligger gjetninger. Be brukeren kjøre `adb shell pm list packages` når den kommer, og juster.
 - Bilen: svart Toyota Avensis.
 
@@ -15,7 +17,7 @@ Snakk norsk med brukeren. Han er ikke utvikler – forklar enkelt, ikke bruk fag
 - Løsningen han godkjente: **tre ting** – (1) bilkort med klokke, stort bilbilde og fart som stort tall, (2) ekte kart, (3) én rad nederst: musikk/telefon/apper. Ingen kalender, ingen vær.
 - Kalkulator skal være skjult i app-skuffen (`HiddenApps` i `Apps.kt`).
 
-## Nåværende tilstand (v2.0)
+## Nåværende tilstand (v2.2)
 - `MainActivity.kt`: Compose-UI med de tre tingene + app-skuff + oppdateringsknapp.
 - `Data.kt`: GPS-fart/posisjon (LocationManager), ekte kartfliser fra Esri World Dark Gray Base (gratis, ingen nøkkel; CARTO krever nøkkel nå), sentrert på posisjonen og dempet med MapDim, mediaknapper via AudioManager.dispatchMediaKeyEvent.
 - `Updater.kt`: sjekker `https://github.com/Tormod22/bilstereo-launcher/releases/download/latest/version.json`, laster ned `bilstereo.apk` og starter installasjon via FileProvider. Repoet må være OFFENTLIG for at dette virker.

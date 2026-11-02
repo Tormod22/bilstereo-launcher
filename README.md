@@ -1,4 +1,6 @@
-# Bilstereo-launcher (v2.0)
+# T'OS (v2.2)
+
+T'OS er navnet på appen. Repoet heter fortsatt `bilstereo-launcher`.
 
 Egen startskjerm for Android-bilstereoer (testet-mål: LEHX L6 Pro, 7", 4+64).
 
@@ -18,7 +20,7 @@ i `app/src/main/res/drawable/car_png.png`. Da brukes det automatisk. Uten bilde 
 
 ## Oppdatere fra stereoen
 Åpne «Apper» → knappen øverst til høyre viser «Oppdater til x.y» når et nytt bygg ligger på GitHub.
-Trykk, vent på nedlasting, godta installasjon. Første gang må du tillate «installer ukjente apper» for Bilstereo.
+Trykk, vent på nedlasting, godta installasjon. Første gang må du tillate «installer ukjente apper» for T'OS.
 
 ## Bygge
 1. Åpne mappa i Android Studio (Ladybug eller nyere)
@@ -32,7 +34,7 @@ eller via ADB (slå på Utvikleralternativer → USB-/Wi-Fi-feilsøking først):
     adb connect <stereo-ip>:5555
     adb install -r app-debug.apk
 
-Trykk deretter Hjem-knappen, velg «Bilstereo» og «Alltid».
+Trykk deretter Hjem-knappen, velg «T'OS» og «Alltid». Spør den ikke, åpne T'OS → Apper → «Velg startskjerm».
 
 ## Tilpasse
 - Fliser og hvilke apper de åpner: `Apps.kt` → `Tiles.defaults`
