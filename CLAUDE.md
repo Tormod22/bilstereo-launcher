@@ -34,7 +34,7 @@ Snakk norsk med brukeren. Han er ikke utvikler – forklar enkelt, ikke bruk fag
 2. ✅ Repoet `Tormod22/bilstereo-launcher` finnes. Koden må ligge på `main` for at GitHub Actions skal bygge og publisere «latest»-release. Repoet må være offentlig for at oppdateringsknappen skal virke.
 3. Legg inn `car_png.png`.
 4. Når enheten kommer: verifiser pakkenavn, test GPS/kart, test «åpne Maps i delt skjerm» (FLAG_ACTIVITY_LAUNCH_ADJACENT – kan falle tilbake til fullskjerm).
-5. Mulige senere ønsker: sangtittel/cover i musikkortet (krever NotificationListener), ryggekamera-knapp.
+5. Idéliste med 50 funksjoner: `docs/IDEER.md` (★ = foreslått først). Tidligere ønsker: sangtittel/cover i musikkortet (krever NotificationListener), ryggekamera-knapp.
 
 ## Startskjerm-valget
 - Stereoen spurte IKKE om startskjerm ved Hjem-trykk (original launcher låst/valg skjult). v2.1 har knappen «Velg startskjerm» i app-skuffen (ACTION_HOME_SETTINGS → standardapper → innstillinger). Siste utvei: ADB `cmd package set-home-activity no.bil.launcher/.MainActivity`. Ikke deaktiver original launcher uten at vår er bekreftet virkende.
