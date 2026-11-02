@@ -326,6 +326,35 @@ fun UpdateButton() {
     }
 }
 
+/* ======================= Velg startskjerm ======================= */
+
+/** Mange bilstereoer skjuler valget av startskjerm. Denne åpner det direkte, eller nærmeste innstilling. */
+private fun openHomeSettings(context: Context) {
+    val tries = listOf(
+        Intent(android.provider.Settings.ACTION_HOME_SETTINGS),
+        Intent(android.provider.Settings.ACTION_MANAGE_DEFAULT_APPS_SETTINGS),
+        Intent(android.provider.Settings.ACTION_SETTINGS),
+    )
+    for (i in tries) {
+        if (runCatching { context.startActivity(i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }.isSuccess) return
+    }
+}
+
+@Composable
+fun HomeButton() {
+    val context = LocalContext.current
+    Row(
+        Modifier.height(48.dp).clip(RoundedCornerShape(24.dp)).background(Card)
+            .clickable { openHomeSettings(context) }
+            .padding(horizontal = 18.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Icon(Icons.Default.Home, null, tint = TextPrimary, modifier = Modifier.size(20.dp))
+        Text("Velg startskjerm", color = TextPrimary, fontSize = 14.sp)
+    }
+}
+
 /* ======================= App-skuff ======================= */
 
 @Composable
@@ -336,6 +365,8 @@ fun AppDrawer(onClose: () -> Unit) {
     Column(Modifier.fillMaxSize().clip(Shape).background(Panel).padding(24.dp)) {
         Row(Modifier.fillMaxWidth().padding(bottom = 16.dp), verticalAlignment = Alignment.CenterVertically) {
             Text("Apper", color = TextPrimary, fontSize = 28.sp, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f))
+            HomeButton()
+            Spacer(Modifier.width(12.dp))
             UpdateButton()
             Spacer(Modifier.width(12.dp))
             RoundIcon(Icons.Default.Close, 48.dp) { onClose() }

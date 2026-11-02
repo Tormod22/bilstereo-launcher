@@ -30,6 +30,9 @@ Snakk norsk med brukeren. Han er ikke utvikler – forklar enkelt, ikke bruk fag
 4. Når enheten kommer: verifiser pakkenavn, test GPS/kart, test «åpne Maps i delt skjerm» (FLAG_ACTIVITY_LAUNCH_ADJACENT – kan falle tilbake til fullskjerm).
 5. Mulige senere ønsker: sangtittel/cover i musikkortet (krever NotificationListener), ryggekamera-knapp.
 
+## Startskjerm-valget
+- Stereoen spurte IKKE om startskjerm ved Hjem-trykk (original launcher låst/valg skjult). v2.1 har knappen «Velg startskjerm» i app-skuffen (ACTION_HOME_SETTINGS → standardapper → innstillinger). Siste utvei: ADB `cmd package set-home-activity no.bil.launcher/.MainActivity`. Ikke deaktiver original launcher uten at vår er bekreftet virkende.
+
 ## Installasjon på stereoen (brukeren har ingen minnepinne, har iPhone)
 - Foretrukket: last ned APK fra GitHub-release i nettleseren på stereoen, eller via Google Drive.
 - Alternativ: ADB over Wi-Fi (`adb connect <ip>:5555`, `adb install -r bilstereo.apk`).
