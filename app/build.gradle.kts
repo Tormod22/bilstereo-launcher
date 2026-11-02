@@ -12,8 +12,8 @@ android {
         applicationId = "no.bil.launcher"
         minSdk = 26          // dekker Android 8–13 som disse enhetene kjører
         targetSdk = 34
-        versionCode = 5
-        versionName = "2.3"
+        versionCode = 6
+        versionName = "3.0"
     }
     buildTypes {
         release { isMinifyEnabled = false }
@@ -36,4 +36,5 @@ dependencies {
     implementation("androidx.compose.material:material-icons-extended")
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.5")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
+    implementation("com.google.zxing:core:3.5.3")   // QR-kode for parkeringsplassen
 }

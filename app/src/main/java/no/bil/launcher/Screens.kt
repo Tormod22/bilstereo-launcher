@@ -45,7 +45,7 @@ private fun PageHeader(title: String, onClose: () -> Unit, extra: @Composable Ro
 
 /* ======================= Bluetooth-side ======================= */
 
-data class BtDevice(val name: String, val connected: Boolean)
+data class BtDevice(val name: String, val connected: Boolean, val battery: Int = -1)
 data class BtStatus(val available: Boolean, val on: Boolean, val devices: List<BtDevice>)
 
 /**
@@ -61,7 +61,9 @@ fun btStatus(context: Context): BtStatus {
     return runCatching {
         val devices = adapter.bondedDevices.orEmpty().map { d ->
             val connected = runCatching { d.javaClass.getMethod("isConnected").invoke(d) as Boolean }.getOrDefault(false)
-            BtDevice(d.name ?: d.address, connected)
+            // Batteri fra telefonen (skjult Android-funksjon, virker bare der Android selv styrer Bluetooth)
+            val battery = runCatching { d.javaClass.getMethod("getBatteryLevel").invoke(d) as Int }.getOrDefault(-1)
+            BtDevice(d.name ?: d.address, connected, battery)
         }.sortedByDescending { it.connected }
         BtStatus(true, adapter.isEnabled, devices)
     }.getOrDefault(BtStatus(true, adapter.isEnabled, emptyList()))
@@ -94,7 +96,11 @@ fun BluetoothScreen(onClose: () -> Unit) {
                     color = TextPrimary, fontSize = 22.sp, fontWeight = FontWeight.Medium,
                 )
                 Text(
-                    if (connected != null) "Tilkoblet" else "Åpne Telefon for å koble til",
+                    when {
+                        connected == null -> "Åpne Telefon for å koble til"
+                        connected.battery in 0..100 -> "Tilkoblet · batteri ${connected.battery} %"
+                        else -> "Tilkoblet"
+                    },
                     color = TextMuted, fontSize = 14.sp,
                 )
                 if (status.devices.isNotEmpty()) {
@@ -129,6 +135,7 @@ fun BluetoothScreen(onClose: () -> Unit) {
                     BigTile(Icons.Default.Headphones, "Bluetooth-musikk", Modifier.weight(1f)) { AppRepository.launchTile(context, Tiles.byPrefix("Blu")) }
                 }
                 Row(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                    BigTile(Icons.Default.Star, "Favoritter", Modifier.weight(1f)) { Nav.screen = Screen.PHONE }
                     BigTile(Icons.Default.PhoneIphone, "CarPlay", Modifier.weight(1f)) { AppRepository.launchTile(context, Tiles.byPrefix("Car")) }
                     BigTile(Icons.Default.Settings, "Innstillinger", Modifier.weight(1f)) {
                         runCatching { context.startActivity(Intent(Settings.ACTION_BLUETOOTH_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
@@ -140,7 +147,7 @@ fun BluetoothScreen(onClose: () -> Unit) {
 }
 
 @Composable
-private fun BigTile(icon: ImageVector, label: String, modifier: Modifier, onClick: () -> Unit) {
+fun BigTile(icon: ImageVector, label: String, modifier: Modifier, onClick: () -> Unit) {
     Column(
         modifier.fillMaxHeight().clip(RoundedCornerShape(22.dp)).background(Card).clickable(onClick = onClick),
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -153,6 +160,25 @@ private fun BigTile(icon: ImageVector, label: String, modifier: Modifier, onClic
 }
 
 /* ======================= Knapper-side ======================= */
+
+@Composable
+fun ActionPicker(current: Action, modifier: Modifier, prefix: String = "", onPick: (Action) -> Unit) {
+    var menu by remember { mutableStateOf(false) }
+    Box(modifier) {
+        Row(
+            Modifier.clip(RoundedCornerShape(12.dp)).clickable { menu = true }.padding(horizontal = 8.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(prefix + current.label, color = if (current == Action.NONE && prefix.isNotEmpty()) TextMuted else TextPrimary, fontSize = 15.sp, maxLines = 1)
+            Icon(Icons.Default.ArrowDropDown, null, tint = TextMuted)
+        }
+        DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+            Action.entries.forEach { a ->
+                DropdownMenuItem(text = { Text(a.label) }, onClick = { onPick(a); menu = false })
+            }
+        }
+    }
+}
 
 @Composable
 fun KeysScreen(onClose: () -> Unit) {
@@ -213,7 +239,6 @@ private fun KeyRow(k: PanelKey, onChanged: () -> Unit) {
     val action = Buttons.action(context, k)
     val code = Buttons.code(context, k)
     val pkg = Buttons.pkg(context, k)
-    var menu by remember { mutableStateOf(false) }
     val learning = Learn.target == k
 
     Row(
@@ -221,25 +246,11 @@ private fun KeyRow(k: PanelKey, onChanged: () -> Unit) {
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(14.dp),
     ) {
-        Text(k.label, color = TextPrimary, fontSize = 18.sp, fontWeight = FontWeight.Medium, modifier = Modifier.width(80.dp))
+        Text(k.label, color = TextPrimary, fontSize = 17.sp, fontWeight = FontWeight.Medium, modifier = Modifier.width(72.dp))
 
-        // Hva knappen gjør (trykk for å endre)
-        Box(Modifier.weight(1f)) {
-            Row(
-                Modifier.clip(RoundedCornerShape(12.dp)).clickable { menu = true }.padding(horizontal = 8.dp, vertical = 8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(action.label, color = TextPrimary, fontSize = 16.sp)
-                Icon(Icons.Default.ArrowDropDown, null, tint = TextMuted)
-            }
-            DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
-                Action.entries.forEach { a ->
-                    DropdownMenuItem(text = { Text(a.label) }, onClick = {
-                        Buttons.setAction(context, k, a); menu = false; onChanged()
-                    })
-                }
-            }
-        }
+        // Hva knappen gjør: kort trykk og langt trykk (trykk for å endre)
+        ActionPicker(action, Modifier.weight(1f)) { Buttons.setAction(context, k, it); onChanged() }
+        ActionPicker(Buttons.longAction(context, k), Modifier.weight(0.8f), prefix = "Langt: ") { Buttons.setLongAction(context, k, it); onChanged() }
 
         Text(
             when {
@@ -248,7 +259,7 @@ private fun KeyRow(k: PanelKey, onChanged: () -> Unit) {
                 pkg != null -> pkg.substringAfterLast('.').let { "Åpner $it" }
                 else -> "Ikke lært"
             },
-            color = TextMuted, fontSize = 13.sp, maxLines = 1, modifier = Modifier.widthIn(max = 200.dp),
+            color = TextMuted, fontSize = 13.sp, maxLines = 1, modifier = Modifier.widthIn(max = 130.dp),
         )
 
         Box(

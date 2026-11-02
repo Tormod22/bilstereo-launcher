@@ -1,4 +1,4 @@
-# T'OS (v2.3)
+# T'OS (v3.0)
 
 T'OS er navnet på appen. Repoet heter fortsatt `bilstereo-launcher`.
 
@@ -40,6 +40,12 @@ Trykk deretter Hjem-knappen, velg «T'OS» og «Alltid». Spør den ikke, åpne 
 - Fliser og hvilke apper de åpner: `Apps.kt` → `Tiles.defaults`
 - Farger: øverst i `MainActivity.kt`
 - Finn pakkenavnet til en app på stereoen: `adb shell pm list packages | grep -i radio`
+
+## Det nye i 3.0
+Musikk med tittel og cover, nettradio, turmåler, parkeringsplass med QR-kode, fartsgrense, kart som zoomer og snur,
+Hjem/Jobb-navigasjon, favorittkontakter, nattmodus, klokke som skjermsparer, hurtigpanel (sveip ned), sveip til kart/musikk,
+påminnelser (EU-kontroll, service, dekk), OBD2, sikkerhetskopi og feilrapport. Full liste: `docs/IDEER.md`.
+Første gang: Innstillinger → «Sangtittel og cover» → slå på varseltilgang for T'OS.
 
 ## Knappene på stereoen (MENU, BACK, NAVI, RADIO, MUSIC, BT)
 Apper → «Knapper». Slå på knappestyring (Innstillinger → Tilgjengelighet → «T'OS knapper»).

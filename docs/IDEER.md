@@ -4,6 +4,9 @@ Laget etter å ha sett på hva vanlige startskjermer for bilstereo har (AGAMA, C
 Carl Launcher, Car Launcher Pro) og hva folk roser og klager på i anmeldelser og forum.
 Lista er tilpasset T'OS: rent, svart/grått/hvitt, få ting på skjermen. ★ = foreslått først.
 
+**Status v3.0: alle 50 er bygget inn.** Kompilerer og består lint, men er IKKE testet på stereoen.
+Merket ⚠ = avhenger av stereoen/utstyr og kan virke delvis. Se «Begrensninger» nederst.
+
 **Det folk liker:** store knapper som er lette å treffe, sangtittel og cover, fart og OBD-data, automatisk
 dag/natt, rattknapper som virker, at alt starter av seg selv når bilen starter.
 **Det folk misliker:** treg startskjerm på billige stereoer, for mange småwidgets, innstillinger som er
@@ -77,3 +80,17 @@ kompliserte, reklame og betalingsmurer, musikk som slutter å virke (lydfokus), 
 - Vær og kalender (du har sagt nei)
 - Mange småwidgets og neonfarger (prøvd og forkastet)
 - Waze inni startskjermen (går ikke teknisk, åpnes som egen app i stedet)
+
+## Begrensninger (v3.0)
+- 1, 2, 4, 14, 25: krever at «Varseltilgang» for T'OS er slått på (Innstillinger → Musikk og oppstart).
+- ⚠ 3, 39: avhenger av om stereoen starter på nytt eller bare sover. Begge tilfeller er dekket (oppstart og skjerm på etter >2 min).
+- ⚠ 12, 13: fartsgrense fra OpenStreetMap (Overpass-API) krever internett. Kan mangle/være feil.
+- ⚠ 21, 22: OBD2 krever en Bluetooth OBD-brikke (ELM327 o.l.) paret med stereoen. Helt utestet.
+- ⚠ 25, 26: hvem som ringer/siste anrop vises bare hvis stereoens BT-app deler det med Android.
+- ⚠ 27: CarPlay-autostart virker hvis Android ser iPhonen (USB med Apple-ID 0x05AC, eller Bluetooth-navn med «iPhone»).
+- ⚠ 28: batteri vises bare der Android selv styrer Bluetooth. Signalstyrke er ikke tilgjengelig for apper.
+- ⚠ 29: Siri kan ikke startes direkte fra Android; åpner Google-assistent eller CarPlay.
+- ⚠ 34: kun knapp; automatisk kamera ved rygging gjør stereoen selv.
+- ⚠ 38: delt skjerm bare der stereoen støtter det.
+- 50: sikkerhetskopi lagres via filvelgeren – velg Google Drive (krever Drive-appen på stereoen).
+- Testsiden (preview/) viser forsiden og de viktigste sidene, men ikke alt (f.eks. snur ikke kartet).

@@ -100,6 +100,15 @@ object Tiles {
             ),
         ),
         QuickTile(
+            "Ryggekamera",
+            listOf(                      // gjetninger – stereoen viser vanligvis kamera selv ved rygging
+                "com.ts.camera",
+                "com.syu.camera",
+                "com.fyt.camera",
+                "com.android.camera2",
+            ),
+        ),
+        QuickTile(
             "Innstillinger",
             listOf("com.android.settings"),
             fallbackIntent = Intent(android.provider.Settings.ACTION_SETTINGS),
@@ -140,7 +149,8 @@ object AppRepository {
 
     /** Åpner første installerte kandidat for flisa, ellers fallback-intent. */
     fun launchTile(context: Context, tile: QuickTile) {
-        val pkg = tile.candidates.firstOrNull { isInstalled(context, it) }
+        val chosen = Prefs.str("music_pkg").takeIf { tile.title.startsWith("Mus") && it.isNotBlank() && isInstalled(context, it) }
+        val pkg = chosen ?: tile.candidates.firstOrNull { isInstalled(context, it) }
         when {
             pkg != null -> launch(context, pkg)
             tile.fallbackIntent != null -> runCatching {
