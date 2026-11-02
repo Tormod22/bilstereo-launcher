@@ -25,7 +25,20 @@ jobs:
         with:
           gradle-version: "8.9"
 
-      - name: Bygg debug-APK
+      - name: Sett opp fast signatur
+        env:
+          KEYSTORE_BASE64: ${{ secrets.TOS_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.TOS_KEYSTORE_PASSWORD }}
+        run: |
+          if [ -z "$KEYSTORE_BASE64" ] || [ -z "$KEYSTORE_PASSWORD" ]; then
+            echo "::error::Mangler signeringsnøkkelen. Legg inn TOS_KEYSTORE_BASE64 og TOS_KEYSTORE_PASSWORD under Settings → Secrets and variables → Actions (se README)."
+            exit 1
+          fi
+          echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/tos.jks"
+          echo "TOS_KEYSTORE=$RUNNER_TEMP/tos.jks" >> "$GITHUB_ENV"
+          echo "TOS_KEYSTORE_PASSWORD=$KEYSTORE_PASSWORD" >> "$GITHUB_ENV"
+
+      - name: Bygg APK
         run: gradle assembleDebug --no-daemon
 
       - name: Gi fila et enkelt navn og lag version.json

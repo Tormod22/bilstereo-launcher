@@ -46,6 +46,12 @@ Snakk norsk med brukeren. Han er ikke utvikler – forklar enkelt, ikke bruk fag
 - `preview/index.html`: nettleserkopi av startskjermen for å teste utseendet (samme farger/mål/kart). Holdes i takt med `MainActivity.kt`. Publiseres til GitHub Pages av `.github/workflows/preview.yml`.
 - Bilbilde: legges i `app/src/main/res/drawable/car_png.png` – koden finner den via `getIdentifier("car_png")`. Et bilde er generert i Canva (svart Avensis forfra på svart bakgrunn): https://www.canva.com/M/MAHZyi7AvB4 – brukeren må laste det ned selv og legge det inn.
 
+## Oppdatering / signering
+- Updater forutsetter release «latest» (lages av build.yml på push til main). Per 2. nov finnes ingen release, og main er bare «Initial commit».
+- Signering: build.yml leser secrets TOS_KEYSTORE_BASE64 + TOS_KEYSTORE_PASSWORD (alias «tos») og feiler uten dem.
+  Nøkkelen må ALDRI committes (forsøk på det ble stoppet som credential leakage). APK-er bygget i Claude-sesjoner har
+  debug-signatur og kan ikke oppdatere en GitHub-signert T'OS – etter overgang skal brukeren bare bruke GitHub-bygg.
+
 ## Status / gjenstår
 1. ✅ Koden kompilerer (`gradle assembleDebug`, AGP 8.5.2 / Kotlin 2.0.20). Én feil rettet i `Updater.kt` (lese version.json).
 2. ✅ Repoet `Tormod22/bilstereo-launcher` finnes. Kartfila krever at workflowen «Lag kart uten nett» er kjørt (går automatisk ved første push til main). Koden må ligge på `main` for at GitHub Actions skal bygge og publisere «latest»-release. Repoet må være offentlig for at oppdateringsknappen skal virke.

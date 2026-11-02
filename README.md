@@ -47,6 +47,16 @@ Hjem/Jobb-navigasjon, favorittkontakter, nattmodus, klokke som skjermsparer, hur
 påminnelser (EU-kontroll, service, dekk), OBD2, sikkerhetskopi og feilrapport. Full liste: `docs/IDEER.md`.
 Første gang: Innstillinger → «Sangtittel og cover» → slå på varseltilgang for T'OS.
 
+## Oppdatere rett fra GitHub (uten Google Drive)
+Når koden ligger på `main`, bygger GitHub en ny app-fil automatisk og legger den under Releases («latest»).
+T'OS viser «Ny versjon …» på forsiden, og Apper → «Oppdater til …» laster ned og installerer.
+Krav (én gang):
+1. Repoet må være offentlig.
+2. Fast signatur: legg inn to hemmeligheter under Settings → Secrets and variables → Actions:
+   `TOS_KEYSTORE_BASE64` (nøkkelfila som tekst) og `TOS_KEYSTORE_PASSWORD`. Uten dem stopper byggejobben med en feilmelding.
+   Nøkkelen skal ALDRI ligge i repoet.
+3. Første gang etter dette må T'OS avinstalleres og installeres på nytt (ny signatur). Lagre innstillingene til fil først.
+
 ## Kart uten nett (Rogaland)
 1. Koden må ligge på `main` og repoet være offentlig. Da lager GitHub kartet automatisk
    (Actions → «Lag kart uten nett»; kan også startes manuelt, med annet område om du vil).

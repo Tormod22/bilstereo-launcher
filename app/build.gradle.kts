@@ -17,8 +17,22 @@ android {
         // Bilstereoen har ARM-prosessor; dropper x86 for å holde appen mindre (kartmotoren har egne biblioteker)
         ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a") }
     }
+    // Fast signatur for bygg på GitHub: nøkkelen ligger som hemmelighet (Secrets) og gis hit via miljøvariabler.
+    // Android godtar bare oppdateringer med samme signatur som appen som er installert.
+    // Lokale bygg uten hemmeligheten får vanlig utviklersignatur (kan ikke oppdatere en GitHub-installert T'OS).
+    val keystore = System.getenv("TOS_KEYSTORE")
+    val keystorePass = System.getenv("TOS_KEYSTORE_PASSWORD")
+    signingConfigs {
+        if (keystore != null && keystorePass != null) create("tos") {
+            storeFile = file(keystore)
+            storePassword = keystorePass
+            keyAlias = "tos"
+            keyPassword = keystorePass
+        }
+    }
     buildTypes {
-        release { isMinifyEnabled = false }
+        debug { signingConfigs.findByName("tos")?.let { signingConfig = it } }
+        release { isMinifyEnabled = false; signingConfigs.findByName("tos")?.let { signingConfig = it } }
     }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
