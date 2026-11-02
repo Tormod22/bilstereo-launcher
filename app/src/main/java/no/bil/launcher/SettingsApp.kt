@@ -365,6 +365,8 @@ private fun PhoneSettings() {
 
 @Composable
 private fun CarSettings() {
+    ToggleRow("Vis spenning på bilbatteriet", "battery_show", true, "Fra OBD2-brikke, eller fra stereoen hvis den oppgir det")
+    SettingRow("OBD2-brikke", CarBattery.obdStatus + (CarBattery.volt?.let { " · ${CarBattery.text(it)} fra ${CarBattery.source}" } ?: ""))
     PrefField("Neste EU-kontroll", "eu_date", "f.eks. 15.3.2027", KeyboardType.Number)
     PrefField("Neste service", "service_date", "f.eks. 1.6.2027", KeyboardType.Number)
     ToggleRow("Minn meg på dekkskift", "tire_remind", true, "Midten av oktober og slutten av mars")

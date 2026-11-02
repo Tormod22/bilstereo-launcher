@@ -58,6 +58,7 @@ object Hub {
         Trip.restore()
         startGps()
         watchNetwork()
+        CarBattery.start(app)
         scope.launch { while (true) { Theme.update(gps?.lat ?: Prefs.float("park_lat").toDouble().takeIf { it != 0.0 }, gps?.lon ?: Prefs.float("park_lon").toDouble().takeIf { it != 0.0 }); NightBrightness.apply(app); delay(60_000) } }
         scope.launch { while (true) { readSystem(); delay(10_000) } }
         scope.launch {

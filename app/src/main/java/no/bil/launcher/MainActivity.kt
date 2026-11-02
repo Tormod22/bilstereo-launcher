@@ -279,7 +279,9 @@ private fun carBitmap(): androidx.compose.ui.graphics.ImageBitmap? {
 @Composable
 private fun Notice() {
     val due = Reminders.due().firstOrNull()
+    val bv = CarBattery.volt
     val (text, go) = when {
+        CarBattery.enabled && bv != null && (CarBattery.low || CarBattery.high) -> "${if (CarBattery.low) "Svakt batteri" else "Høy ladespenning"} (${CarBattery.text(bv)})" to Screen.CAR
         due != null -> due.text to Screen.CAR
         Hub.update != null -> "Ny versjon ${Hub.update?.versionName} – trykk for å oppdatere" to Screen.APPS
         else -> return
@@ -312,6 +314,12 @@ fun CarCard(gps: Gps?, modifier: Modifier) {
             }
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 if (!Hub.online) Icon(Icons.Default.WifiOff, "Ikke internett", tint = TextMuted, modifier = Modifier.size(18.dp))
+                val bv = CarBattery.volt
+                if (CarBattery.enabled && bv != null) {
+                    Icon(Icons.Default.BatteryChargingFull, "Bilbatteri", tint = TextMuted, modifier = Modifier.size(18.dp))
+                    Text(CarBattery.text(bv), color = TextMuted, fontSize = 15.sp)
+                    Spacer(Modifier.width(4.dp))
+                }
                 Text("Avensis", color = TextMuted, fontSize = 15.sp)
             }
         }

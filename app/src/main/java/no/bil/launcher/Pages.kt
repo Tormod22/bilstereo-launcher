@@ -490,6 +490,11 @@ fun CarScreen(onClose: () -> Unit) {
                     BigNumber(Hub.gps?.let { Hub.compass(it.bearing) } ?: "–", "retning", Modifier.weight(1f))
                 }
 
+                Section("Bilbatteri")
+                val bv = CarBattery.volt
+                if (bv != null) SettingRow("${CarBattery.text(bv)} · ${CarBattery.meaning(bv)}", "Målt av ${CarBattery.source}. Over 13 V betyr at dynamoen lader.")
+                else SettingRow("Ingen måling ennå", "Plugg inn en OBD2-brikke og par den med stereoen. ${CarBattery.obdStatus}")
+
                 Section("Tuning og ytelse")
                 SettingRow("0–100 km/t: ${Accel.fmt(Accel.last(Accel.runs[0]))}", "Beste: ${Accel.fmt(Accel.best(Accel.runs[0]))} · målt med GPS", onClick = { Nav.screen = Screen.TUNING }) {
                     Pill("Åpne", Icons.Default.Speed) { Nav.screen = Screen.TUNING }
