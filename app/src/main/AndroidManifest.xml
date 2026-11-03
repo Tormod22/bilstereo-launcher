@@ -16,6 +16,10 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- Installere oppdateringer lastet ned fra GitHub -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <!-- Android 12+: oppdatere T'OS uten Androids installasjonsbilde (når T'OS selv installerte forrige versjon) -->
+    <uses-permission android:name="android.permission.UPDATE_PACKAGES_WITHOUT_USER_ACTION" />
+    <!-- «Avinstaller» på app-siden i T'OS Innstillinger (Android spør om bekreftelse) -->
+    <uses-permission android:name="android.permission.REQUEST_DELETE_PACKAGES" />
     <!-- Bluetooth-siden: vise tilkoblet telefon -->
     <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30" />
     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
@@ -139,6 +143,14 @@
                 <data android:scheme="tel" />
             </intent-filter>
         </activity>
+        <!-- Svar fra oppdateringen inne i T'OS, og «T'OS er oppdatert» (åpner T'OS igjen) -->
+        <receiver
+            android:name=".UpdateReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
 
         <provider
             android:name="androidx.core.content.FileProvider"

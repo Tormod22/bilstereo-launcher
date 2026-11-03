@@ -46,12 +46,44 @@ import kotlinx.coroutines.withContext
 
 private fun Context.go(i: Intent) = runCatching { startActivity(i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }.isSuccess
 
+/* ======================= Felles ======================= */
+
+/** Øker hver gang T'OS kommer tilbake på skjermen (f.eks. fra en Android-tillatelsesside), så status sjekkes på nytt. */
+@Composable
+fun rememberResumeTick(): Int {
+    var t by remember { mutableIntStateOf(0) }
+    val lc = androidx.lifecycle.compose.LocalLifecycleOwner.current.lifecycle
+    DisposableEffect(lc) {
+        val o = androidx.lifecycle.LifecycleEventObserver { _, e -> if (e == androidx.lifecycle.Lifecycle.Event.ON_RESUME) t++ }
+        lc.addObserver(o)
+        onDispose { lc.removeObserver(o) }
+    }
+    return t
+}
+
 /* ======================= Wi-Fi inne i T'OS ======================= */
+
+/** Hvordan T'OS kobler til et nett (ren logikk, testes i DataLogicTest3). */
+internal enum class WifiWay { SUGGEST, LEGACY, ANDROID_DIALOG, ANDROID_SETTINGS, UNSUPPORTED }
+
+/**
+ * Velger måten med minst mulig av Androids egne vinduer:
+ * Android 10+ → «foreslått nett» (ingen boks når forslag fra T'OS er godkjent én gang);
+ * er forslag avslått → Androids lille «Lagre nett»-boks (Android 11+); Android 8–9 → kobler direkte.
+ */
+internal fun wifiWay(sdk: Int, eap: Boolean, wep: Boolean, owe: Boolean, suggestionsRejected: Boolean): WifiWay = when {
+    eap -> WifiWay.ANDROID_SETTINGS                 // brukernavn + sertifikat: bare Android-innstillingene kan det
+    wep -> WifiWay.UNSUPPORTED
+    sdk < 29 -> if (owe) WifiWay.ANDROID_SETTINGS else WifiWay.LEGACY
+    owe && sdk < 30 -> WifiWay.ANDROID_SETTINGS
+    suggestionsRejected -> if (sdk >= 30) WifiWay.ANDROID_DIALOG else WifiWay.ANDROID_SETTINGS
+    else -> WifiWay.SUGGEST
+}
 
 /**
  * Viser nettverkene i nærheten og kobler til uten å gå via Android-innstillingene.
  * Android 10+ lar ikke apper koble direkte; T'OS legger nettverket inn som «foreslått»,
- * og stereoen kobler seg til av seg selv (første gang må et varsel godkjennes).
+ * og stereoen kobler seg til av seg selv (første gang må et varsel «Tillat foreslåtte nett» godkjennes).
  */
 @Suppress("DEPRECATION")
 @SuppressLint("MissingPermission")
@@ -62,6 +94,18 @@ fun WifiPanel() {
     var msg by remember { mutableStateOf<String?>(null) }
     var open by remember { mutableStateOf<String?>(null) }
     var pass by remember { mutableStateOf("") }
+    var waiting by remember { mutableStateOf<String?>(null) }          // nett T'OS venter på at stereoen kobler til
+    var stuck by remember { mutableStateOf<WifiNetworkSuggestion?>(null) }   // koblet ikke til av seg selv: tilby Androids boks
+    var stuckSsid by remember { mutableStateOf("") }
+    var lastSugg by remember { mutableStateOf<WifiNetworkSuggestion?>(null) }
+    // Android 12+: har brukeren godkjent/avslått forslag fra T'OS?
+    var approval by remember { mutableIntStateOf(-1) }
+    if (Build.VERSION.SDK_INT >= 31) DisposableEffect(Unit) {
+        val l = WifiManager.SuggestionUserApprovalStatusListener { st -> approval = st }
+        runCatching { wm.addSuggestionUserApprovalStatusListener(context.mainExecutor, l) }
+        onDispose { runCatching { wm.removeSuggestionUserApprovalStatusListener(l) } }
+    }
+    val rejected = Build.VERSION.SDK_INT >= 31 && approval == WifiManager.STATUS_SUGGESTION_APPROVAL_REJECTED_BY_USER
     val nets by produceState(emptyList<ScanResult>()) {
         while (true) {
             runCatching { wm.startScan() }
@@ -70,85 +114,152 @@ fun WifiPanel() {
             delay(30_000)   // Android tillater bare noen få søk per 2 min
         }
     }
-    val current = runCatching { wm.connectionInfo?.ssid?.trim('"') }.getOrNull()?.takeIf { it.isNotBlank() && it != "<unknown ssid>" }
+    var tick by remember { mutableIntStateOf(0) }
+    LaunchedEffect(Unit) { while (true) { delay(2000); tick++ } }
+    val current = remember(tick) { runCatching { wm.connectionInfo?.ssid?.trim('"') }.getOrNull()?.takeIf { it.isNotBlank() && it != "<unknown ssid>" } }
+    val wifiOn = remember(tick) { runCatching { wm.isWifiEnabled }.getOrDefault(false) }
 
-    SettingRow(if (Hub.online) "Tilkoblet internett" else "Ikke tilkoblet", current?.let { "Wi-Fi: $it" } ?: if (wm.isWifiEnabled) "Wi-Fi er på" else "Wi-Fi er av") {
-        if (!wm.isWifiEnabled) Pill("Slå på", strong = true) {
-            if (Build.VERSION.SDK_INT < 29) wm.isWifiEnabled = true else context.go(Intent(Settings.Panel.ACTION_WIFI))
+    // Vent på at stereoen kobler til et foreslått nett; går det ikke på 25 s, tilbys Androids «Lagre»-boks
+    LaunchedEffect(waiting) {
+        val ssid = waiting ?: return@LaunchedEffect
+        repeat(25) {
+            delay(1000)
+            if (runCatching { wm.connectionInfo?.ssid?.trim('"') }.getOrNull() == ssid) {
+                msg = "Tilkoblet «$ssid»"; Prefs.set("wifi_sugg_ok", true); waiting = null; return@LaunchedEffect
+            }
+        }
+        waiting = null
+        if (Build.VERSION.SDK_INT >= 30 && lastSugg != null) { stuck = lastSugg; stuckSsid = ssid }
+        msg = if (Prefs.bool("wifi_sugg_ok")) "«$ssid» er lagret, men stereoen har ikke koblet til ennå. Den gjør det når nettet er innen rekkevidde."
+              else "Har du godkjent varselet «Tillat foreslåtte Wi-Fi-nettverk»? Det ligger øverst på skjermen (trekk ned)."
+    }
+
+    fun androidDialog(s: WifiNetworkSuggestion, ssid: String): Boolean {
+        if (Build.VERSION.SDK_INT < 30) return false
+        val ok = context.go(Intent(Settings.ACTION_WIFI_ADD_NETWORKS).putParcelableArrayListExtra(Settings.EXTRA_WIFI_NETWORK_LIST, arrayListOf(s)))
+        if (ok) msg = "Trykk «Lagre» i Android-boksen for å koble til «$ssid»"
+        return ok
+    }
+
+    SettingRow(if (Hub.online) "Tilkoblet internett" else "Ikke tilkoblet", current?.let { "Wi-Fi: $it" } ?: if (wifiOn) "Wi-Fi er på" else "Wi-Fi er av") {
+        if (!wifiOn) Pill("Slå på", strong = true) {
+            // Android 10+ lar ikke vanlige apper slå på Wi-Fi: da vises Androids lille Wi-Fi-panel
+            val ok = Build.VERSION.SDK_INT < 29 && runCatching { wm.isWifiEnabled = true; true }.getOrDefault(false)
+            if (!ok) {
+                context.go(Intent(if (Build.VERSION.SDK_INT >= 29) Settings.Panel.ACTION_WIFI else Settings.ACTION_WIFI_SETTINGS))
+                msg = "Slå på Wi-Fi i panelet som kommer opp (Android krever det)"
+            }
         }
     }
     msg?.let { Text(it, color = TextPrimary, fontSize = 14.sp, modifier = Modifier.padding(bottom = 8.dp)) }
+    stuck?.let { s ->
+        SettingRow("Koble til «$stuckSsid» nå", "Åpner Androids lille «Lagre nett»-boks", onClick = { androidDialog(s, stuckSsid); stuck = null }) { Chevron() }
+    }
+    if (rejected) SettingRow("Forslag fra T'OS er avslått", "T'OS bruker derfor Androids «Lagre nett»-boks. Med PC kan det slås på igjen (se docs/ADB-OPPSETT.md).")
     Section("Nettverk i nærheten")
-    if (nets.isEmpty()) Text("Søker … (krever at posisjon er tillatt for T'OS)", color = TextMuted, fontSize = 14.sp)
+    if (nets.isEmpty()) Text(if (wifiOn) "Søker … (krever at posisjon er tillatt for T'OS)" else "Slå på Wi-Fi for å se nettverk", color = TextMuted, fontSize = 14.sp)
     nets.forEach { n ->
         val eap = "EAP" in n.capabilities                     // bedriftsnett: brukernavn + passord
         val owe = "OWE" in n.capabilities && !eap              // «forbedret åpent» nett: kryptert, men uten passord
+        val wep = "WEP" in n.capabilities
         val secured = !owe && listOf("WPA", "WEP", "SAE", "PSK").any { it in n.capabilities }
         val bars = WifiManager.calculateSignalLevel(n.level, 4)
         Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(Card)) {
             Row(
-                Modifier.fillMaxWidth().clickable { open = if (open == n.SSID) null else n.SSID; pass = "" }.padding(horizontal = 18.dp, vertical = 14.dp),
+                Modifier.fillMaxWidth().heightIn(min = 56.dp).clickable { open = if (open == n.SSID) null else n.SSID; pass = "" }.padding(horizontal = 18.dp, vertical = 14.dp),
                 verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 Icon(listOf(Icons.Default.SignalWifi0Bar, Icons.Default.NetworkWifi1Bar, Icons.Default.NetworkWifi3Bar, Icons.Default.SignalWifi4Bar)[bars.coerceIn(0, 3)], null, tint = TextMuted)
                 Text(n.SSID, color = TextPrimary, fontSize = 16.sp, modifier = Modifier.weight(1f), maxLines = 1)
                 if (n.SSID == current) Text("Tilkoblet", color = TextMuted, fontSize = 13.sp)
-                if (secured) Icon(Icons.Default.Lock, null, tint = TextMuted, modifier = Modifier.size(18.dp))
+                else if (n.SSID == waiting) Text("Kobler til …", color = TextMuted, fontSize = 13.sp)
+                if (secured) Icon(Icons.Default.Lock, "Passord", tint = TextMuted, modifier = Modifier.size(18.dp))
             }
             if (open == n.SSID && n.SSID != current) Row(
                 Modifier.fillMaxWidth().padding(start = 18.dp, end = 18.dp, bottom = 14.dp),
                 verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                if (secured && !eap) Field(pass, "Passord", Modifier.weight(1f), KeyboardType.Password) { pass = it } else Spacer(Modifier.weight(1f))
+                if (secured && !eap && !wep) Field(pass, "Passord", Modifier.weight(1f), KeyboardType.Password) { pass = it } else Spacer(Modifier.weight(1f))
                 Pill("Koble til", strong = true) {
-                    val wep = "WEP" in n.capabilities
                     val wpa3 = "SAE" in n.capabilities && "PSK" !in n.capabilities   // bare WPA3 (ikke blandet WPA2/WPA3)
-                    when {
-                        eap -> { msg = "Dette nettet krever brukernavn – koble til i Android-innstillinger"; open = null; context.go(Intent(Settings.ACTION_WIFI_SETTINGS)) }
-                        wep -> { msg = "«${n.SSID}» bruker gammel sikkerhet (WEP) som T'OS ikke kan koble til. Bruk Android-innstillingene."; open = null }
-                        owe && Build.VERSION.SDK_INT < 30 -> { msg = "«${n.SSID}» bruker en sikkerhet (OWE) som T'OS ikke kan koble til her – koble til i Android-innstillinger"; open = null; context.go(Intent(Settings.ACTION_WIFI_SETTINGS)) }
-                        secured && pass.length !in 8..63 -> msg = "Passordet må være 8–63 tegn"
-                        Build.VERSION.SDK_INT >= 30 -> {
-                            // Android 11+: legges inn som brukerens eget nettverk og kobles til med én gang (ett «Lagre»-trykk)
-                            val b = WifiNetworkSuggestion.Builder().setSsid(n.SSID)
-                            if (owe) b.setIsEnhancedOpen(true)
-                            else if (secured) { if (wpa3) b.setWpa3Passphrase(pass) else b.setWpa2Passphrase(pass) }
-                            val ok = context.go(Intent(Settings.ACTION_WIFI_ADD_NETWORKS)
-                                .putParcelableArrayListExtra(Settings.EXTRA_WIFI_NETWORK_LIST, arrayListOf(b.build())))
-                            msg = if (ok) "Trykk «Lagre» for å koble til «${n.SSID}»" else connectWifi(wm, n.SSID, pass.takeIf { secured }, wpa3, owe)
-                            open = null
+                    val way = wifiWay(Build.VERSION.SDK_INT, eap, wep, owe, rejected)
+                    if (way != WifiWay.ANDROID_SETTINGS && way != WifiWay.UNSUPPORTED && secured && pass.length !in 8..63) { msg = "Passordet må være 8–63 tegn"; return@Pill }
+                    open = null
+                    when (way) {
+                        WifiWay.ANDROID_SETTINGS -> {
+                            msg = if (eap) "«${n.SSID}» krever brukernavn – Android-innstillingene for Wi-Fi åpnes" else "«${n.SSID}» må kobles til i Android-innstillingene"
+                            context.go(Intent(Settings.ACTION_WIFI_SETTINGS))
                         }
-                        else -> { msg = connectWifi(wm, n.SSID, pass.takeIf { secured }, wpa3, owe); open = null }
+                        WifiWay.UNSUPPORTED -> msg = "«${n.SSID}» bruker gammel sikkerhet (WEP) som ikke er trygg. Bytt til WPA2 på ruteren."
+                        WifiWay.LEGACY -> msg = connectWifiLegacy(wm, n.SSID, pass.takeIf { secured })
+                        WifiWay.ANDROID_DIALOG -> {
+                            val ok = Build.VERSION.SDK_INT >= 30 && androidDialog(wifiSuggestion(n.SSID, pass.takeIf { secured }, wpa3, owe), n.SSID)
+                            if (!ok) msg = "Fikk ikke åpnet Androids Wi-Fi-boks"
+                        }
+                        WifiWay.SUGGEST -> if (Build.VERSION.SDK_INT >= 29) {
+                            val sg = wifiSuggestion(n.SSID, pass.takeIf { secured }, wpa3, owe)
+                            lastSugg = sg; stuck = null
+                            val r = runCatching { wm.removeNetworkSuggestions(listOf(sg)); wm.addNetworkSuggestions(listOf(sg)) }.getOrDefault(-1)
+                            when {
+                                r == WifiManager.STATUS_NETWORK_SUGGESTIONS_SUCCESS -> {
+                                    waiting = n.SSID
+                                    runCatching { wm.startScan() }
+                                    val approved = Prefs.bool("wifi_sugg_ok") || (Build.VERSION.SDK_INT >= 31 && approval == WifiManager.STATUS_SUGGESTION_APPROVAL_APPROVED_BY_USER)
+                                    msg = if (approved) "Kobler til «${n.SSID}» …"
+                                          else "«${n.SSID}» er lagt inn. Første gang: godkjenn varselet «Tillat foreslåtte Wi-Fi-nettverk» øverst på skjermen."
+                                }
+                                // Forslag ikke tillatt (avslått eller fullt): Androids lille boks i stedet
+                                androidDialog(sg, n.SSID) -> Unit
+                                else -> msg = "Fikk ikke lagt til «${n.SSID}» (kode $r)."
+                            }
+                        }
                     }
                 }
             }
         }
         Spacer(Modifier.height(6.dp))
     }
+    // Nett T'OS har lagt inn (Android 11+ kan liste dem)
+    if (Build.VERSION.SDK_INT >= 30) {
+        val mine = remember(tick / 15) { runCatching { wm.networkSuggestions }.getOrDefault(emptyList()) }
+        if (mine.isNotEmpty()) {
+            var ask by remember { mutableStateOf(false) }
+            LaunchedEffect(ask) { if (ask) { delay(4000); ask = false } }
+            Section("Lagret av T'OS")
+            SettingRow(mine.joinToString { it.ssid ?: "?" }, if (ask) "Stereoen kobler fra disse. Trykk igjen." else "Stereoen kobler seg til disse av seg selv", onClick = {
+                if (!ask) { ask = true; return@SettingRow }
+                ask = false
+                runCatching { wm.removeNetworkSuggestions(mine) }
+                msg = "Nettene er fjernet"; tick++
+            }) { Text(if (ask) "Trykk igjen" else "Glem alle", color = TextPrimary, fontSize = 14.sp) }
+        }
+    }
     SettingRow("Internett fra iPhonen", "På iPhonen: Innstillinger → Personlig Wi-Fi-sone → «Tillat andre å koble til». Velg den så i lista over.")
 }
 
-@Suppress("DEPRECATION")
-private fun connectWifi(wm: WifiManager, ssid: String, pass: String?, wpa3: Boolean, owe: Boolean = false): String {
-    return if (Build.VERSION.SDK_INT >= 29) {
-        val b = WifiNetworkSuggestion.Builder().setSsid(ssid)
-        // «Forbedret åpent» nett (OWE) må merkes som det – som vanlig åpent nett kobler stereoen aldri til
-        if (owe) b.setIsEnhancedOpen(true)
-        else if (pass != null) { if (wpa3) b.setWpa3Passphrase(pass) else b.setWpa2Passphrase(pass) }
-        val r = runCatching { wm.removeNetworkSuggestions(listOf(b.build())); wm.addNetworkSuggestions(listOf(b.build())) }.getOrDefault(-1)
-        if (r == WifiManager.STATUS_NETWORK_SUGGESTIONS_SUCCESS)
-            "«$ssid» er lagt til. Første gang: godkjenn varselet «Tillat foreslåtte Wi-Fi-nettverk». Stereoen kobler seg så til av seg selv."
-        else "Fikk ikke lagt til «$ssid» (kode $r)."
-    } else runCatching {
-        val conf = android.net.wifi.WifiConfiguration().apply {
-            SSID = "\"$ssid\""
-            if (pass != null) preSharedKey = "\"$pass\"" else allowedKeyManagement.set(android.net.wifi.WifiConfiguration.KeyMgmt.NONE)
-        }
-        val id = wm.addNetwork(conf)
-        wm.enableNetwork(id, true); wm.reconnect()
-        "Kobler til «$ssid» …"
-    }.getOrDefault("Fikk ikke koblet til «$ssid».")
+@Composable private fun Chevron() = Icon(Icons.Default.ChevronRight, null, tint = TextMuted)
+
+@androidx.annotation.RequiresApi(29)
+private fun wifiSuggestion(ssid: String, pass: String?, wpa3: Boolean, owe: Boolean): WifiNetworkSuggestion {
+    val b = WifiNetworkSuggestion.Builder().setSsid(ssid)
+    // «Forbedret åpent» nett (OWE) må merkes som det – som vanlig åpent nett kobler stereoen aldri til
+    if (owe) b.setIsEnhancedOpen(true)
+    else if (pass != null) { if (wpa3) b.setWpa3Passphrase(pass) else b.setWpa2Passphrase(pass) }
+    return b.build()
 }
+
+/** Android 8–9: legger inn og kobler til direkte, uten noen boks. */
+@Suppress("DEPRECATION")
+private fun connectWifiLegacy(wm: WifiManager, ssid: String, pass: String?): String = runCatching {
+    val conf = android.net.wifi.WifiConfiguration().apply {
+        SSID = "\"$ssid\""
+        if (pass != null) preSharedKey = "\"$pass\"" else allowedKeyManagement.set(android.net.wifi.WifiConfiguration.KeyMgmt.NONE)
+    }
+    val id = wm.addNetwork(conf)
+    check(id != -1)
+    wm.enableNetwork(id, true); wm.reconnect()
+    "Kobler til «$ssid» …"
+}.getOrDefault("Fikk ikke koblet til «$ssid». Sjekk passordet.")
 
 /* ======================= Bluetooth inne i T'OS ======================= */
 
@@ -199,7 +310,12 @@ fun BtPanel() {
     ) {
         if (adapter != null && !status.on) Pill("Slå på", strong = true) {
             @Suppress("DEPRECATION")
-            if (Build.VERSION.SDK_INT < 33) runCatching { adapter.enable() } else context.go(Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE))
+            val direct = Build.VERSION.SDK_INT < 33 && runCatching { adapter.enable() }.getOrDefault(false)
+            if (!direct) {
+                // Android 13+ lar ikke apper slå på Bluetooth selv – Android viser en liten «Tillat»-boks
+                context.go(Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE))
+                msg = "Trykk «Tillat» i boksen som kommer opp (Android 13 krever det)"
+            } else msg = "Slår på Bluetooth …"
         }
     }
     msg?.let { Text(it, color = TextPrimary, fontSize = 14.sp, modifier = Modifier.padding(bottom = 8.dp)) }
@@ -231,7 +347,10 @@ fun BtPanel() {
     }
     found.forEach { d ->
         val name = runCatching { d.name }.getOrNull() ?: d.address
-        SettingRow(name, "Trykk for å pare", onClick = { msg = "Parer med $name …"; runCatching { d.createBond() } }) { Icon(Icons.Default.Add, null, tint = TextMuted) }
+        SettingRow(name, "Trykk for å pare", onClick = {
+            msg = "Parer med $name … Android kan vise en kode – trykk «Par» hvis den er lik på begge"
+            if (!runCatching { d.createBond() }.getOrDefault(false)) msg = "Fikk ikke startet paring med $name"
+        }) { Icon(Icons.Default.Add, "Par", tint = TextMuted) }
     }
     SettingRow("Telefon og Bluetooth-musikk", "Stereoens egen Bluetooth-app (samtaler, kontakter)", onClick = { AppRepository.launchTile(context, Tiles.byPrefix("Tel")) }) {
         Icon(Icons.Default.ChevronRight, null, tint = TextMuted)
@@ -263,9 +382,11 @@ fun EqPanel() {
     val context = LocalContext.current
     val e = remember { Eq.get() }
     if (e == null) {
-        SettingRow("Equalizer", "Stereoen lar ikke apper styre lydbildet. Åpne stereoens egen equalizer.", onClick = {
-            val ok = context.go(Intent(android.media.audiofx.AudioEffect.ACTION_DISPLAY_AUDIO_EFFECT_CONTROL_PANEL).putExtra(android.media.audiofx.AudioEffect.EXTRA_CONTENT_TYPE, android.media.audiofx.AudioEffect.CONTENT_TYPE_MUSIC))
-            if (!ok) context.go(Intent(Settings.ACTION_SOUND_SETTINGS))
+        var none by remember { mutableStateOf(false) }
+        SettingRow("Equalizer", if (none) "Fant ingen equalizer på stereoen" else "Stereoen lar ikke apper styre lydbildet. Trykk for stereoens egen equalizer.", onClick = {
+            none = !context.go(Intent(android.media.audiofx.AudioEffect.ACTION_DISPLAY_AUDIO_EFFECT_CONTROL_PANEL)
+                .putExtra(android.media.audiofx.AudioEffect.EXTRA_PACKAGE_NAME, context.packageName)
+                .putExtra(android.media.audiofx.AudioEffect.EXTRA_CONTENT_TYPE, android.media.audiofx.AudioEffect.CONTENT_TYPE_MUSIC))
         }) { Icon(Icons.Default.ChevronRight, null, tint = TextMuted) }
         return
     }
@@ -329,38 +450,87 @@ fun AppChoiceRow(title: String, key: String, tilePrefix: String) {
 
 /* ======================= Førstegangsoppsett ======================= */
 
+/** Én ADB-kommando i oppsettet med PC, og hva den gjør (i vanlige ord). */
+internal data class AdbStep(val cmd: String, val what: String)
+
+/** Knappestyringen legges til de tjenestene stereoen alt har på (ikke erstatt dem). Ren logikk, testes. */
+internal fun accessibilityValue(existing: String?, ours: String): String {
+    val list = existing.orEmpty().split(':').map { it.trim() }.filter { it.isNotEmpty() && it != "null" }
+    return if (list.any { it.equals(ours, ignoreCase = true) }) list.joinToString(":") else (list + ours).joinToString(":")
+}
+
+/**
+ * Alle kommandoene som gir T'OS alle tillatelser med PC, uten at Android-menyene vises på stereoen.
+ * Samme liste står i docs/ADB-OPPSETT.md og docs/tos-oppsett.bat (en test passer på at de stemmer).
+ * [accessibility] = hele verdien for enabled_accessibility_services (se [accessibilityValue]).
+ */
+internal fun adbSetupCommands(pkg: String, accessibility: String = "$pkg/$pkg.KeyService"): List<AdbStep> {
+    val perms = listOf(
+        "ACCESS_FINE_LOCATION" to "posisjon (nøyaktig)", "ACCESS_COARSE_LOCATION" to "posisjon",
+        "BLUETOOTH_CONNECT" to "Bluetooth", "BLUETOOTH_SCAN" to "søke etter Bluetooth-enheter",
+        "POST_NOTIFICATIONS" to "varsel om at GPS-en er i bruk", "READ_CONTACTS" to "kontakter",
+        "READ_CALL_LOG" to "siste anrop", "CALL_PHONE" to "ringe", "READ_PHONE_STATE" to "se når telefonen ringer",
+    )
+    return listOf(
+        AdbStep("adb shell settings put secure enabled_accessibility_services $accessibility", "Knappestyring («T'OS knapper»)"),
+        AdbStep("adb shell settings put secure accessibility_enabled 1", "Slår på knappestyringen"),
+        AdbStep("adb shell cmd notification allow_listener $pkg/$pkg.MediaListener", "Sangtittel, cover, neste sving og hvem som ringer"),
+        AdbStep("adb shell appops set $pkg SYSTEM_ALERT_WINDOW allow", "Vise over andre apper (Waze-popupen)"),
+        AdbStep("adb shell appops set $pkg WRITE_SETTINGS allow", "Lysstyrke, tastelyd og 24-timers klokke"),
+        AdbStep("adb shell appops set $pkg REQUEST_INSTALL_PACKAGES allow", "Installere oppdateringer av T'OS"),
+        AdbStep("adb shell appops set $pkg ACCESS_RESTRICTED_SETTINGS allow", "Android 13: «begrensede innstillinger»"),
+    ) + perms.map { (p, what) -> AdbStep("adb shell pm grant $pkg android.permission.$p", what.replaceFirstChar { it.uppercase() }) } + listOf(
+        AdbStep("adb shell cmd wifi network-suggestions-set-user-approved $pkg yes", "Wi-Fi uten spørsmål (Android 11+)"),
+        AdbStep("adb shell dumpsys deviceidle whitelist +$pkg", "Ikke stoppet av batterisparing"),
+        AdbStep("adb shell cmd package set-home-activity $pkg/.MainActivity", "T'OS som startskjerm"),
+        AdbStep("adb shell cmd role add-role-holder android.app.role.DIALER $pkg", "T'OS som telefon-app"),
+    )
+}
+
+/** Stereoens IP-adresse på Wi-Fi (til «adb connect»), eller null. */
+private fun localIp(c: Context): String? = runCatching {
+    val cm = c.getSystemService(Context.CONNECTIVITY_SERVICE) as android.net.ConnectivityManager
+    cm.getLinkProperties(cm.activeNetwork)?.linkAddresses?.map { it.address }
+        ?.firstOrNull { it is java.net.Inet4Address && !it.isLoopbackAddress }?.hostAddress
+}.getOrNull()
+
 /** Forklarer hver tillatelse og hvorfor T'OS trenger den, med en knapp rett til riktig sted. (Idé fra OpenLauncher.) */
 @Composable
 fun SetupScreen(onClose: () -> Unit) {
     val context = LocalContext.current
     val askPerms = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { Hub.startGps(); Prefs.set("perm_v", System.currentTimeMillis()) }
-    var tick by remember { mutableIntStateOf(0) }
-    LaunchedEffect(Unit) { while (true) { delay(1500); tick++ } }   // oppdater haker når du kommer tilbake fra Innstillinger
+    val resume = rememberResumeTick()
+    var poll by remember { mutableIntStateOf(0) }
+    // Sjekk igjen når du kommer tilbake fra Android, og hvert 1,5 s (så hakene kommer med en gang ved oppsett med PC)
+    LaunchedEffect(Unit) { while (true) { delay(1500); poll++ } }
+    val tick = resume * 100_000 + poll
     val isHome = remember(tick) {
         context.packageManager.resolveActivity(Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME), 0)?.activityInfo?.packageName == context.packageName
     }
     val btPerms = if (Build.VERSION.SDK_INT >= 31) arrayOf(Manifest.permission.BLUETOOTH_CONNECT, Manifest.permission.BLUETOOTH_SCAN) else emptyArray()
+    var withPc by remember { mutableStateOf(false) }
 
     @Composable fun Step(icon: ImageVector, title: String, why: String, done: Boolean, optional: Boolean = false, action: () -> Unit) {
         Row(
             Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(Card).padding(horizontal = 18.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp),
         ) {
-            Icon(if (done) Icons.Default.CheckCircle else icon, null, tint = if (done) TextPrimary else TextMuted, modifier = Modifier.size(26.dp))
+            Icon(if (done) Icons.Default.CheckCircle else icon, if (done) "Klar" else null, tint = if (done) TextPrimary else TextMuted, modifier = Modifier.size(26.dp))
             Column(Modifier.weight(1f)) {
                 Text(title + if (optional) " (valgfritt)" else "", color = TextPrimary, fontSize = 16.sp)
                 Text(why, color = TextMuted, fontSize = 13.sp)
             }
-            if (!done) Pill("Slå på", strong = !optional) { action() } else Text("Klar", color = TextMuted, fontSize = 14.sp)
+            if (!done) Pill("Slå på", strong = !optional) { action() } else Text("✓ Klar", color = TextMuted, fontSize = 14.sp)
         }
         Spacer(Modifier.height(8.dp))
     }
 
     // Lukkes oppsettet med X, kommer det ikke tilbake av seg selv (finnes under Innstillinger → Om stereoen)
     Page("Velkommen til T'OS", { Prefs.set("setup_done", true); onClose() }, extra = { Pill("Ferdig", Icons.Default.Check, strong = true) { Prefs.set("setup_done", true); onClose() }; Spacer(Modifier.width(12.dp)) }) {
-        Text("Slå på det du vil bruke. Alt kan endres senere under Innstillinger.", color = TextMuted, fontSize = 15.sp, modifier = Modifier.padding(bottom = 12.dp))
+        Text("Slå på det du vil bruke. «Slå på» åpner Androids egen side for akkurat den tillatelsen (det kan ikke unngås for en vanlig app). " +
+            "Vil du slippe Android-menyene helt: bruk PC-en nederst.", color = TextMuted, fontSize = 15.sp, modifier = Modifier.padding(bottom = 12.dp))
         Column(Modifier.verticalScroll(rememberScrollState())) {
-            val fine = context.hasPermission(Manifest.permission.ACCESS_FINE_LOCATION)
+            val fine = remember(tick) { context.hasPermission(Manifest.permission.ACCESS_FINE_LOCATION) }
             val coarseOnly = !fine && context.hasPermission(Manifest.permission.ACCESS_COARSE_LOCATION)
             Step(Icons.Default.LocationOn, "Posisjon",
                 if (coarseOnly) "Bare «omtrentlig» er tillatt – velg «Nøyaktig» for fart, fartsgrense og turmåler." else "Fart, kart, fartsgrense, nattmodus og turmåler.", fine) {
@@ -373,24 +543,67 @@ fun SetupScreen(onClose: () -> Unit) {
             Step(Icons.Default.Home, "T'OS som startskjerm", "Hjem-knappen og MENU åpner T'OS.", isHome) {
                 context.go(Intent(Settings.ACTION_HOME_SETTINGS)) || context.go(Intent(Settings.ACTION_MANAGE_DEFAULT_APPS_SETTINGS))
             }
-            Step(Icons.Default.Tune, "Knappestyring", "Knappene på stereoen og rattet, og Waze-popupen. Slå på «T'OS knapper». Er valget grått: Apper → T'OS → ⋮ → «Tillat begrensede innstillinger».", Buttons.serviceEnabled(context)) {
+            Step(Icons.Default.Tune, "Knappestyring", "Knappene på stereoen og rattet, og Waze-popupen. Slå på «T'OS knapper». Er valget grått: Apper → T'OS → ⋮ → «Tillat begrensede innstillinger».",
+                remember(tick) { Buttons.serviceEnabled(context) }) {
                 context.go(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
             }
-            Step(Icons.Default.MusicNote, "Sangtittel og cover", "Viser hva som spiller, neste sving fra Google Maps og hvem som ringer.", MediaListener.enabled(context)) {
+            Step(Icons.Default.MusicNote, "Sangtittel og cover", "Viser hva som spiller, neste sving fra Google Maps og hvem som ringer.", remember(tick) { MediaListener.enabled(context) }) {
                 openNotificationAccess(context)
             }
-            if (btPerms.isNotEmpty()) Step(Icons.Default.Bluetooth, "Bluetooth", "Se tilkoblet telefon, pare enheter, batterispenning fra OBD-brikke.", btPerms.all { context.hasPermission(it) }) {
+            if (btPerms.isNotEmpty()) Step(Icons.Default.Bluetooth, "Bluetooth", "Se tilkoblet telefon, pare enheter, batterispenning fra OBD-brikke.", remember(tick) { btPerms.all { context.hasPermission(it) } }) {
                 askPerms.launch(btPerms)
             }
-            Step(Icons.Default.Layers, "Vis over andre apper", "Reserve for Waze-popupen hvis knappestyring er av.", Settings.canDrawOverlays(context), optional = true) {
+            Step(Icons.Default.SystemUpdate, "Installere oppdateringer", "Oppdateringsknappen i T'OS. Første oppdatering ber om ett «Installer»-trykk, senere går det av seg selv.",
+                remember(tick) { Updater.canInstall(context) }, optional = true) { Updater.openInstallPermission(context) }
+            Step(Icons.Default.Layers, "Vis over andre apper", "Reserve for Waze-popupen hvis knappestyring er av.", remember(tick) { Settings.canDrawOverlays(context) }, optional = true) {
                 context.go(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:${context.packageName}")))
             }
-            Step(Icons.Default.LightMode, "Styre lysstyrken", "Demper hele stereoen om natten.", Settings.System.canWrite(context), optional = true) {
+            Step(Icons.Default.LightMode, "Styre lysstyrken", "Demper hele stereoen om natten. Også tastelyd og 24-timers klokke.", remember(tick) { Settings.System.canWrite(context) }, optional = true) {
                 context.go(Intent(Settings.ACTION_MANAGE_WRITE_SETTINGS, Uri.parse("package:${context.packageName}")))
             }
-            Step(Icons.Default.Backup, "Hente gamle innstillinger", "Har du lagret innstillingene til fil før, hent dem under Innstillinger → Sikkerhetskopi.", Prefs.bool("setup_restored"), optional = true) {
+            Step(Icons.Default.Backup, "Hente gamle innstillinger", "Har du lagret innstillingene før, hent dem under Innstillinger → Sikkerhetskopi.", Prefs.bool("setup_restored"), optional = true) {
                 Prefs.set("setup_restored", true); Prefs.set("settings_cat", "BACKUP"); Nav.screen = Screen.SETTINGS
             }
+
+            // Alternativ: alt på én gang fra en PC, uten å se Android-menyene på stereoen
+            Spacer(Modifier.height(10.dp))
+            Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(Card).padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                    Icon(Icons.Default.Computer, null, tint = TextMuted, modifier = Modifier.size(26.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text("Med PC (ADB) – uten å se Android-menyene", color = TextPrimary, fontSize = 16.sp)
+                        Text("Gir T'OS alle tillatelsene på én gang. Krever en Windows-PC på samme Wi-Fi.", color = TextMuted, fontSize = 13.sp)
+                    }
+                    Pill(if (withPc) "Skjul" else "Vis", if (withPc) Icons.Default.ExpandLess else Icons.Default.ExpandMore) { withPc = !withPc }
+                }
+                if (withPc) {
+                    val ip = remember(resume) { localIp(context) }
+                    val acc = remember(tick) {
+                        accessibilityValue(runCatching { Settings.Secure.getString(context.contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES) }.getOrNull(),
+                            "${context.packageName}/${context.packageName}.KeyService")
+                    }
+                    val mono = androidx.compose.ui.text.font.FontFamily.Monospace
+                    Text("1. Last ned «SDK Platform-Tools for Windows» fra developer.android.com/tools/releases/platform-tools og pakk ut.\n" +
+                        "2. På stereoen: slå på utvikleralternativer (trykk 7 ganger på «Versjonsnummer» under Om) og «Trådløs feilsøking» / «ADB over nettverk».\n" +
+                        "3. Åpne «Ledetekst» i mappa platform-tools og skriv kommandoene under, én og én. Eller kjør docs/tos-oppsett.bat fra GitHub – den gjør alt.",
+                        color = TextMuted, fontSize = 13.sp)
+                    Text("Koble til stereoen: adb connect ${ip ?: "<stereoens IP>"}:5555", color = TextPrimary, fontSize = 13.sp, fontFamily = mono)
+                    Text("(Android 11+ med «Trådløs feilsøking»: først «adb pair IP:port» med koden som vises på stereoen, så «adb connect» med porten som står der.)",
+                        color = TextMuted, fontSize = 12.sp)
+                    adbSetupCommands(context.packageName, acc).forEach { st ->
+                        Column {
+                            Text(st.cmd, color = TextPrimary, fontSize = 12.sp, fontFamily = mono)
+                            Text(st.what, color = TextMuted, fontSize = 12.sp)
+                        }
+                    }
+                    Text("En linje som gir feil (f.eks. «Unknown permission» eller «Unknown operation») gjelder en annen Android-versjon og kan overses. " +
+                        "Hele veiledningen: github.com/${Updater.OWNER}/${Updater.REPO} → docs → ADB-OPPSETT.md", color = TextMuted, fontSize = 12.sp)
+                    Pill("Utvikleralternativer (åpner Android-menyen)", Icons.Default.DeveloperMode) {
+                        context.go(Intent(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS)) || context.go(Intent(Settings.ACTION_DEVICE_INFO_SETTINGS))
+                    }
+                }
+            }
+            Spacer(Modifier.height(12.dp))
         }
     }
 }

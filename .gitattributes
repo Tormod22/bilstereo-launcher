@@ -1,0 +1,2 @@
+# Windows-skript må ha CRLF-linjeskift for å virke i Ledetekst
+*.bat text eol=crlf

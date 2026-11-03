@@ -47,36 +47,60 @@ import java.util.Locale
 
 /**
  * T'OS Innstillinger: erstatter stereoens egen innstillingsapp med samme mørke tema.
- * Det Android lar apper endre, endres her direkte. Resten åpner riktig systempanel.
+ * Alt Android lar apper endre, endres her direkte. Stereoens originale innstillinger finnes bare
+ * bak en bekreftelse under Om stereoen → Avansert.
  */
-enum class SetCat(val label: String, val icon: ImageVector, val group: String) {
-    NET("Wi-Fi og internett", Icons.Default.Wifi, "Stereoen"),
-    BT("Bluetooth", Icons.Default.Bluetooth, "Stereoen"),
-    SOUND("Lyd", Icons.Default.VolumeUp, "Stereoen"),
-    SCREEN("Skjerm", Icons.Default.LightMode, "Stereoen"),
-    APPS("Apper", Icons.Default.Apps, "Stereoen"),
-    STORAGE("Lagring", Icons.Default.Storage, "Stereoen"),
-    TIME("Dato, tid og språk", Icons.Default.Schedule, "Stereoen"),
-    ABOUT("Om stereoen", Icons.Default.Info, "Stereoen"),
-    MAP("Kart og kjøring", Icons.Default.Map, "T'OS"),
-    MUSIC("Musikk og oppstart", Icons.Default.MusicNote, "T'OS"),
-    PHONE("Telefon", Icons.Default.Phone, "T'OS"),
-    CAR("Bil", Icons.Default.DirectionsCar, "T'OS"),
-    KEYS("Knapper", Icons.Default.Tune, "T'OS"),
-    BACKUP("Sikkerhetskopi og hjelp", Icons.Default.Backup, "T'OS"),
+enum class SetCat(val label: String, val icon: ImageVector, val group: String, val words: String) {
+    NET("Wi-Fi og internett", Icons.Default.Wifi, "Stereoen", "wifi wlan nett internett hotspot iphone passord"),
+    BT("Bluetooth", Icons.Default.Bluetooth, "Stereoen", "bluetooth telefon paring pare obd brikke"),
+    SOUND("Lyd", Icons.Default.VolumeUp, "Stereoen", "lyd volum equalizer eq bass diskant varsel ringelyd tastelyd alarm"),
+    SCREEN("Skjerm", Icons.Default.LightMode, "Stereoen", "skjerm lysstyrke lys natt nattmodus dag ikoner tekst størrelse bilbilde skjermsparer klokke"),
+    APPS("Apper", Icons.Default.Apps, "Stereoen", "apper app skjul vis startskjerm carplay car link radio kamera systemapper avinstaller"),
+    STORAGE("Lagring", Icons.Default.Storage, "Stereoen", "lagring plass minne cache tøm kart minnepinne"),
+    TIME("Dato, tid og språk", Icons.Default.Schedule, "Stereoen", "dato tid klokke tidssone 24 timer språk tastatur norsk"),
+    ABOUT("Om stereoen", Icons.Default.Info, "Stereoen", "om versjon oppdatering oppdater stereo android prosessor minne oppsett tillatelser adb pc avansert"),
+    MAP("Kart og kjøring", Icons.Default.Map, "T'OS", "kart navigasjon adresse hjem jobb waze maps fart fartsgrense popup"),
+    MUSIC("Musikk og oppstart", Icons.Default.MusicNote, "T'OS", "musikk spotify oppstart sangtittel cover varseltilgang"),
+    PHONE("Telefon", Icons.Default.Phone, "T'OS", "telefon favoritter carplay ring samtale"),
+    CAR("Bil", Icons.Default.DirectionsCar, "T'OS", "bil batteri spenning obd eu-kontroll service dekk dekkskift tuning tur"),
+    KEYS("Knapper", Icons.Default.Tune, "T'OS", "knapper ratt lær tast menu navi"),
+    BACKUP("Sikkerhetskopi og hjelp", Icons.Default.Backup, "T'OS", "sikkerhetskopi backup lagre hent fil rapport feil krasj sikker modus"),
+}
+
+/** Kategoriene som passer søket (alle ord må finnes i navnet eller søkeordene). Ren logikk, testes. */
+internal fun settingsSearch(query: String): List<SetCat> {
+    val nb = Locale("nb", "NO")
+    val words = query.lowercase(nb).split(' ', ',').filter { it.isNotBlank() }
+    if (words.isEmpty()) return SetCat.entries
+    return SetCat.entries.filter { c ->
+        val hay = (c.label + " " + c.words).lowercase(nb)
+        words.all { it in hay }
+    }
 }
 
 private fun Context.open(i: Intent) = runCatching { startActivity(i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }.isSuccess
-private fun Context.openFirst(vararg actions: String) { for (a in actions) if (open(Intent(a))) return }
+
+/** Viser T'OS-melding (ikke Androids). */
+private fun say(text: String) = Notify.show(text)
 
 @Composable
 fun SettingsScreen(onClose: () -> Unit) {
     var cat by remember { mutableStateOf(SetCat.entries.firstOrNull { it.name == Prefs.str("settings_cat") } ?: SetCat.NET) }
+    var query by remember { mutableStateOf("") }
+    val shown = remember(query) { settingsSearch(query) }
     Page("Innstillinger", onClose) {
         Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(18.dp)) {
-            // Venstre: kategorier
+            // Venstre: søk + kategorier
             LazyColumn(Modifier.width(250.dp).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                SetCat.entries.groupBy { it.group }.forEach { (group, cats) ->
+                item {
+                    Field(query, "Søk i innstillinger", Modifier.fillMaxWidth().padding(bottom = 4.dp)) {
+                        query = it
+                        // Bare ett treff: vis det med en gang
+                        settingsSearch(it).singleOrNull()?.let { c -> cat = c; Prefs.set("settings_cat", c.name) }
+                    }
+                }
+                if (shown.isEmpty()) item { Text("Ingen treff", color = TextMuted, fontSize = 14.sp, modifier = Modifier.padding(12.dp)) }
+                shown.groupBy { it.group }.forEach { (group, cats) ->
                     item { Text(group.uppercase(), color = TextMuted, fontSize = 12.sp, letterSpacing = 1.sp, modifier = Modifier.padding(start = 12.dp, top = 10.dp, bottom = 6.dp)) }
                     items(cats) { c ->
                         val on = c == cat
@@ -119,14 +143,14 @@ fun SettingsScreen(onClose: () -> Unit) {
 @Composable private fun Chevron() = Icon(Icons.Default.ChevronRight, null, tint = TextMuted)
 
 @Composable
-private fun SliderRow(title: String, icon: ImageVector, value: Float, range: ClosedFloatingPointRange<Float>, onChange: (Float) -> Unit) {
+private fun SliderRow(title: String, icon: ImageVector, value: Float, range: ClosedFloatingPointRange<Float>, onDone: () -> Unit = {}, onChange: (Float) -> Unit) {
     Row(
         Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(Card).padding(horizontal = 18.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp),
     ) {
         Icon(icon, null, tint = TextMuted)
         Text(title, color = TextPrimary, fontSize = 16.sp, modifier = Modifier.width(150.dp))
-        Slider(value, onChange, valueRange = range, modifier = Modifier.weight(1f),
+        Slider(value, onChange, valueRange = range, onValueChangeFinished = onDone, modifier = Modifier.weight(1f),
             colors = SliderDefaults.colors(thumbColor = TextPrimary, activeTrackColor = TextPrimary, inactiveTrackColor = Line))
     }
     Spacer(Modifier.height(8.dp))
@@ -139,25 +163,46 @@ private fun SoundSettings() {
     val context = LocalContext.current
     val am = remember { context.getSystemService(Context.AUDIO_SERVICE) as AudioManager }
     @Composable fun stream(title: String, icon: ImageVector, s: Int) {
-        val max = remember { am.getStreamMaxVolume(s).toFloat() }
-        var v by remember { mutableFloatStateOf(am.getStreamVolume(s).toFloat()) }
-        SliderRow(title, icon, v, 0f..max) { v = it; runCatching { am.setStreamVolume(s, it.toInt(), 0) } }
+        val max = remember { runCatching { am.getStreamMaxVolume(s) }.getOrDefault(15).toFloat() }
+        var v by remember { mutableFloatStateOf(runCatching { am.getStreamVolume(s) }.getOrDefault(0).toFloat()) }
+        var dragging by remember { mutableStateOf(false) }
+        // Følg med når volumet endres med knappene på stereoen eller rattet
+        LaunchedEffect(Unit) { while (true) { delay(1500); if (!dragging) v = runCatching { am.getStreamVolume(s) }.getOrDefault(v.toInt()).toFloat() } }
+        SliderRow("$title  ${v.toInt()}", icon, v, 0f..max, onDone = { dragging = false }) {
+            dragging = true; v = it
+            runCatching { am.setStreamVolume(s, it.toInt(), 0) }.onFailure { say("Stereoen tillot ikke å endre «$title» nå") }
+        }
     }
     stream("Musikk og radio", Icons.Default.MusicNote, AudioManager.STREAM_MUSIC)
     stream("Samtaler", Icons.Default.Call, AudioManager.STREAM_VOICE_CALL)
-    stream("Varsler", Icons.Default.Notifications, AudioManager.STREAM_NOTIFICATION)
     stream("Ringelyd", Icons.Default.RingVolume, AudioManager.STREAM_RING)
+    stream("Varsler", Icons.Default.Notifications, AudioManager.STREAM_NOTIFICATION)
+    stream("Alarm", Icons.Default.Alarm, AudioManager.STREAM_ALARM)
+    stream("Systemlyder", Icons.Default.TouchApp, AudioManager.STREAM_SYSTEM)
     Section("Equalizer")
     EqPanel()
     Spacer(Modifier.height(8.dp))
+    Section("Andre lyder")
     ToggleRow("Lyd når du er over fartsgrensen", "speed_beep", false)
-    SettingRow("Flere lydvalg", onClick = { context.openFirst(Settings.ACTION_SOUND_SETTINGS) }) { Chevron() }
+    val tick = rememberResumeTick()
+    val canWrite = remember(tick) { Settings.System.canWrite(context) }
+    if (canWrite) {
+        var touch by remember { mutableStateOf(runCatching { Settings.System.getInt(context.contentResolver, Settings.System.SOUND_EFFECTS_ENABLED) }.getOrDefault(1) == 1) }
+        SettingRow("Tastelyd", "Klikk når du trykker på skjermen", onClick = {
+            val nv = !touch
+            if (runCatching { Settings.System.putInt(context.contentResolver, Settings.System.SOUND_EFFECTS_ENABLED, if (nv) 1 else 0) }.getOrDefault(false)) {
+                touch = nv
+                runCatching { if (nv) am.loadSoundEffects() else am.unloadSoundEffects() }
+            } else say("Stereoen tillot ikke å endre tastelyden")
+        }) { Toggle(touch) }
+    } else SettingRow("Tastelyd", "Krever at T'OS får endre systeminnstillinger (Skjerm → Styr lysstyrken for hele stereoen)")
 }
 
 @Composable
 private fun ScreenSettings() {
     val context = LocalContext.current
-    val canWrite = Settings.System.canWrite(context)
+    val tick = rememberResumeTick()
+    val canWrite = remember(tick) { Settings.System.canWrite(context) }
     val pickCar = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) Hub.scope.launch {
             // Krymp til høyst 1200 px og lagre som PNG (et stort kamerabilde kunne ellers fått forsiden til å krasje)
@@ -171,7 +216,7 @@ private fun ScreenSettings() {
                 }.isSuccess
             }
             if (ok) Prefs.set("car_image_v", System.currentTimeMillis())
-            context.toast(if (ok) "Bilbildet er lagret" else "Fikk ikke lest bildet")
+            say(if (ok) "Bilbildet er lagret" else "Fikk ikke lest bildet")
         }
     }
     if (canWrite) {
@@ -187,7 +232,7 @@ private fun ScreenSettings() {
     } else {
         var b by remember { mutableFloatStateOf(Prefs.float("app_brightness", 0.7f).let { if (it < 0) 0.7f else it }) }
         SliderRow("Lysstyrke (T'OS)", Icons.Default.LightMode, b, 0.05f..1f) { b = it; Prefs.set("app_brightness", it) }
-        SettingRow("Styr lysstyrken for hele stereoen", "Gi T'OS lov til å endre systeminnstillinger", onClick = {
+        SettingRow("Styr lysstyrken for hele stereoen", "Gi T'OS lov til å endre systeminnstillinger (åpner Androids tillatelsesside én gang – eller bruk PC, se Om stereoen → Førstegangsoppsett)", onClick = {
             context.open(Intent(Settings.ACTION_MANAGE_WRITE_SETTINGS, Uri.parse("package:${context.packageName}")))
         }) { Chevron() }
     }
@@ -207,23 +252,38 @@ private fun ScreenSettings() {
             runCatching { Settings.System.putInt(context.contentResolver, Settings.System.SCREEN_OFF_TIMEOUT, opts[shown].first) }
         }) { Text(opts[shown].second, color = TextPrimary, fontSize = 15.sp) }
     }
-    SettingRow("Bilbilde", "PNG med svart eller gjennomsiktig bakgrunn", onClick = { pickCar.launch(arrayOf("image/*")) }) {
-        if (File(context.filesDir, "car.png").exists()) Text("Fjern", color = TextPrimary, fontSize = 15.sp,
-            modifier = Modifier.clickable { File(context.filesDir, "car.png").delete(); Prefs.set("car_image_v", System.currentTimeMillis()) }.padding(8.dp))
+    val hasCar = remember(Prefs.long("car_image_v")) { File(context.filesDir, "car.png").exists() }
+    SettingRow("Bilbilde", if (hasCar) "Eget bilde er valgt" else "PNG med svart eller gjennomsiktig bakgrunn", onClick = { pickCar.launch(arrayOf("image/*")) }) {
+        if (hasCar) Text("Fjern", color = TextPrimary, fontSize = 15.sp,
+            modifier = Modifier.heightIn(min = 48.dp).clip(RoundedCornerShape(14.dp))
+                .clickable { File(context.filesDir, "car.png").delete(); Prefs.set("car_image_v", System.currentTimeMillis()) }
+                .padding(horizontal = 14.dp, vertical = 14.dp))
     }
 }
 
 @Composable
 private fun AppsSettings() {
     val context = LocalContext.current
+    val tick = rememberResumeTick()
     val hidden = HiddenApps.userHidden()
-    val apps by produceState(emptyList<AppEntry>(), Prefs.str("hidden_apps")) {
+    var sheet by remember { mutableStateOf<AppEntry?>(null) }
+    val apps by produceState(emptyList<AppEntry>(), Prefs.str("hidden_apps"), Prefs.bool("show_system_apps"), tick) {
         value = withContext(Dispatchers.IO) { AppRepository.installedApps(context, includeHidden = true) }
     }
-    SettingRow("Startskjerm", "Velg T'OS som startskjerm", onClick = {
-        context.openFirst(Settings.ACTION_HOME_SETTINGS, Settings.ACTION_MANAGE_DEFAULT_APPS_SETTINGS, Settings.ACTION_SETTINGS)
+    sheet?.let { a ->
+        androidx.activity.compose.BackHandler { sheet = null }
+        AppSheet(a, tick) { sheet = null }
+        return
+    }
+    val isHome = remember(tick) {
+        context.packageManager.resolveActivity(Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME), 0)?.activityInfo?.packageName == context.packageName
+    }
+    if (isHome) SettingRow("Startskjerm", "T'OS er startskjermen") { Icon(Icons.Default.CheckCircle, "Klar", tint = TextPrimary) }
+    else SettingRow("Startskjerm", "T'OS er ikke startskjerm ennå. Trykk for Androids valg – eller bruk PC (Om stereoen → Førstegangsoppsett)", onClick = {
+        context.open(Intent(Settings.ACTION_HOME_SETTINGS)) || context.open(Intent(Settings.ACTION_MANAGE_DEFAULT_APPS_SETTINGS))
     }) { Chevron() }
     ToggleRow("Hold T'OS som startskjerm", "keep_home", true, "Viser T'OS i stedet hvis den originale startskjermen dukker opp (krever knappestyring)")
+    ToggleRow("Vis systemapper", "show_system_apps", false, "Viser også stereoens innebygde apper i app-lista")
     Section("Hvilke apper T'OS bruker")
     AppChoiceRow("CarPlay-app (f.eks. Car link 2.0)", "carplay_pkg", "Car")
     AppChoiceRow("Radio-app", "radio_pkg", "Rad")
@@ -232,10 +292,11 @@ private fun AppsSettings() {
     AppChoiceRow("Ryggekamera", "camera_pkg", "Rygg")
     AppChoiceRow("Musikkapp", "music_pkg", "Mus")
     Section("Alle apper (${apps.size}) – trykk for detaljer, «Skjul» fjerner fra app-lista")
+    if (apps.isEmpty()) Text("Henter appene …", color = TextMuted, fontSize = 14.sp)
     apps.forEach { a ->
         Row(
             Modifier.fillMaxWidth().height(60.dp).clip(RoundedCornerShape(16.dp)).background(Card)
-                .clickable { context.open(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:${a.packageName}"))) }
+                .clickable { sheet = a }
                 .padding(horizontal = 14.dp),
             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp),
         ) {
@@ -243,46 +304,182 @@ private fun AppsSettings() {
             Text(a.label, color = TextPrimary, fontSize = 16.sp, modifier = Modifier.weight(1f), maxLines = 1)
             val isHidden = a.packageName in hidden || HiddenApps.isHidden(a)
             Text(if (isHidden) "Vis" else "Skjul", color = TextPrimary, fontSize = 14.sp,
-                modifier = Modifier.clip(RoundedCornerShape(14.dp)).background(Line).clickable { HiddenApps.toggle(a) }.padding(horizontal = 14.dp, vertical = 8.dp))
+                modifier = Modifier.heightIn(min = 48.dp).clip(RoundedCornerShape(14.dp)).background(Line).clickable { HiddenApps.toggle(a) }
+                    .padding(horizontal = 16.dp, vertical = 14.dp))
         }
         Spacer(Modifier.height(6.dp))
     }
 }
 
+/** T'OS sin egen app-side (i stedet for Androids «Appinfo»). */
+@Composable
+private fun AppSheet(a: AppEntry, tick: Int, onClose: () -> Unit) {
+    val context = LocalContext.current
+    val pm = context.packageManager
+    val info = remember(a.packageName, tick) { runCatching { pm.getPackageInfo(a.packageName, 0) }.getOrNull() }
+    val ai = info?.applicationInfo
+    val system = ai != null && (ai.flags and android.content.pm.ApplicationInfo.FLAG_SYSTEM) != 0
+    val updatedSystem = ai != null && (ai.flags and android.content.pm.ApplicationInfo.FLAG_UPDATED_SYSTEM_APP) != 0
+    val sizeMb by produceState<Long?>(null, info) {
+        value = withContext(Dispatchers.IO) {
+            runCatching { ((listOf(ai!!.sourceDir) + ai.splitSourceDirs.orEmpty()).sumOf { File(it).length() }) / 1_048_576 }.getOrNull()
+        }
+    }
+    var confirmDelete by remember { mutableStateOf(false) }
+    LaunchedEffect(confirmDelete) { if (confirmDelete) { delay(4000); confirmDelete = false } }
+    val date = SimpleDateFormat("d. MMMM yyyy", Locale("nb", "NO"))
+
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp), modifier = Modifier.padding(bottom = 14.dp)) {
+        AppIcon(a.icon, 64.dp, a.packageName)
+        Column(Modifier.weight(1f)) {
+            Text(a.label, color = TextPrimary, fontSize = 22.sp, fontWeight = FontWeight.Medium, maxLines = 1)
+            Text(a.packageName, color = TextMuted, fontSize = 13.sp, maxLines = 1)
+        }
+        Pill("Tilbake", Icons.Default.ChevronLeft) { onClose() }
+    }
+    if (info == null) {
+        SettingRow("Appen finnes ikke lenger", "Den er avinstallert")
+        return
+    }
+    SettingRow("Versjon", (info.versionName ?: "ukjent") + (if (system) (if (updatedSystem) " · systemapp (oppdatert)" else " · systemapp") else ""))
+    SettingRow("Installert", date.format(Date(info.firstInstallTime)) + if (info.lastUpdateTime > info.firstInstallTime + 60_000) " · oppdatert ${date.format(Date(info.lastUpdateTime))}" else "")
+    sizeMb?.let { SettingRow("Størrelse på appen", "$it MB (uten appens egne data)") }
+    val isHidden = HiddenApps.isHidden(a)
+    Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.padding(top = 6.dp, bottom = 10.dp)) {
+        Pill("Åpne", Icons.Default.OpenInNew, strong = true) { AppRepository.launch(context, a.packageName) }
+        Pill(if (isHidden) "Vis i app-lista" else "Skjul fra app-lista", if (isHidden) Icons.Default.Visibility else Icons.Default.VisibilityOff) { HiddenApps.toggle(a) }
+        Pill("Lukk i bakgrunnen", Icons.Default.Close) {
+            val am = context.getSystemService(Context.ACTIVITY_SERVICE) as android.app.ActivityManager
+            runCatching { am.killBackgroundProcesses(a.packageName) }
+            say("${a.label} er lukket hvis den kjørte i bakgrunnen")
+        }
+    }
+    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        if (!system || updatedSystem) {
+            val label = if (updatedSystem) "Fjern oppdateringer" else "Avinstaller"
+            Pill(if (confirmDelete) "Trykk igjen: $label" else label, Icons.Default.Delete, strong = confirmDelete) {
+                if (!confirmDelete) { confirmDelete = true; return@Pill }
+                confirmDelete = false
+                // Android viser alltid en egen «Er du sikker?»-boks her (kan ikke unngås for vanlige apper)
+                if (!context.open(Intent(Intent.ACTION_DELETE, Uri.parse("package:${a.packageName}")))) say("Fikk ikke avinstallert ${a.label}")
+            }
+        }
+        Pill("Avansert (Android)", Icons.Default.Settings) {
+            context.open(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:${a.packageName}")))
+        }
+    }
+    Text(
+        (if (!system || updatedSystem) "Avinstaller: Android spør selv om du er sikker. " else "Systemapper fra stereoen kan ikke avinstalleres, bare skjules. ") +
+            "«Avansert» åpner Androids egen side for appen (tillatelser, tøm data, tvungen stopp).",
+        color = TextMuted, fontSize = 13.sp, modifier = Modifier.padding(top = 10.dp),
+    )
+}
+
 @Composable
 private fun StorageSettings() {
     val context = LocalContext.current
-    val stat = remember { StatFs(Environment.getDataDirectory().path) }
-    val total = stat.totalBytes; val free = stat.availableBytes
-    fun gb(b: Long) = String.format(Locale("nb", "NO"), "%.1f GB", b / 1_073_741_824.0)
-    SettingRow("Brukt ${gb(total - free)} av ${gb(total)}", "${gb(free)} ledig")
-    Box(Modifier.fillMaxWidth().height(8.dp).clip(RoundedCornerShape(4.dp)).background(Line)) {
-        Box(Modifier.fillMaxWidth(((total - free).toFloat() / total).coerceIn(0f, 1f)).fillMaxHeight().background(TextPrimary))
-    }
-    Spacer(Modifier.height(14.dp))
-    val map = OfflineMaps.file(context)
-    if (map.exists()) SettingRow("Kart uten nett", "${OfflineMaps.sizeMb(map.length())} MB")
     var tick by remember { mutableIntStateOf(0) }
-    val cacheMb by produceState(0, tick) {
-        value = withContext(Dispatchers.IO) { (context.cacheDir.walkBottomUp().sumOf { it.length() } / 1_048_576).toInt() }
+    val resume = rememberResumeTick()
+    fun gb(b: Long) = String.format(Locale("nb", "NO"), "%.1f GB", b / 1_073_741_824.0)
+    val stat = remember(tick, resume) { runCatching { StatFs(Environment.getDataDirectory().path) }.getOrNull() }
+    val total = stat?.totalBytes ?: 0L; val free = stat?.availableBytes ?: 0L
+    if (total > 0) {
+        SettingRow("Brukt ${gb(total - free)} av ${gb(total)}", "${gb(free)} ledig" + if (free < 1_073_741_824L) " – lite plass igjen" else "")
+        Box(Modifier.fillMaxWidth().height(8.dp).clip(RoundedCornerShape(4.dp)).background(Line)) {
+            Box(Modifier.fillMaxWidth(((total - free).toFloat() / total).coerceIn(0f, 1f)).fillMaxHeight().background(TextPrimary))
+        }
+        Spacer(Modifier.height(14.dp))
+    } else SettingRow("Lagring", "Fikk ikke lest hvor mye plass som er ledig")
+
+    // Minnepinne / minnekort (Android 11+ kan fortelle hvor de ligger)
+    val volumes by produceState(emptyList<Triple<String, Long, Long>>(), tick, resume) {
+        value = withContext(Dispatchers.IO) { externalVolumes(context) }
     }
-    SettingRow("Midlertidige filer i T'OS", "$cacheMb MB", onClick = {
-        // «apk» (en oppdatering som lastes ned/installeres) får ligge
-        Hub.scope.launch(Dispatchers.IO) { context.cacheDir.listFiles()?.filter { it.name != "apk" }?.forEach { it.deleteRecursively() }; tick++ }
-        context.toast("Tømt")
-    }) { Text("Tøm", color = TextPrimary, fontSize = 15.sp) }
-    SettingRow("Lagring i Android", onClick = { context.openFirst(Settings.ACTION_INTERNAL_STORAGE_SETTINGS, Settings.ACTION_SETTINGS) }) { Chevron() }
+    if (volumes.isNotEmpty()) {
+        Section("Minnepinne og minnekort")
+        volumes.forEach { (name, t, f) -> SettingRow(name, "${gb(f)} ledig av ${gb(t)}") }
+    }
+
+    Section("T'OS")
+    data class Use(val map: Long, val cache: Long, val files: Long, val apk: Long)
+    val use by produceState<Use?>(null, tick) {
+        value = withContext(Dispatchers.IO) {
+            fun size(f: File?) = f?.takeIf { it.exists() }?.walkBottomUp()?.filter { it.isFile }?.sumOf { it.length() } ?: 0L
+            val apk = size(File(context.cacheDir, "apk"))
+            Use(OfflineMaps.file(context).takeIf { it.exists() }?.length() ?: 0L, size(context.cacheDir) - apk, size(context.filesDir), apk)
+        }
+    }
+    fun mb(b: Long) = if (b < 1_048_576) "under 1 MB" else "${b / 1_048_576} MB"
+    val u = use
+    if (u == null) Text("Regner ut …", color = TextMuted, fontSize = 14.sp)
+    else {
+        if (u.map > 0) SettingRow("Kart uten nett (${OfflineMaps.LABEL})", mb(u.map) + " · slettes under Kart og kjøring")
+        else SettingRow("Kart uten nett", "Ikke lastet ned")
+        SettingRow("T'OS sine data", mb(u.files) + " (innstillinger, bilbilde, logger)")
+        var ask by remember { mutableStateOf(false) }
+        LaunchedEffect(ask) { if (ask) { delay(4000); ask = false } }
+        val clear: () -> Unit = {
+            if (!ask) ask = true
+            else {
+                ask = false
+                // «apk» (en oppdatering som lastes ned/installeres) får ligge
+                Hub.scope.launch {
+                    withContext(Dispatchers.IO) { context.cacheDir.listFiles()?.filter { it.name != "apk" }?.forEach { it.deleteRecursively() } }
+                    tick++; say("Midlertidige filer er slettet")
+                }
+            }
+        }
+        SettingRow("Midlertidige filer", mb(u.cache) + " · kartbilder og ikoner lages på nytt ved behov", onClick = clear) {
+            Pill(if (ask) "Trykk igjen" else "Tøm", strong = ask, onClick = clear)
+        }
+        if (u.apk > 0 && UpdateState.busy.not()) SettingRow("Gammel oppdateringsfil", mb(u.apk), onClick = {
+            Hub.scope.launch { withContext(Dispatchers.IO) { File(context.cacheDir, "apk").deleteRecursively() }; tick++; say("Slettet") }
+        }) { Text("Slett", color = TextPrimary, fontSize = 15.sp) }
+    }
+}
+
+/** Minnepinner og minnekort som er satt i: navn, total og ledig plass. */
+private fun externalVolumes(c: Context): List<Triple<String, Long, Long>> {
+    if (Build.VERSION.SDK_INT < 30) return emptyList()
+    val sm = c.getSystemService(Context.STORAGE_SERVICE) as? android.os.storage.StorageManager ?: return emptyList()
+    return runCatching {
+        sm.storageVolumes.filter { !it.isPrimary && it.state == Environment.MEDIA_MOUNTED }.mapNotNull { v ->
+            val dir = v.directory ?: return@mapNotNull null
+            val st = runCatching { StatFs(dir.path) }.getOrNull() ?: return@mapNotNull null
+            Triple(v.getDescription(c) ?: "Minnepinne", st.totalBytes, st.availableBytes)
+        }
+    }.getOrDefault(emptyList())
 }
 
 @Composable
 private fun TimeSettings() {
     val context = LocalContext.current
+    val tick = rememberResumeTick()
     var now by remember { mutableStateOf(Date()) }
     LaunchedEffect(Unit) { while (true) { now = Date(); delay(1000) } }
-    SettingRow(SimpleDateFormat("HH:mm", Locale.getDefault()).format(now), SimpleDateFormat("EEEE d. MMMM yyyy", Locale("nb", "NO")).format(now))
-    SettingRow("Dato og tid", "Tidssone, automatisk tid", onClick = { context.openFirst(Settings.ACTION_DATE_SETTINGS) }) { Chevron() }
-    SettingRow("Språk", Locale.getDefault().displayName, onClick = { context.openFirst(Settings.ACTION_LOCALE_SETTINGS) }) { Chevron() }
-    SettingRow("Tastatur", onClick = { context.openFirst(Settings.ACTION_INPUT_METHOD_SETTINGS) }) { Chevron() }
+    val canWrite = remember(tick) { Settings.System.canWrite(context) }
+    var h24 by remember(tick) { mutableStateOf(android.text.format.DateFormat.is24HourFormat(context)) }
+    val zone = java.util.TimeZone.getDefault()
+    val nb = Locale("nb", "NO")
+    SettingRow(SimpleDateFormat(if (h24) "HH:mm" else "h:mm a", nb).format(now), SimpleDateFormat("EEEE d. MMMM yyyy", nb).format(now))
+    SettingRow("Tidssone", zone.getDisplayName(zone.inDaylightTime(now), java.util.TimeZone.LONG, nb) + " (${zone.id})" +
+        if (zone.id != "Europe/Oslo") " – ikke norsk tid. Kan rettes med PC (se under)." else "")
+    val autoTime = remember(tick) { runCatching { Settings.Global.getInt(context.contentResolver, Settings.Global.AUTO_TIME) == 1 }.getOrNull() }
+    val autoZone = remember(tick) { runCatching { Settings.Global.getInt(context.contentResolver, Settings.Global.AUTO_TIME_ZONE) == 1 }.getOrNull() }
+    SettingRow("Automatisk tid", when (autoTime) { true -> "På – stereoen henter tiden fra nett/GPS"; false -> "Av – klokka kan gå feil"; null -> "Ukjent" })
+    SettingRow("Automatisk tidssone", when (autoZone) { true -> "På"; false -> "Av"; null -> "Ukjent" })
+    if (canWrite) SettingRow("24-timers klokke", if (h24) "14:30" else "2:30 PM", onClick = {
+        val nv = !h24
+        if (runCatching { Settings.System.putString(context.contentResolver, Settings.System.TIME_12_24, if (nv) "24" else "12") }.getOrDefault(false)) h24 = nv
+        else say("Stereoen tillot ikke å endre klokkeformatet")
+    }) { Toggle(h24) }
+    else SettingRow("24-timers klokke", (if (h24) "På" else "Av") + " · for å endre: gi T'OS lov til å endre systeminnstillinger (Skjerm)")
+    if (autoTime == false || autoZone == false || zone.id != "Europe/Oslo")
+        SettingRow("Rette tiden uten Android-menyene", "Vanlige apper får ikke stille klokka. Med PC: «adb shell settings put global auto_time 1» og «adb shell settings put global auto_time_zone 1» (se docs/ADB-OPPSETT.md).")
+    Section("Språk og tastatur")
+    SettingRow("Språk i T'OS", "Norsk (bokmål). T'OS er alltid på norsk.")
+    SettingRow("Språk i andre apper", Locale.getDefault().getDisplayName(nb).replaceFirstChar { it.uppercase() })
+    SettingRow("Tastatur", "T'OS har sitt eget tastatur på skjermen, med æ, ø og å.")
 }
 
 @Composable
@@ -290,15 +487,23 @@ private fun AboutSettings() {
     val context = LocalContext.current
     val v = remember { runCatching { context.packageManager.getPackageInfo(context.packageName, 0).versionName }.getOrNull() }
     SettingRow("T'OS $v", Hub.update?.let { "Ny versjon ${it.versionName} er klar" } ?: Updater.lastError?.let { "Fikk ikke sjekket: $it" } ?: "Du har siste versjon") { UpdateButton() }
+    SettingRow("Oppdateringer", "Installeres inne i T'OS. Første gang må du trykke «Installer» én gang; etterpå går det av seg selv (Android 12+).")
     SettingRow("Stereo", "${Build.MANUFACTURER} ${Build.MODEL}")
     SettingRow("Android", "${Build.VERSION.RELEASE} (SDK ${Build.VERSION.SDK_INT})")
     SettingRow("Prosessor", "${Build.HARDWARE} · ${Runtime.getRuntime().availableProcessors()} kjerner · ${Hub.cpuTemp?.let { "$it °C" } ?: "temperatur ukjent"}")
     SettingRow("Minne", Hub.memText)
-    SettingRow("Førstegangsoppsett", "Gå gjennom tillatelsene på nytt", onClick = { Nav.screen = Screen.SETUP }) { Chevron() }
+    SettingRow("Førstegangsoppsett", "Tillatelser – med stereoen eller med PC (uten Android-menyene)", onClick = { Nav.screen = Screen.SETUP }) { Chevron() }
     SettingRow("Takk til", "Radiostyring og app-søk bygger på OpenLauncher (MIT). Kart © OpenStreetMap, Protomaps. Se docs/TREDJEPART.md.")
     Section("Avansert")
-    SettingRow("Android-innstillinger", "Stereoens originale innstillinger", onClick = { context.openFirst(Settings.ACTION_SETTINGS) }) { Chevron() }
-    SettingRow("Utvikleralternativer", "For ADB og feilsøking", onClick = { context.openFirst(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS, Settings.ACTION_DEVICE_INFO_SETTINGS) }) { Chevron() }
+    var ask by remember { mutableStateOf(false) }
+    LaunchedEffect(ask) { if (ask) { delay(5000); ask = false } }
+    SettingRow("Android-innstillinger (avansert)",
+        if (ask) "Dette åpner stereoens originale innstillinger. Trykk igjen for å åpne." else "Stereoens originale innstillinger – trengs nesten aldri",
+        onClick = {
+            if (!ask) { ask = true; return@SettingRow }
+            ask = false
+            context.open(Intent(Settings.ACTION_SETTINGS))
+        }) { if (ask) Pill("Åpne", strong = true) { ask = false; context.open(Intent(Settings.ACTION_SETTINGS)) } else Chevron() }
 }
 
 /* ---------- T'OS ---------- */
@@ -373,17 +578,50 @@ private fun BackupSettings() {
     val exportFile = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
         if (uri != null) runCatching {
             context.contentResolver.openOutputStream(uri)?.use { it.write(Prefs.exportJson(context).toByteArray()) }
-            context.toast("Innstillingene er lagret")
-        }.onFailure { context.toast("Fikk ikke lagret filen") }
+            say("Innstillingene er lagret")
+        }.onFailure { say("Fikk ikke lagret filen") }
     }
     val importFile = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) {
             val text = runCatching { context.contentResolver.openInputStream(uri)?.bufferedReader()?.readText() }.getOrNull()
-            context.toast(if (text != null && Prefs.importJson(context, text)) "Innstillingene er hentet" else "Fant ingen T'OS-innstillinger i filen")
+            say(if (text != null && Prefs.importJson(context, text)) "Innstillingene er hentet" else "Fant ingen T'OS-innstillinger i filen")
         }
     }
-    SettingRow("Lagre innstillinger til fil", "Velg Google Drive for å ha dem trygt", onClick = { exportFile.launch("tos-innstillinger.json") }) { Chevron() }
-    SettingRow("Hent innstillinger fra fil", onClick = { importFile.launch(arrayOf("application/json", "text/plain", "*/*")) }) { Chevron() }
+    var tick by remember { mutableIntStateOf(0) }
+    val nb = Locale("nb", "NO")
+    fun whenText(f: File) = if (f.exists()) SimpleDateFormat("d. MMM 'kl.' HH:mm", nb).format(Date(f.lastModified())) else null
+
+    // I T'OS-mappa: uten Androids filvelger
+    Section("På stereoen (T'OS-mappa)")
+    val local = remember(tick) { LocalBackup.file(context).let { it to whenText(it) } }
+    val auto = remember(tick) { LocalBackup.autoFile(context).let { it to whenText(it) } }
+    SettingRow("Lagre til T'OS-mappa", local.second?.let { "Sist lagret $it" } ?: "Rask kopi på stereoen, uten filvelger", onClick = {
+        Hub.scope.launch {
+            val ok = withContext(Dispatchers.IO) { LocalBackup.save(context) }
+            tick++; say(if (ok) "Innstillingene er lagret i T'OS-mappa" else "Fikk ikke lagret")
+        }
+    }) { Icon(Icons.Default.Save, null, tint = TextMuted) }
+    var askRestore by remember { mutableStateOf<File?>(null) }
+    LaunchedEffect(askRestore) { if (askRestore != null) { delay(4000); askRestore = null } }
+    @Composable fun restoreRow(title: String, f: File, at: String?) {
+        if (at == null) return
+        val asking = askRestore == f
+        SettingRow(title, if (asking) "Dette erstatter innstillingene du har nå. Trykk igjen." else "Fra $at", onClick = {
+            if (!asking) { askRestore = f; return@SettingRow }
+            askRestore = null
+            say(if (LocalBackup.restore(context, f)) "Innstillingene er hentet" else "Fant ingen T'OS-innstillinger i kopien")
+        }) { if (asking) Text("Trykk igjen", color = TextPrimary, fontSize = 14.sp) else Chevron() }
+    }
+    restoreRow("Hent fra T'OS-mappa", local.first, local.second)
+    restoreRow("Hent automatisk kopi", auto.first, auto.second)
+    Text("T'OS lager også en automatisk kopi én gang i døgnet. Mappa slettes hvis T'OS avinstalleres – lagre til fil (f.eks. Google Drive) for en kopi som tåler det.",
+        color = TextMuted, fontSize = 13.sp, modifier = Modifier.padding(bottom = 6.dp))
+
+    Section("Til fil eller Google Drive")
+    SettingRow("Lagre innstillinger til fil", "Androids filvelger åpnes – velg Google Drive for å ha dem trygt", onClick = { exportFile.launch("tos-innstillinger.json") }) { Chevron() }
+    SettingRow("Hent innstillinger fra fil", "Androids filvelger åpnes", onClick = { importFile.launch(arrayOf("application/json", "text/plain", "*/*")) }) { Chevron() }
+
+    Section("Hjelp")
     if (SafeMode.on) SettingRow("Sikker modus er på", "T'OS krasjet flere ganger og startet uten kart uten nett, bilbilde og oppstartsmusikk. Send feilrapporten under, og slå av når feilen er rettet.") {
         Pill("Slå av", strong = true) { SafeMode.turnOff(context) }
     }
