@@ -17,7 +17,7 @@ Snakk norsk med brukeren. Han er ikke utvikler – forklar enkelt, ikke bruk fag
 - Løsningen han godkjente: **tre ting** – (1) bilkort med klokke, stort bilbilde og fart som stort tall, (2) ekte kart, (3) én rad nederst: musikk/telefon/apper. Ingen kalender, ingen vær.
 - Kalkulator skal være skjult i app-skuffen (`HiddenApps` i `Apps.kt`).
 
-## Nåværende tilstand (v4.4)
+## Nåværende tilstand (v4.5)
 - `MainActivity.kt`: Compose-UI med de tre tingene + app-skuff + oppdateringsknapp. Skjermvalg via `Nav.screen` (DASH/APPS/BT/KEYS).
 - v3.0 «stor oppdatering» – alle 50 punktene i `docs/IDEER.md` (se Begrensninger der). Nye filer:
   `Prefs.kt` (TosApp, innstillinger m/ Compose-reaktivitet via Prefs.version, sikkerhetskopi JSON, CrashLog),
@@ -35,6 +35,14 @@ Snakk norsk med brukeren. Han er ikke utvikler – forklar enkelt, ikke bruk fag
   CI-status 3. nov: bygg #2 stoppet på «Sett opp fast signatur» = secrets mangler (brukeren må legge dem inn).
   Steget tåler nå mellomrom/linjeskift og sjekker nøkkel+passord med keytool (testet lokalt med ekte verdier).
   GitHub Pages er ikke slått på (testsiden gir 404) – valgfritt.
+  v4.5: «finn 50 feil» → 49 funn rettet (3 agenter i hver sin worktree). Viktigst: GPS ber om FINE+COARSE, GpsService
+  (forgrunnstjeneste type location), GPS blir «gammel» etter 3 s, SpeedLimit Found/NoneTagged/Failed + nærmeste vei,
+  KeyService omdirigerer bare når appen KOMMER fram (FrontTracker) og T'OS-åpnede apper er «eid» til man forlater dem,
+  NetRadio lydfokus gjenbrukes, RadioGuard rører ikke NetRadio, BACK avbryter læring + 15 s tidsgrense i Learn,
+  sikker importJson, CallBanner bare innkommende, ringing uten SIM åpner BT-telefonappen, kart maks zoom 16 + forstørring,
+  oppdatering i Hub.scope (UpdateState), CI bygger RELEASE (assembleRelease, app-release.apk) med apksigner-sjekk,
+  cancel-in-progress false, valgfri secret TOS_KEY_PASSWORD. Tester: LogicTest 11 + UiLogicTest 2 + ServiceLogicTest 10
+  + DataLogicTest 11 = 34. Alt UVERIFISERT på enheten.
   v4.4: Updater sjekker nedlastet APK før installasjon (pakkenavn, nyere versionCode, samme signatur som installert T'OS)
   og gir en forståelig melding i stedet for Androids «App ikke installert». Test: signatur_sammenlignes (11 tester).
   v4.3: SafeMode (3 krasj på 3 min → uten MapLibre/bilbilde/oppstartsmusikk), SetupReport («Send oppsettrapport»
