@@ -30,16 +30,21 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 
 /* ---------- Felles topp: tittel + lukk ---------- */
 
 @Composable
 private fun PageHeader(title: String, onClose: () -> Unit, extra: @Composable RowScope.() -> Unit = {}) {
     Row(Modifier.fillMaxWidth().padding(bottom = 16.dp), verticalAlignment = Alignment.CenterVertically) {
-        Text(title, color = TextPrimary, fontSize = 28.sp, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f))
+        Text(title, color = TextPrimary, fontSize = 28.sp, fontWeight = FontWeight.Medium, maxLines = 1,
+            overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
         extra()
-        RoundIcon(Icons.Default.Close, 48.dp) { onClose() }
+        RoundIcon(Icons.Default.Close, 48.dp, desc = "Lukk") { onClose() }
     }
 }
 
@@ -73,7 +78,8 @@ fun btStatus(context: Context): BtStatus {
 fun BluetoothScreen(onClose: () -> Unit) {
     val context = LocalContext.current
     val status by produceState(initialValue = remember { btStatus(context) }) {
-        while (true) { value = btStatus(context); delay(3000) }
+        // Bluetooth-oppslaget går via systemet (og prøver skjulte funksjoner) – ikke på hovedtråden hvert 3. sekund
+        while (true) { value = withContext(Dispatchers.IO) { btStatus(context) }; delay(3000) }
     }
 
     Column(Modifier.fillMaxSize().clip(RoundedCornerShape(28.dp)).background(Panel).padding(24.dp)) {
@@ -113,7 +119,7 @@ fun BluetoothScreen(onClose: () -> Unit) {
                                     Modifier.size(10.dp).clip(CircleShape)
                                         .then(if (d.connected) Modifier.background(TextPrimary) else Modifier.border(1.5.dp, TextMuted, CircleShape))
                                 )
-                                Text(d.name, color = if (d.connected) TextPrimary else TextMuted, fontSize = 16.sp, maxLines = 1)
+                                Text(d.name, color = if (d.connected) TextPrimary else TextMuted, fontSize = 16.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                             }
                         }
                     }
@@ -122,9 +128,10 @@ fun BluetoothScreen(onClose: () -> Unit) {
                 // Musikk fra telefonen over Bluetooth
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     Text("Musikk", color = TextMuted, fontSize = 14.sp, modifier = Modifier.weight(1f))
-                    RoundIcon(Icons.Default.SkipPrevious, 44.dp) { Media.previous(context) }
-                    RoundIcon(Icons.Default.PlayArrow, 56.dp, outlined = true) { Media.playPause(context) }
-                    RoundIcon(Icons.Default.SkipNext, 44.dp) { Media.next(context) }
+                    RoundIcon(Icons.Default.SkipPrevious, 48.dp, desc = "Forrige sang") { Media.previous(context) }
+                    RoundIcon(if (musicPlaying) Icons.Default.Pause else Icons.Default.PlayArrow, 56.dp, outlined = true,
+                        desc = if (musicPlaying) "Pause" else "Spill") { Media.playPause(context) }
+                    RoundIcon(Icons.Default.SkipNext, 48.dp, desc = "Neste sang") { Media.next(context) }
                 }
             }
 
@@ -155,7 +162,8 @@ fun BigTile(icon: ImageVector, label: String, modifier: Modifier, onClick: () ->
     ) {
         Icon(icon, null, tint = TextPrimary, modifier = Modifier.size(40.dp))
         Spacer(Modifier.height(10.dp))
-        Text(label, color = TextPrimary, fontSize = 16.sp)
+        Text(label, color = TextPrimary, fontSize = 16.sp, textAlign = TextAlign.Center, maxLines = 2,
+            overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(horizontal = 8.dp))
     }
 }
 
@@ -166,11 +174,11 @@ fun ActionPicker(current: Action, modifier: Modifier, prefix: String = "", onPic
     var menu by remember { mutableStateOf(false) }
     Box(modifier) {
         Row(
-            Modifier.clip(RoundedCornerShape(12.dp)).clickable { menu = true }.padding(horizontal = 8.dp, vertical = 8.dp),
+            Modifier.heightIn(min = 48.dp).clip(RoundedCornerShape(12.dp)).clickable { menu = true }.padding(horizontal = 8.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(prefix + current.label, color = if (current == Action.NONE && prefix.isNotEmpty()) TextMuted else TextPrimary, fontSize = 15.sp, maxLines = 1,
-                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+                overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
             Icon(Icons.Default.ArrowDropDown, null, tint = TextMuted)
         }
         DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
@@ -189,11 +197,11 @@ fun KeysScreen(onClose: () -> Unit) {
     }
     // Forlates siden (Hjem, en annen side …), stopper læringen – ellers ville neste app som åpnes bli «lært»
     DisposableEffect(Unit) { onDispose { if (Learn.target != null) Learn.cancel() } }
-    // Gi opp læring etter 10 sekunder
+    // Gi opp læring etter like lang tid som Learn selv (ellers sier siden «ingen signal» før tiden er ute)
     val target = Learn.target
     LaunchedEffect(target) {
         if (target != null) {
-            delay(10_000)
+            delay(Learn.TIMEOUT_MS)
             if (Learn.target == target) Learn.cancel("Fikk ikke noe signal fra ${target.label}. Prøv igjen, og sjekk at knappestyring er på.")
         }
     }
@@ -259,11 +267,11 @@ private fun KeyRow(k: PanelKey, onChanged: () -> Unit) {
                 pkg != null -> pkg.substringAfterLast('.').let { "Åpner $it" }
                 else -> "Ikke lært"
             },
-            color = TextMuted, fontSize = 13.sp, maxLines = 1, modifier = Modifier.widthIn(max = 130.dp),
+            color = TextMuted, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.widthIn(max = 130.dp),
         )
 
         Box(
-            Modifier.height(44.dp).clip(RoundedCornerShape(22.dp))
+            Modifier.height(48.dp).clip(RoundedCornerShape(24.dp))
                 .background(if (learning) TextPrimary else Line)
                 .clickable { if (learning) Learn.cancel() else Learn.start(k); onChanged() }
                 .padding(horizontal = 18.dp),

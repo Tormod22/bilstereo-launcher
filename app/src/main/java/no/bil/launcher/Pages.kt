@@ -23,6 +23,7 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -75,9 +76,10 @@ private val Small = RoundedCornerShape(18.dp)
 fun Page(title: String, onClose: () -> Unit, extra: @Composable RowScope.() -> Unit = {}, content: @Composable ColumnScope.() -> Unit) {
     Column(Modifier.fillMaxSize().clip(Round).background(Panel).padding(24.dp)) {
         Row(Modifier.fillMaxWidth().padding(bottom = 16.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text(title, color = TextPrimary, fontSize = 28.sp, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f))
+            Text(title, color = TextPrimary, fontSize = 28.sp, fontWeight = FontWeight.Medium, maxLines = 1,
+                overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
             extra()
-            RoundIcon(Icons.Default.Close, 48.dp) { onClose() }
+            RoundIcon(Icons.Default.Close, 48.dp, desc = "Lukk") { onClose() }
         }
         content()
     }
@@ -225,8 +227,11 @@ fun MusicScreen(onClose: () -> Unit) {
         Pill("Åpne app", Icons.Default.OpenInNew) { Buttons.openMusic(context) }
         Spacer(Modifier.width(12.dp))
     }) {
+      // Coveret krymper når skjermen er lav (stor tekst / 1024×600), så knappene under ikke kuttes
+      BoxWithConstraints(Modifier.fillMaxSize()) {
+        val coverSize = minOf(300.dp, maxHeight)
         Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(28.dp), verticalAlignment = Alignment.CenterVertically) {
-            Cover(300.dp, 24.dp)
+            Cover(coverSize, 24.dp)
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text(musicTitle ?: "Ingen musikk spiller", color = TextPrimary, fontSize = 30.sp, fontWeight = FontWeight.Medium, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 Text(musicSub ?: "", color = TextMuted, fontSize = 20.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -234,9 +239,9 @@ fun MusicScreen(onClose: () -> Unit) {
                 Progress(Modifier.fillMaxWidth())
                 Spacer(Modifier.height(16.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(24.dp), verticalAlignment = Alignment.CenterVertically) {
-                    RoundIcon(Icons.Default.SkipPrevious, 64.dp) { Media.previous(context) }
-                    RoundIcon(if (musicPlaying) Icons.Default.Pause else Icons.Default.PlayArrow, 84.dp, outlined = true) { Media.playPause(context) }
-                    RoundIcon(Icons.Default.SkipNext, 64.dp) { Media.next(context) }
+                    RoundIcon(Icons.Default.SkipPrevious, 64.dp, desc = "Forrige sang") { Media.previous(context) }
+                    RoundIcon(if (musicPlaying) Icons.Default.Pause else Icons.Default.PlayArrow, 84.dp, outlined = true, desc = if (musicPlaying) "Pause" else "Spill") { Media.playPause(context) }
+                    RoundIcon(Icons.Default.SkipNext, 64.dp, desc = "Neste sang") { Media.next(context) }
                 }
                 if (!MediaListener.enabled(context)) {
                     Spacer(Modifier.height(16.dp))
@@ -244,6 +249,7 @@ fun MusicScreen(onClose: () -> Unit) {
                 }
             }
         }
+      }
     }
 }
 
@@ -277,8 +283,8 @@ fun RadioScreen(onClose: () -> Unit) {
                 } else Text("Trykk «Start radio». Frekvensen vises her når radioen spiller.", color = TextMuted, fontSize = 15.sp)
             }
             if (hw != null) {
-                RoundIcon(Icons.Default.FastRewind, 52.dp) { HwRadio.seekDown() }
-                RoundIcon(Icons.Default.FastForward, 52.dp) { HwRadio.seekUp() }
+                RoundIcon(Icons.Default.FastRewind, 52.dp, desc = "Søk ned") { HwRadio.seekDown() }
+                RoundIcon(Icons.Default.FastForward, 52.dp, desc = "Søk opp") { HwRadio.seekUp() }
                 if (hw.canTune) { Pill("FM") { HwRadio.cycleFm() }; Pill("AM") { HwRadio.am() } }
             }
             Pill(if (hw != null) "Åpne" else "Start radio", Icons.Default.Radio, strong = hw == null) { HwRadio.open(context) }
@@ -293,7 +299,7 @@ fun RadioScreen(onClose: () -> Unit) {
                         .clickable { if (on) NetRadio.toggle(context) else NetRadio.play(context, s) }.padding(16.dp),
                     verticalArrangement = Arrangement.SpaceBetween,
                 ) {
-                    Text(s.name, color = if (on) Bg else TextPrimary, fontSize = 19.sp, fontWeight = FontWeight.Medium)
+                    Text(s.name, color = if (on) Bg else TextPrimary, fontSize = 19.sp, fontWeight = FontWeight.Medium, maxLines = 2, overflow = TextOverflow.Ellipsis)
                     Text(
                         when { !on -> "Nettradio"; NetRadio.buffering -> "Kobler til …"; NetRadio.playing -> "Spiller"; else -> "Pause" },
                         color = if (on) Bg else TextMuted, fontSize = 13.sp,
@@ -317,8 +323,9 @@ fun NavScreen(onClose: () -> Unit) {
         Spacer(Modifier.width(12.dp))
     }) {
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
-            Field(q, "Hvor vil du? Adresse eller sted", Modifier.weight(1f), onDone = { Navigate.to(context, q) }) { q = it }
-            Pill("Kjør", Icons.Default.Navigation, strong = true) { Navigate.to(context, q) }
+            val go = { if (q.isBlank()) context.toast("Skriv hvor du vil først") else Navigate.to(context, q) }
+            Field(q, "Hvor vil du? Adresse eller sted", Modifier.weight(1f), onDone = go) { q = it }
+            Pill("Kjør", Icons.Default.Navigation, strong = true, onClick = go)
         }
         Spacer(Modifier.height(14.dp))
         Row(Modifier.height(110.dp), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
@@ -349,10 +356,14 @@ fun MapScreen(onClose: () -> Unit) {
     Box(Modifier.fillMaxSize().clip(Round).background(Panel)) {
         MapView(Hub.gps, Modifier.fillMaxSize(), zoomOffset = zoomOffset)
         Column(Modifier.align(Alignment.TopEnd).padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            MapButton(Icons.Default.Close) { onClose() }
-            MapButton(Icons.Default.Add) { zoomOffset = (zoomOffset + 1).coerceAtMost(3) }
-            MapButton(Icons.Default.Remove) { zoomOffset = (zoomOffset - 1).coerceAtLeast(-4) }
-            MapButton(if (Prefs.bool("map_rotate", true)) Icons.Default.Explore else Icons.Default.NorthEast) { Prefs.set("map_rotate", !Prefs.bool("map_rotate", true)) }
+            val rot = Prefs.bool("map_rotate", true)
+            MapButton(Icons.Default.Close, "Lukk") { onClose() }
+            MapButton(Icons.Default.Add, "Zoom inn") { zoomOffset = (zoomOffset + 1).coerceAtMost(3) }
+            MapButton(Icons.Default.Remove, "Zoom ut") { zoomOffset = (zoomOffset - 1).coerceAtLeast(-4) }
+            MapButton(if (rot) Icons.Default.Explore else Icons.Default.NorthEast, if (rot) "Kartet snur etter kjøreretningen" else "Nord er alltid opp") {
+                Prefs.set("map_rotate", !rot)
+                context.toast(if (rot) "Nord er alltid opp" else "Kartet snur etter kjøreretningen")
+            }
         }
         Row(Modifier.align(Alignment.BottomStart).padding(16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             Pill("Navigasjon", Icons.Default.Navigation) { Nav.screen = Screen.NAV }
@@ -363,9 +374,9 @@ fun MapScreen(onClose: () -> Unit) {
 }
 
 @Composable
-private fun MapButton(icon: androidx.compose.ui.graphics.vector.ImageVector, onClick: () -> Unit) {
+private fun MapButton(icon: androidx.compose.ui.graphics.vector.ImageVector, desc: String, onClick: () -> Unit) {
     Box(Modifier.size(52.dp).clip(CircleShape).background(Card.copy(alpha = 0.92f)).clickable(onClick = onClick), contentAlignment = Alignment.Center) {
-        Icon(icon, null, tint = TextPrimary)
+        Icon(icon, desc, tint = TextPrimary)
     }
 }
 
@@ -399,15 +410,27 @@ data class Contact(val name: String, val number: String)
 /** Favoritter lagres som «navn|nummer», én per linje – derfor fjernes | og linjeskift fra det som skrives inn. */
 internal fun favText(s: String): String = s.replace(Regex("[|\\r\\n]+"), " ").replace(Regex("\\s+"), " ").trim()
 
+/** Samme nummer (uansett mellomrom og bindestrek) regnes som samme person. */
+internal fun sameNumber(a: String, b: String): Boolean {
+    fun d(s: String) = s.filter { it.isDigit() || it == '+' }
+    return d(a).isNotEmpty() && d(a) == d(b)
+}
+
+/** Lista etter at [c] er lagt til: et nummer som finnes fra før, byttes ut (nytt navn) i stedet for å dukke opp to ganger. */
+internal fun withFavorite(all: List<Contact>, c: Contact): List<Contact> {
+    val number = favText(c.number)
+    if (number.isBlank()) return all
+    val clean = Contact(favText(c.name).ifBlank { number }, number)
+    return all.filterNot { sameNumber(it.number, number) } + clean
+}
+
 object Favorites {
     fun all(): List<Contact> = Prefs.str("favorites").split("\n").mapNotNull {
         val p = it.split("|"); if (p.size == 2 && p[1].isNotBlank()) Contact(p[0], p[1]) else null
     }
     fun add(c: Contact) {
-        val number = favText(c.number)
-        if (number.isBlank()) return
-        val clean = Contact(favText(c.name).ifBlank { number }, number)
-        Prefs.set("favorites", (all() + clean).joinToString("\n") { "${it.name}|${it.number}" })
+        if (favText(c.number).isBlank()) return
+        Prefs.set("favorites", withFavorite(all(), c).joinToString("\n") { "${it.name}|${it.number}" })
     }
     fun remove(c: Contact) = Prefs.set("favorites", (all() - c).joinToString("\n") { "${it.name}|${it.number}" })
 
@@ -467,6 +490,9 @@ fun PhoneScreen(onClose: () -> Unit) {
         if (need.isNotEmpty()) ask.launch(need.toTypedArray())   // spør bare om det som mangler
     }
     var adding by remember { mutableStateOf(false) }
+    // Sletting krever to trykk: første trykk spør «Slette?», andre sletter
+    var confirmDel by remember { mutableStateOf<Contact?>(null) }
+    LaunchedEffect(confirmDel) { if (confirmDel != null) { delay(4000); confirmDel = null } }
     var name by remember { mutableStateOf("") }
     var num by remember { mutableStateOf("") }
     val recents by produceState(emptyList<Contact>(), permTick) { value = withContext(Dispatchers.IO) { recentCalls(context) } }
@@ -479,14 +505,16 @@ fun PhoneScreen(onClose: () -> Unit) {
             Column(Modifier.weight(0.6f)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("FAVORITTER", color = TextMuted, fontSize = 12.sp, letterSpacing = 1.sp, modifier = Modifier.weight(1f))
-                    Text(if (adding) "Avbryt" else "+ Legg til", color = TextPrimary, fontSize = 15.sp, modifier = Modifier.clickable { adding = !adding }.padding(8.dp))
+                    Text(if (adding) "Avbryt" else "+ Legg til", color = TextPrimary, fontSize = 15.sp,
+                        modifier = Modifier.heightIn(min = 48.dp).clip(RoundedCornerShape(12.dp)).clickable { adding = !adding; confirmDel = null }.padding(horizontal = 12.dp, vertical = 14.dp))
                 }
                 if (adding) {
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(bottom = 10.dp)) {
                         Field(name, "Navn", Modifier.weight(1f)) { name = it }
                         Field(num, "Nummer", Modifier.weight(1f), KeyboardType.Phone) { num = it }
                         Pill("Lagre", strong = true) {
-                            if (num.isNotBlank()) { Favorites.add(Contact(name.ifBlank { num }, num)); name = ""; num = ""; adding = false }
+                            if (favText(num).isBlank()) context.toast("Skriv inn et nummer først")
+                            else { Favorites.add(Contact(name.ifBlank { num }, num)); context.toast("Lagret"); name = ""; num = ""; adding = false }
                         }
                     }
                 }
@@ -503,7 +531,19 @@ fun PhoneScreen(onClose: () -> Unit) {
                                 Text(f.name, color = TextPrimary, fontSize = 17.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                 Text(f.number, color = TextMuted, fontSize = 13.sp, maxLines = 1)
                             }
-                            if (adding) Icon(Icons.Default.Delete, null, tint = TextMuted, modifier = Modifier.clickable { Favorites.remove(f) })
+                            if (adding) {
+                                val ask = confirmDel == f
+                                Box(
+                                    Modifier.heightIn(min = 48.dp).widthIn(min = 48.dp).clip(RoundedCornerShape(24.dp))
+                                        .background(if (ask) TextPrimary else Line)
+                                        .clickable { if (ask) { Favorites.remove(f); confirmDel = null } else confirmDel = f }
+                                        .padding(horizontal = 10.dp),
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    if (ask) Text("Slette?", color = Bg, fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                                    else Icon(Icons.Default.Delete, "Slett ${f.name}", tint = TextPrimary)
+                                }
+                            }
                         }
                     }
                 }
@@ -516,8 +556,8 @@ fun PhoneScreen(onClose: () -> Unit) {
                     color = TextMuted, fontSize = 14.sp)
                 LazyColumn(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     items(recents) { r ->
-                        Text(r.name, color = TextPrimary, fontSize = 16.sp, maxLines = 1,
-                            modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).clickable { Favorites.call(context, r.number) }.padding(vertical = 10.dp, horizontal = 6.dp))
+                        Text(r.name, color = TextPrimary, fontSize = 16.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).clip(RoundedCornerShape(10.dp)).clickable { Favorites.call(context, r.number) }.padding(vertical = 13.dp, horizontal = 6.dp))
                     }
                 }
             }
@@ -540,8 +580,13 @@ fun CarScreen(onClose: () -> Unit) {
     val context = LocalContext.current
     val km = Trip.meters / 1000
     val mins = Trip.movingSec / 60
+    // Nullstilling krever to trykk, så turen ikke slettes ved et uhell
+    var confirmReset by remember { mutableStateOf(false) }
+    LaunchedEffect(confirmReset) { if (confirmReset) { delay(4000); confirmReset = false } }
     Page("Bil og tur", onClose, extra = {
-        Pill("Nullstill tur", Icons.Default.RestartAlt) { Trip.reset() }
+        Pill(if (confirmReset) "Trykk igjen for å nullstille" else "Nullstill tur", Icons.Default.RestartAlt, strong = confirmReset) {
+            if (confirmReset) { Trip.reset(); confirmReset = false; context.toast("Turen er nullstilt") } else confirmReset = true
+        }
         Spacer(Modifier.width(12.dp))
     }) {
         // Parkeringen lagres i bakgrunnen uten å tegne skjermen på nytt – sjekk den hvert 5. sekund
@@ -608,7 +653,7 @@ fun ClockScreen(onClose: () -> Unit) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Text(SimpleDateFormat("HH:mm", Locale.getDefault()).format(now), color = TextPrimary.copy(alpha = 0.85f), fontSize = 150.sp, fontWeight = FontWeight.Light)
             Text(SimpleDateFormat("EEEE d. MMMM", Locale("nb", "NO")).format(now).replaceFirstChar { it.uppercase() }, color = TextMuted, fontSize = 22.sp)
-            musicTitle?.let { Text(it, color = TextMuted, fontSize = 16.sp, modifier = Modifier.padding(top = 18.dp), maxLines = 1) }
+            musicTitle?.let { Text(it, color = TextMuted, fontSize = 16.sp, modifier = Modifier.padding(top = 18.dp).widthIn(max = 700.dp), maxLines = 1, overflow = TextOverflow.Ellipsis) }
         }
     }
 }
@@ -656,14 +701,15 @@ fun QuickPanel(onClose: () -> Unit) {
                     if (v != Ui.volume) { Ui.volume = v; am.setStreamVolume(AudioManager.STREAM_MUSIC, v, 0) }
                 }, valueRange = 0f..maxVol.toFloat(), colors = sliderColors, modifier = Modifier.weight(1f))
             }
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            // Rulles sidelengs når teksten er stor, så ingen knapp blir kuttet av
+            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 Pill("Wi-Fi", Icons.Default.Wifi) { onClose(); Prefs.set("settings_cat", "NET"); Nav.screen = Screen.SETTINGS }
                 Pill("Bluetooth", Icons.Default.Bluetooth) { onClose(); Nav.screen = Screen.BT }
                 Pill(when (Theme.mode) { "DAY" -> "Dag"; "NIGHT" -> "Natt"; else -> "Auto lys" }, Icons.Default.DarkMode) {
                     Prefs.set("night_mode", when (Theme.mode) { "AUTO" -> "NIGHT"; "NIGHT" -> "DAY"; else -> "AUTO" })
                     Theme.update(Hub.gps?.lat, Hub.gps?.lon)
                 }
-                Pill("Kamera", Icons.Default.Videocam) { AppRepository.launchTile(context, Tiles.byPrefix("Rygg")) }
+                Pill("Kamera", Icons.Default.Videocam) { onClose(); AppRepository.launchTile(context, Tiles.byPrefix("Rygg")) }
                 Pill("Bil og tur", Icons.Default.DirectionsCar) { onClose(); Nav.screen = Screen.CAR }
                 Pill("Innstillinger", Icons.Default.Settings) { onClose(); Nav.screen = Screen.SETTINGS }
             }

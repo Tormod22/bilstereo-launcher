@@ -131,7 +131,8 @@ class MainActivity : ComponentActivity() {
         }
         if (Learn.target != null && event.action == KeyEvent.ACTION_DOWN &&
             code != KeyEvent.KEYCODE_VOLUME_UP && code != KeyEvent.KEYCODE_VOLUME_DOWN) {
-            Learn.offerKey(this, code); swallowUp += code; return true
+            // Utløpt læring (offerKey = false): knappen skal virke som vanlig, ikke bli «spist»
+            if (Learn.offerKey(this, code)) { swallowUp += code; return true }
         }
         val key = Buttons.keyForCode(this, code)
         if (key != null && Buttons.shouldIntercept(this, key, code)) {
@@ -181,8 +182,9 @@ fun Root() {
             delay(5000)
             val mins = Prefs.str("saver_min", "3").toIntOrNull() ?: 0
             val still = (Hub.gps?.speedKmh ?: 0) < 3
-            if (mins > 0 && still && Nav.screen == Screen.DASH && !Nav.quick &&
-                SystemClock.elapsedRealtime() - lastTouch > mins * 60_000L) Nav.screen = Screen.CLOCK
+            // Ikke over neste sving (navigasjon i kø) eller en app-velger som er åpen
+            if (mins > 0 && still && Nav.screen == Screen.DASH && !Nav.quick && Nav.pick == null && !Ui.pickSlot &&
+                !NavInfo.active && SystemClock.elapsedRealtime() - lastTouch > mins * 60_000L) Nav.screen = Screen.CLOCK
         }
     }
 
@@ -265,7 +267,8 @@ private fun CallBanner(name: String, modifier: Modifier) {
     Row(modifier.padding(top = 20.dp).clip(RoundedCornerShape(28.dp)).background(TextPrimary).clickable { Call.openCall() }
         .padding(horizontal = 28.dp, vertical = 16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
         Icon(Icons.Default.Call, null, tint = Bg, modifier = Modifier.size(28.dp))
-        Text("$name ringer", color = Bg, fontSize = 22.sp, fontWeight = FontWeight.Medium)
+        Text("$name ringer", color = Bg, fontSize = 22.sp, fontWeight = FontWeight.Medium, maxLines = 1,
+            overflow = TextOverflow.Ellipsis, modifier = Modifier.widthIn(max = 460.dp))
         Text("Trykk for å svare", color = Bg.copy(alpha = 0.6f), fontSize = 15.sp)
     }
 }
@@ -339,13 +342,14 @@ private fun Notice() {
         Hub.update != null -> "Ny versjon ${Hub.update?.versionName} – trykk for å oppdatere" to Screen.APPS
         else -> return
     }
-    Row(Modifier.padding(top = 8.dp).clip(RoundedCornerShape(12.dp)).background(Card).clickable {
+    // Minst 48 dp høy, så den kan treffes under kjøring
+    Row(Modifier.padding(top = 8.dp).heightIn(min = 48.dp).clip(RoundedCornerShape(12.dp)).background(Card).clickable {
         if (go == Screen.SETTINGS) Prefs.set("settings_cat", "BACKUP")
         Nav.screen = go
     }
         .padding(horizontal = 12.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         Icon(Icons.Default.Info, null, tint = TextMuted, modifier = Modifier.size(16.dp))
-        Text(text, color = TextPrimary, fontSize = 13.sp, maxLines = 1)
+        Text(text, color = TextPrimary, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
 
@@ -357,8 +361,10 @@ fun CarCard(gps: Gps?, modifier: Modifier) {
     val picked = carBitmap()
     var now by remember { mutableStateOf(Date()) }
     LaunchedEffect(Unit) { while (true) { now = Date(); delay(1000) } }
-    val time = SimpleDateFormat("HH:mm", Locale.getDefault()).format(now)
-    val date = SimpleDateFormat("EEEE d. MMMM", Locale("nb", "NO")).format(now).replaceFirstChar { it.uppercase() }
+    val timeFmt = remember { SimpleDateFormat("HH:mm", Locale.getDefault()) }
+    val dateFmt = remember { SimpleDateFormat("EEEE d. MMMM", Locale("nb", "NO")) }
+    val time = timeFmt.format(now)
+    val date = dateFmt.format(now).replaceFirstChar { it.uppercase() }
     val speed = gps?.speedKmh ?: 0
 
     Column(modifier.clip(Shape).background(Panel).padding(28.dp)) {
@@ -434,6 +440,21 @@ internal fun tileZoom(zoom: Int): Int = min(zoom, MAX_TILE_ZOOM)
 /** Hvor mye et kartbilde hentet på [imageZoom] må forstørres for å vises på [zoom] (aldri forminsket). */
 internal fun overZoom(zoom: Int, imageZoom: Int): Float = (1 shl (zoom - imageZoom).coerceIn(0, 8)).toFloat()
 
+/** Hvilken kartflis (x, y) en posisjon ligger i på zoom [z] (samme regning som MapTiles). */
+internal fun tileOf(lat: Double, lon: Double, z: Int): Pair<Int, Int> {
+    val n = (1 shl z).toDouble()
+    val latR = Math.toRadians(lat.coerceIn(-85.0, 85.0))
+    val x = ((lon + 180.0) / 360.0 * n).toInt()
+    val y = ((1.0 - kotlin.math.ln(kotlin.math.tan(latR) + 1 / kotlin.math.cos(latR)) / Math.PI) / 2.0 * n).toInt()
+    return x to y
+}
+
+/**
+ * Hvor langt (i piksler) kartbildet rekker ut fra posisjonen. Så lenge posisjonen er i midtflisa er det
+ * alltid minst [half] hele fliser – da brukes det faste tallet, så kartet ikke zoomer inn og ut mens du kjører.
+ */
+internal fun mapReach(pos: Float, size: Float, half: Float): Float = minOf(pos, size - pos, half).coerceAtLeast(1f)
+
 fun zoomFor(speed: Int): Int =
     if (!Prefs.bool("map_zoom_speed", true)) 15 else when { speed < 35 -> 16; speed < 70 -> 15; speed < 100 -> 14; else -> 13 }
 
@@ -454,8 +475,8 @@ fun MapView(gps: Gps?, modifier: Modifier, zoomOffset: Int = 0) {
 private fun OnlineMapView(gps: Gps?, modifier: Modifier, zoom: Int, rotate: Boolean) {
     var map by remember { mutableStateOf<MapTiles.MapImage?>(null) }
     val tz = tileZoom(zoom)
-    val f = 1 shl (tz - 8).coerceAtLeast(0)
-    val key = gps?.let { Triple(tz, (it.lat * f).toInt(), (it.lon * f).toInt()) }
+    // Nytt bilde hver gang du kjører inn i en ny flis – da ligger posisjonen alltid i midten av bildet
+    val key = gps?.let { val (tx, ty) = tileOf(it.lat, it.lon, tz); Triple(tz, tx, ty) }
     val latest by rememberUpdatedState(gps)
     // Hentes på nytt når posisjon/zoom endres eller nettet kommer tilbake. Feiler det, prøves det igjen
     // hvert 10. sekund; ellers hvert minutt (fliser som allerede er hentet, ligger i minnet).
@@ -479,7 +500,7 @@ private fun OnlineMapView(gps: Gps?, modifier: Modifier, zoom: Int, rotate: Bool
                 // Sentrer kartet på posisjonen og skaler så kortet alltid er fylt (også når det er snudd)
                 val bw = img.width.toFloat(); val bh = img.height.toFloat()
                 val x = bw * px; val y = bh * py
-                val mx = min(x, bw - x).coerceAtLeast(1f); val my = min(y, bh - y).coerceAtLeast(1f)
+                val mx = mapReach(x, bw, bw * (m.cols / 2) / m.cols); val my = mapReach(y, bh, bh * (m.rows / 2) / m.rows)
                 val fill = if (rotate) sqrt(size.width * size.width + size.height * size.height) / 2 / min(mx, my)
                         else maxOf(size.width / (2 * mx), size.height / (2 * my))
                 // Over zoom 16 finnes ingen fliser: forstørr bildet i stedet
@@ -525,7 +546,7 @@ fun MapCard(gps: Gps?, modifier: Modifier) {
         if (NavInfo.active) {
             Column(Modifier.align(Alignment.TopStart).padding(16.dp).clip(RoundedCornerShape(18.dp)).background(Card.copy(alpha = 0.94f))
                 .padding(horizontal = 18.dp, vertical = 12.dp)) {
-                Text(NavInfo.title ?: "", color = TextPrimary, fontSize = 22.sp, fontWeight = FontWeight.Medium, maxLines = 1)
+                Text(NavInfo.title ?: "", color = TextPrimary, fontSize = 22.sp, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 NavInfo.text?.let { Text(it, color = TextMuted, fontSize = 14.sp, maxLines = 2, overflow = TextOverflow.Ellipsis) }
             }
         }
@@ -540,7 +561,7 @@ fun MapCard(gps: Gps?, modifier: Modifier) {
 @Composable
 private fun MapChip(icon: ImageVector, label: String, onClick: () -> Unit) {
     Row(
-        Modifier.clip(RoundedCornerShape(18.dp)).background(Card.copy(alpha = 0.92f)).clickable(onClick = onClick)
+        Modifier.heightIn(min = 48.dp).clip(RoundedCornerShape(18.dp)).background(Card.copy(alpha = 0.92f)).clickable(onClick = onClick)
             .padding(horizontal = 18.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(10.dp),
@@ -563,7 +584,7 @@ fun openMaps(context: Context) {
     // Si fra til knappestyringen at det er T'OS som åpner kartappen (ellers kan den sende deg tilbake)
     (intent.component?.packageName ?: intent.`package` ?: runCatching { intent.resolveActivity(context.packageManager)?.packageName }.getOrNull() ?: pkg)
         ?.let { AppRepository.markLaunched(it) }
-    if (runCatching { context.startActivity(intent) }.isFailure) return
+    if (runCatching { context.startActivity(intent) }.isFailure) { context.toast("Fant ingen kartapp på stereoen"); return }
     // Tilby den andre kartappen
     val other = if (pkg == waze) maps else waze
     if (AppRepository.isInstalled(context, other)) NaviPopup.show(context, if (other == waze) "Waze" else "Google Maps", other)
@@ -594,8 +615,8 @@ fun ActionRow(onApps: () -> Unit, onPickSlot: () -> Unit, modifier: Modifier) {
                     Text(musicTitle ?: "Musikk", color = TextPrimary, fontSize = 15.sp, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     Text(musicSub ?: if (MediaListener.enabled(context)) "Ingenting spiller" else "Trykk for mer", color = TextMuted, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
-                RoundIcon(if (musicPlaying) Icons.Default.Pause else Icons.Default.PlayArrow, 48.dp, outlined = true) { Media.playPause(context) }
-                RoundIcon(Icons.Default.SkipNext, 40.dp) { Media.next(context) }
+                RoundIcon(if (musicPlaying) Icons.Default.Pause else Icons.Default.PlayArrow, 48.dp, outlined = true, desc = if (musicPlaying) "Pause" else "Spill") { Media.playPause(context) }
+                RoundIcon(Icons.Default.SkipNext, 48.dp, desc = "Neste sang") { Media.next(context) }
             }
             Progress(Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(horizontal = 28.dp, vertical = 10.dp))
         }
@@ -620,7 +641,8 @@ fun ActionRow(onApps: () -> Unit, onPickSlot: () -> Unit, modifier: Modifier) {
 @Composable
 fun AppPicker(title: String, defaultLabel: String, onPick: (String) -> Unit, onClose: () -> Unit) {
     val context = LocalContext.current
-    val apps by produceState(initialValue = emptyList<AppEntry>()) { value = withContext(Dispatchers.IO) { AppRepository.installedApps(context) } }
+    var loaded by remember { mutableStateOf(false) }
+    val apps by produceState(initialValue = emptyList<AppEntry>()) { value = withContext(Dispatchers.IO) { AppRepository.installedApps(context) }; loaded = true }
     // Trykk utenfor lukker; trykk på selve siden skal ikke gå gjennom til forsiden under
     Box(Modifier.fillMaxSize().background(Bg.copy(alpha = 0.7f))
         .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { onClose() }
@@ -629,13 +651,15 @@ fun AppPicker(title: String, defaultLabel: String, onPick: (String) -> Unit, onC
         Page(title, onClose) {
             Pill(defaultLabel, Icons.Default.Refresh) { onPick(""); onClose() }
             Spacer(Modifier.height(14.dp))
+            if (!loaded) Text("Henter appene …", color = TextMuted, fontSize = 15.sp)
+            else if (apps.isEmpty()) Text("Fant ingen apper å velge.", color = TextMuted, fontSize = 15.sp)
             LazyVerticalGrid(GridCells.Adaptive(120.dp), verticalArrangement = Arrangement.spacedBy(12.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 items(apps, key = { it.packageName }) { app ->
                     Column(Modifier.clip(RoundedCornerShape(18.dp)).background(Card).clickable { onPick(app.packageName); onClose() }
                         .padding(14.dp).fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
                         AppIcon(app.icon, 44.dp, app.packageName)
                         Spacer(Modifier.height(6.dp))
-                        Text(app.label, color = TextPrimary, fontSize = 13.sp, maxLines = 1)
+                        Text(app.label, color = TextPrimary, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
                 }
             }
@@ -658,13 +682,13 @@ fun ActionTile(icon: ImageVector, label: String, modifier: Modifier, onClick: ()
 }
 
 @Composable
-fun RoundIcon(icon: ImageVector, size: Dp, outlined: Boolean = false, onClick: () -> Unit) {
+fun RoundIcon(icon: ImageVector, size: Dp, outlined: Boolean = false, desc: String? = null, onClick: () -> Unit) {
     Box(
         Modifier.size(size).clip(CircleShape)
             .then(if (outlined) Modifier.border(1.5.dp, TextPrimary, CircleShape) else Modifier)
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center,
-    ) { Icon(icon, null, tint = TextPrimary, modifier = Modifier.size(if (outlined) size * 0.52f else size * 0.58f)) }
+    ) { Icon(icon, desc, tint = TextPrimary, modifier = Modifier.size(if (outlined) size * 0.52f else size * 0.58f)) }
 }
 
 /* ======================= Oppdatering fra GitHub ======================= */
@@ -764,7 +788,7 @@ fun AppDrawer(onClose: () -> Unit) {
                 UpdateButton()
             }
             Spacer(Modifier.width(12.dp))
-            RoundIcon(Icons.Default.Close, 48.dp) { onClose() }
+            RoundIcon(Icons.Default.Close, 48.dp, desc = "Lukk") { onClose() }
         }
         LazyVerticalGrid(
             columns = GridCells.Adaptive(120.dp),
@@ -798,7 +822,7 @@ fun AppDrawer(onClose: () -> Unit) {
                 ) {
                     AppIcon(app.icon, 52.dp, app.packageName)
                     Spacer(Modifier.height(8.dp))
-                    Text(app.label, color = TextPrimary, fontSize = 13.sp, maxLines = 1)
+                    Text(app.label, color = TextPrimary, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
             }
         }

@@ -40,7 +40,11 @@ object IconStyle {
     private val cache = android.util.LruCache<String, Bitmap>(150)
 
     /** Ferdig maske: hvit der symbolet er, gjennomsiktig ellers. Farges i Compose. */
-    fun glyph(d: Drawable, key: String): Bitmap = cache.get(key) ?: makeGlyph(d).also { cache.put(key, it) }
+    fun glyph(d: Drawable, key: String): Bitmap = cache.get(key) ?: synchronized(this) {
+        // Én om gangen: flere ikoner regnes ut på bakgrunnstråder samtidig, og samme Drawable (setBounds/draw)
+        // tåler ikke å tegnes fra to tråder på en gang – da kunne ikoner bli ødelagte eller feil størrelse.
+        cache.get(key) ?: makeGlyph(d).also { cache.put(key, it) }
+    }
 
     private fun makeGlyph(d: Drawable): Bitmap = run {
         if (Build.VERSION.SDK_INT >= 33 && d is AdaptiveIconDrawable && d.monochrome != null) {

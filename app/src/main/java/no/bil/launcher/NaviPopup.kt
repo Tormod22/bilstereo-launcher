@@ -14,6 +14,7 @@ import android.view.WindowManager
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
+import androidx.compose.ui.graphics.toArgb
 import androidx.core.graphics.drawable.toBitmap
 
 /**
@@ -50,16 +51,17 @@ object NaviPopup {
     private fun add(ctx: Context, type: Int, label: String, pkg: String) {
         hide()
         val wm = ctx.getSystemService(Context.WINDOW_SERVICE) as WindowManager
-        val night = Theme.night
-        val bg = if (night) 0xF0141416.toInt() else 0xF01C1C1F.toInt()
-        val fg = if (night) 0xFFB9B9BE.toInt() else 0xFFF5F5F7.toInt()
-        val muted = if (night) 0xFF68686D.toInt() else 0xFF86868B.toInt()
+        // Samme palett som resten av T'OS (følger dag/natt), ikke egne fargekoder
+        val bg = Card.copy(alpha = 0.94f).toArgb()
+        val fg = TextPrimary.toArgb()
+        val muted = TextMuted.toArgb()
+        val line = Line.toArgb()
 
         val view = LinearLayout(ctx).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             setPadding(dp(ctx, 14f), dp(ctx, 12f), dp(ctx, 22f), dp(ctx, 12f))
-            background = GradientDrawable().apply { setColor(bg); cornerRadius = dp(ctx, 26f).toFloat(); setStroke(dp(ctx, 1f), 0xFF2A2A2E.toInt()) }
+            background = GradientDrawable().apply { setColor(bg); cornerRadius = dp(ctx, 26f).toFloat(); setStroke(dp(ctx, 1f), line) }
             elevation = dp(ctx, 8f).toFloat()
             // App-ikonet i mørk stil (samme som i T'OS)
             runCatching { ctx.packageManager.getApplicationIcon(pkg) }.getOrNull()?.let { icon ->
@@ -67,14 +69,14 @@ object NaviPopup {
                     val bmp = if (IconStyle.dark) IconStyle.glyph(icon, pkg) else icon.toBitmap(96, 96)
                     setImageBitmap(bmp)
                     if (IconStyle.dark) setColorFilter(fg)
-                    background = GradientDrawable().apply { setColor(0xFF2A2A2E.toInt()); cornerRadius = dp(ctx, 10f).toFloat() }
+                    background = GradientDrawable().apply { setColor(line); cornerRadius = dp(ctx, 10f).toFloat() }
                     setPadding(dp(ctx, 4f), dp(ctx, 4f), dp(ctx, 4f), dp(ctx, 4f))
                 }, LinearLayout.LayoutParams(dp(ctx, 38f), dp(ctx, 38f)).apply { marginEnd = dp(ctx, 12f) })
             }
             addView(LinearLayout(ctx).apply {
                 orientation = LinearLayout.VERTICAL
-                addView(TextView(ctx).apply { text = "Åpne heller $label"; setTextColor(fg); textSize = 17f })
-                addView(TextView(ctx).apply { text = "Trykk her"; setTextColor(muted); textSize = 13f })
+                addView(TextView(ctx).apply { text = ctx.getString(R.string.navi_popup_title, label); setTextColor(fg); textSize = 17f })
+                addView(TextView(ctx).apply { text = ctx.getString(R.string.navi_popup_hint); setTextColor(muted); textSize = 13f })
             })
             alpha = 0f
             setOnClickListener {
