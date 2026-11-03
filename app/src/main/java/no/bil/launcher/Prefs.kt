@@ -20,6 +20,7 @@ class TosApp : Application() {
         super.onCreate()
         Prefs.init(this)
         CrashLog.install(this)
+        SafeMode.check(this)
         Hub.start(this)
     }
 }
@@ -110,6 +111,7 @@ object CrashLog {
             runCatching {
                 val sw = StringWriter(); e.printStackTrace(PrintWriter(sw))
                 file(c).writeText("${Date()}\n${t.name}\n$sw")
+                SafeMode.recordCrash(c)
             }
             prev?.uncaughtException(t, e)
         }
@@ -131,5 +133,85 @@ object CrashLog {
             appendLine(); appendLine("--- Siste krasj ---"); appendLine(crash)
             appendLine(); appendLine("--- Logg ---"); append(log.takeLast(20000))
         }
+    }
+}
+
+/* ---------- Sikker modus: hindrer at en krasj-løkke gjør stereoen ubrukelig ---------- */
+
+/**
+ * T'OS er startskjermen – krasjer den hver gang den starter, ser man bare svart skjerm.
+ * Tre krasj i løpet av 3 minutter → neste start skjer i sikker modus: uten kart uten nett, uten eget bilbilde og
+ * uten oppstartsmusikk (det som er mest sannsynlig å krasje). Forsiden sier fra, og du kan sende feilrapport.
+ * Etter 2 minutter uten krasj nullstilles telleren. Sikker modus slås av med én knapp.
+ */
+object SafeMode {
+    private fun sp(c: Context) = c.getSharedPreferences("sikker", Context.MODE_PRIVATE)
+    var on by androidx.compose.runtime.mutableStateOf(false)
+        private set
+
+    fun recordCrash(c: Context) {
+        val now = System.currentTimeMillis()
+        val times = (sp(c).getString("t", "") ?: "").split(",").mapNotNull { it.toLongOrNull() }.filter { now - it < 180_000 } + now
+        // commit (ikke apply): prosessen dør rett etter
+        sp(c).edit().putString("t", times.joinToString(",")).commit()
+    }
+
+    fun check(c: Context) {
+        val now = System.currentTimeMillis()
+        val recent = (sp(c).getString("t", "") ?: "").split(",").mapNotNull { it.toLongOrNull() }.count { now - it < 180_000 }
+        on = sp(c).getBoolean("on", false) || recent >= 3
+        if (on) sp(c).edit().putBoolean("on", true).apply()
+        // Har T'OS gått 2 minutter uten krasj, er løkka brutt
+        android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({ sp(c).edit().remove("t").apply() }, 120_000)
+    }
+
+    fun turnOff(c: Context) { sp(c).edit().putBoolean("on", false).remove("t").apply(); on = false }
+}
+
+/* ---------- Oppsettrapport: alt Claude trenger for å tilpasse T'OS til akkurat denne stereoen ---------- */
+
+object SetupReport {
+    fun build(c: Context): String = buildString {
+        val pm = c.packageManager
+        appendLine("T'OS oppsettrapport")
+        appendLine("Versjon: ${runCatching { pm.getPackageInfo(c.packageName, 0).versionName }.getOrNull()} (${Updater.current(c)})")
+        appendLine("Stereo: ${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL} / ${android.os.Build.HARDWARE} / ${android.os.Build.BOARD}")
+        appendLine("Android: ${android.os.Build.VERSION.RELEASE} (SDK ${android.os.Build.VERSION.SDK_INT})")
+        appendLine("Skjerm: ${c.resources.displayMetrics.widthPixels}×${c.resources.displayMetrics.heightPixels}, tetthet ${c.resources.displayMetrics.density}")
+        appendLine("Sikker modus: ${SafeMode.on}")
+        appendLine()
+        appendLine("--- Tillatelser ---")
+        appendLine("Knappestyring: ${Buttons.serviceEnabled(c)}")
+        appendLine("Varseltilgang: ${MediaListener.enabled(c)}")
+        appendLine("Vis over andre apper: ${android.provider.Settings.canDrawOverlays(c)}")
+        appendLine("Endre systeminnstillinger: ${android.provider.Settings.System.canWrite(c)}")
+        appendLine("Installere apper: ${runCatching { pm.canRequestPackageInstalls() }.getOrDefault(false)}")
+        appendLine("Posisjon: ${c.hasPermission(android.Manifest.permission.ACCESS_FINE_LOCATION)}")
+        val home = pm.resolveActivity(android.content.Intent(android.content.Intent.ACTION_MAIN).addCategory(android.content.Intent.CATEGORY_HOME), 0)?.activityInfo
+        appendLine("Startskjerm nå: ${home?.packageName}/${home?.name}")
+        appendLine("Alle startskjermer: " + pm.queryIntentActivities(android.content.Intent(android.content.Intent.ACTION_MAIN).addCategory(android.content.Intent.CATEGORY_HOME), 0)
+            .joinToString { it.activityInfo.packageName + "/" + it.activityInfo.name })
+        appendLine()
+        appendLine("--- Knapper ---")
+        PanelKey.entries.forEach { k ->
+            appendLine("${k.label}: kode=${Buttons.code(c, k)} pakke=${Buttons.pkg(c, k)} kort=${Buttons.action(c, k)} langt=${Buttons.longAction(c, k)}")
+        }
+        appendLine()
+        appendLine("--- Apper T'OS bruker ---")
+        listOf("Mus", "Car", "Rad", "Tel", "Blu", "Rygg", "Nav").forEach { p ->
+            appendLine("$p: ${runCatching { AppRepository.tilePackage(c, Tiles.byPrefix(p)) }.getOrNull()}")
+        }
+        appendLine("Musikk som spiller nå: ${NowPlaying.pkg} (${NowPlaying.title})")
+        appendLine("Radio-MCU (szchoiceway): ${HwRadio.hasMcu(c)}")
+        appendLine()
+        appendLine("--- Alle installerte pakker ---")
+        runCatching { pm.getInstalledApplications(0) }.getOrDefault(emptyList())
+            .sortedBy { it.packageName }
+            .forEach { ai ->
+                val label = runCatching { pm.getApplicationLabel(ai).toString() }.getOrDefault("")
+                val sys = if ((ai.flags and android.content.pm.ApplicationInfo.FLAG_SYSTEM) != 0) " [system]" else ""
+                val start = if (AppRepository.launchIntent(c, ai.packageName) != null) " [kan åpnes]" else ""
+                appendLine("${ai.packageName} – $label$sys$start")
+            }
     }
 }

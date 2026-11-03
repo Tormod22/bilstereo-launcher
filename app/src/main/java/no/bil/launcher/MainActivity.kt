@@ -93,7 +93,7 @@ class MainActivity : ComponentActivity() {
         if (android.os.Build.VERSION.SDK_INT >= 31) perms += Manifest.permission.BLUETOOTH_CONNECT
         askPermissions.launch(perms.toTypedArray())
         handle(intent)
-        if (Startup.isFreshBoot(this)) Startup.run(applicationContext)
+        if (Startup.isFreshBoot(this) && !SafeMode.on) Startup.run(applicationContext)
         if (!Prefs.bool("setup_done")) Nav.screen = Screen.SETUP
         setContent { Root() }
     }
@@ -276,6 +276,7 @@ fun Dashboard(onApps: () -> Unit, onPickSlot: () -> Unit) {
 private fun carBitmap(): androidx.compose.ui.graphics.ImageBitmap? {
     val context = LocalContext.current
     val v = Prefs.long("car_image_v")
+    if (SafeMode.on) return null
     // Leses i bakgrunnen, krympet – et stort kamerabilde ville ellers kunnet krasje forsiden ved hver oppstart
     val bmp by produceState<androidx.compose.ui.graphics.ImageBitmap?>(null, v) {
         value = withContext(Dispatchers.IO) {
@@ -301,12 +302,16 @@ private fun Notice() {
     val due = Reminders.due().firstOrNull()
     val bv = CarBattery.volt
     val (text, go) = when {
+        SafeMode.on -> "Sikker modus etter flere krasj – trykk for å sende feilrapport" to Screen.SETTINGS
         CarBattery.enabled && bv != null && (CarBattery.low || CarBattery.high) -> "${if (CarBattery.low) "Svakt batteri" else "Høy ladespenning"} (${CarBattery.text(bv)})" to Screen.CAR
         due != null -> due.text to Screen.CAR
         Hub.update != null -> "Ny versjon ${Hub.update?.versionName} – trykk for å oppdatere" to Screen.APPS
         else -> return
     }
-    Row(Modifier.padding(top = 8.dp).clip(RoundedCornerShape(12.dp)).background(Card).clickable { Nav.screen = go }
+    Row(Modifier.padding(top = 8.dp).clip(RoundedCornerShape(12.dp)).background(Card).clickable {
+        if (go == Screen.SETTINGS) Prefs.set("settings_cat", "BACKUP")
+        Nav.screen = go
+    }
         .padding(horizontal = 12.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         Icon(Icons.Default.Info, null, tint = TextMuted, modifier = Modifier.size(16.dp))
         Text(text, color = TextPrimary, fontSize = 13.sp, maxLines = 1)
@@ -398,7 +403,7 @@ fun MapView(gps: Gps?, modifier: Modifier, zoomOffset: Int = 0) {
     val zoom = ((gps?.let { zoomFor(it.speedKmh) } ?: 15) + zoomOffset).coerceIn(11, 18)
     val rotate = Prefs.bool("map_rotate", true) && (gps?.speedKmh ?: 0) > 8
     // Nedlastet kart (uten nett) brukes når det finnes, ellers nettkartet
-    if (OfflineMaps.ready(context)) { OfflineMapView(gps, modifier, zoom, rotate); return }
+    if (OfflineMaps.ready(context) && !SafeMode.on) { OfflineMapView(gps, modifier, zoom, rotate); return }
     OnlineMapView(gps, modifier, zoom, rotate)
 }
 
