@@ -187,18 +187,25 @@ object AppRepository {
 
     fun isInstalled(context: Context, packageName: String): Boolean = launchIntent(context, packageName) != null
 
-    /** Apper T'OS selv nettopp åpnet (pakke → tid). Knappestyringen skal ikke sende deg tilbake fra dem. */
+    /**
+     * Apper T'OS selv nettopp åpnet (pakke → tid). Knappestyringen skal ikke sende deg tilbake fra dem.
+     * 8 s fordi treg kaldstart (CarPlay, radio) på stereoen kan ta flere sekunder; merket brukes opp når appen
+     * kommer fram ([forgetLaunched]), så et senere trykk på stereoens knapp ikke regnes som T'OS sitt.
+     */
     private val selfLaunched = java.util.concurrent.ConcurrentHashMap<String, Long>()
-    fun launchedByUs(pkg: String, withinMs: Long = 3000): Boolean =
+    fun launchedByUs(pkg: String, withinMs: Long = 8000): Boolean =
         selfLaunched[pkg]?.let { android.os.SystemClock.elapsedRealtime() - it < withinMs } == true
+
+    /** Appen T'OS åpnet har kommet fram – merket trengs ikke lenger. */
+    fun forgetLaunched(pkg: String) { selfLaunched.remove(pkg) }
 
     /** Merk at T'OS selv åpner [pkg] (så KeyService ikke sender brukeren tilbake). */
     fun markLaunched(pkg: String) { selfLaunched[pkg] = android.os.SystemClock.elapsedRealtime() }
 
     fun launch(context: Context, packageName: String) {
-        markLaunched(packageName)
         val intent = launchIntent(context, packageName)
         if (intent != null) {
+            markLaunched(packageName)
             intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             runCatching { context.startActivity(intent) }.onFailure { Toast.makeText(context, "Fikk ikke åpnet appen", Toast.LENGTH_SHORT).show() }
         } else {
@@ -212,7 +219,8 @@ object AppRepository {
         prefix?.let { p -> Prefs.str(tileChoice.getValue(p)).takeIf { it.isNotBlank() && isInstalled(context, it) }?.let { return it } }
         tile.candidates.firstOrNull { isInstalled(context, it) }?.let { return it }
         val words = tileWords[prefix] ?: return null
-        return findByWords(context, words)
+        // Radio-flisa er stereoens FM/AM-radio: nettradio-apper (NRK Radio, TuneIn …) skal ikke velges
+        return findByWords(context, words, skip = if (prefix == "Rad") internetRadioWords else emptyList())
     }
 
     /**
@@ -245,7 +253,7 @@ object AppRepository {
     /** En app er installert, oppdatert eller fjernet: les navnene på nytt (de gamle brukes til de nye er klare). */
     fun invalidate(context: Context) { warm(context) }
 
-    private fun findByWords(context: Context, words: List<String>): String? {
+    private fun findByWords(context: Context, words: List<String>, skip: List<String> = emptyList()): String? {
         var idx = nameIndex
         if (idx == null) {
             // Første gang (bakgrunnslesingen er ikke ferdig): les nå, én gang. Senere brukes lista som finnes.
@@ -253,7 +261,7 @@ object AppRepository {
         } else if (android.os.SystemClock.elapsedRealtime() - idx.at > 600_000) {
             warm(context)
         }
-        return idx.entries.firstOrNull { (pkg, hay) -> words.any { it in hay } && launchIntent(context, pkg) != null }?.first
+        return idx.entries.firstOrNull { (pkg, hay) -> words.any { it in hay } && skip.none { it in hay } && launchIntent(context, pkg) != null }?.first
     }
 
     /** Åpner appen for flisa, ellers fallback-intent. */
@@ -262,7 +270,10 @@ object AppRepository {
         when {
             pkg != null -> launch(context, pkg)
             tile.fallbackIntent != null -> runCatching {
-                context.startActivity(tile.fallbackIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                val i = Intent(tile.fallbackIntent).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                // Appen som svarer (f.eks. stereoens egen kartapp) er også åpnet av T'OS – ikke send brukeren tilbake fra den
+                runCatching { i.resolveActivity(context.packageManager)?.packageName }.getOrNull()?.let { markLaunched(it) }
+                context.startActivity(i)
             }.onFailure {
                 Toast.makeText(context, "Ingen app for ${tile.title}", Toast.LENGTH_SHORT).show()
             }

@@ -28,6 +28,7 @@ class KeyService : AccessibilityService() {
     private val downAt = mutableMapOf<Int, Long>()
     private val longDone = mutableSetOf<Int>()
     private var screenOffAt = 0L
+    private var registered = false
     /** Hvilken app som er framme, og om T'OS selv åpnet den (da sender vi deg ikke tilbake før du har gått ut av den). */
     private val front = FrontTracker()
     // Ikke ekte startskjermer (Android-innstillinger brukes kort ved oppstart, oppsettsveivisere)
@@ -69,11 +70,15 @@ class KeyService : AccessibilityService() {
 
     override fun onServiceConnected() {
         instance = this
+        // Kan kalles igjen når Android kobler til tjenesten på nytt – da må mottakerne ikke registreres to ganger
+        // (ellers ville f.eks. oppstartsmusikken startet to ganger)
+        if (registered) return
+        registered = true
         val f = IntentFilter().apply {
             addAction(Intent.ACTION_SCREEN_ON); addAction(Intent.ACTION_SCREEN_OFF)
             addAction(UsbManager.ACTION_USB_DEVICE_ATTACHED); addAction(BluetoothDevice.ACTION_ACL_CONNECTED)
         }
-        if (Build.VERSION.SDK_INT >= 33) registerReceiver(receiver, f, Context.RECEIVER_EXPORTED) else registerReceiver(receiver, f)
+        runCatching { if (Build.VERSION.SDK_INT >= 33) registerReceiver(receiver, f, Context.RECEIVER_EXPORTED) else registerReceiver(receiver, f) }
         val pf = IntentFilter().apply {
             addAction(Intent.ACTION_PACKAGE_ADDED); addAction(Intent.ACTION_PACKAGE_REMOVED); addAction(Intent.ACTION_PACKAGE_CHANGED)
             addDataScheme("package")
@@ -88,18 +93,23 @@ class KeyService : AccessibilityService() {
         NaviPopup.hide()
         runCatching { unregisterReceiver(receiver) }
         runCatching { unregisterReceiver(pkgReceiver) }
+        registered = false
         super.onDestroy()
     }
 
     override fun onKeyEvent(event: KeyEvent): Boolean {
         val code = event.keyCode
         if (event.action == KeyEvent.ACTION_UP && code == swallowUp) { swallowUp = -1; return true }
+        // Nytt trykk på samme knapp: slippet fra læringen kom aldri – ikke svelg slippet til dette trykket
+        if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0 && code == swallowUp && Learn.target == null) swallowUp = -1
 
         if (Learn.target != null && event.action == KeyEvent.ACTION_DOWN && !isVolume(code) && Learn.offerKey(this, code)) {
             swallowUp = code
             return true
         }
         val key = Buttons.keyForCode(this, code) ?: return false
+        // Under en samtale skal svar/legg på (og mediaknappene, som telefonen bruker til det) gå til telefonen
+        if (passToCall(code) && Buttons.inCall(this)) return false
         if (!Buttons.shouldIntercept(this, key, code)) return false
         handlePress(this, key, event, downAt, longDone)
         return true
@@ -111,14 +121,20 @@ class KeyService : AccessibilityService() {
         // Systemvinduer og tastatur legger seg bare over appen som er framme – de bytter ikke app
         if (pkg in ignored || "inputmethod" in pkg || "keyboard" in pkg) return
         val cls = event.className?.toString()
+        // Fanelista og tillatelsesvinduer er bare innom: appen under er fortsatt «framme» (og fortsatt T'OS sin)
+        if (isPassingWindow(pkg, cls)) return
         if (pkg == packageName) {
             // Bare T'OS sine egne skjermer teller (ikke Waze-popupen o.l. som legges over andre apper)
             if (cls == null || cls.startsWith("$packageName.")) front.update(pkg, launchedByUs = false)
             return
         }
-        val state = front.update(pkg, AppRepository.launchedByUs(pkg))
+        val byUs = AppRepository.launchedByUs(pkg)
+        val state = front.update(pkg, byUs)
+        // Merket er brukt opp: neste gang appen åpnes (f.eks. med knappen på stereoen) er det ikke T'OS som åpnet den
+        if (byUs && state.newlyFront) AppRepository.forgetLaunched(pkg)
 
-        if (Learn.target != null && Learn.offerPackage(this, pkg)) return
+        // En app T'OS selv nettopp åpnet er ikke det knappen åpnet
+        if (Learn.target != null && !byUs && Learn.offerPackage(this, pkg)) return
 
         // Appen ble åpnet av T'OS selv (f.eks. «Start radio», «Telefon», stereoens egen startskjerm fra app-lista):
         // ikke send tilbake så lenge du er i den
@@ -147,7 +163,9 @@ class KeyService : AccessibilityService() {
         val resume = NowPlaying.recentMusic(exclude = pkg)
         Buttons.perform(this, action)
         // Stereoens radio-app rakk å starte radioen: skru den av igjen, så det ikke blir skurr
-        if ((key == PanelKey.RADIO || RadioGuard.looksLikeRadio(pkg)) && action != Action.RADIO) RadioGuard.silence(this, pkg, resume)
+        // Bare en app som ser ut som radio (og ikke er stereoens startskjerm) lukkes helt
+        if ((key == PanelKey.RADIO || RadioGuard.looksLikeRadio(pkg)) && action != Action.RADIO)
+            RadioGuard.silence(this, pkg, resume, mayClose = RadioGuard.looksLikeRadio(pkg) && pkg !in homePkgs)
     }
 
     /**
@@ -172,25 +190,35 @@ class KeyService : AccessibilityService() {
         var instance: KeyService? = null
             private set
 
-        /** Kort trykk = handling ved slipp. Langt trykk (0,6 s) = egen handling, utføres mens knappen holdes. */
+        /**
+         * Kort trykk = handling ved slipp. Langt trykk (0,6 s) = egen handling, utføres mens knappen holdes.
+         * Et avbrutt trykk gjør ingenting. Starttiden glemmes ved slipp, så et gammelt trykk aldri blir «langt».
+         */
         fun handlePress(c: Context, key: PanelKey, e: KeyEvent, downAt: MutableMap<Int, Long>, longDone: MutableSet<Int>) {
             val code = e.keyCode
-            val long = Buttons.longAction(c, key)
             when (e.action) {
                 KeyEvent.ACTION_DOWN -> {
-                    if (e.repeatCount == 0) { downAt[code] = e.eventTime; longDone.remove(code) }
-                    if (long != Action.NONE && code !in longDone && e.eventTime - (downAt[code] ?: e.eventTime) >= 600) {
+                    if (e.repeatCount == 0 || code !in downAt) { downAt[code] = pressStart(e.downTime, e.eventTime); if (e.repeatCount == 0) longDone.remove(code) }
+                    val long = Buttons.longAction(c, key)
+                    if (long != Action.NONE && code !in longDone && e.eventTime - (downAt[code] ?: e.eventTime) >= LONG_MS) {
                         longDone += code; Buttons.perform(c, long)
                     }
                 }
                 KeyEvent.ACTION_UP -> {
-                    val held = e.eventTime - (downAt[code] ?: e.eventTime)
-                    if (code in longDone) { longDone.remove(code); return }
-                    if (long != Action.NONE && held >= 600) { Buttons.perform(c, long); return }
+                    val start = downAt.remove(code) ?: e.eventTime
+                    if (longDone.remove(code)) return
+                    if ((e.flags and KeyEvent.FLAG_CANCELED) != 0) return
+                    val long = Buttons.longAction(c, key)
+                    if (long != Action.NONE && e.eventTime - start >= LONG_MS) { Buttons.perform(c, long); return }
                     Buttons.perform(c, Buttons.action(c, key))
                 }
+                // Noen stereoer sender ett «flere trykk»-signal i stedet for trykk + slipp: regnes som et kort trykk
+                @Suppress("DEPRECATION")
+                KeyEvent.ACTION_MULTIPLE -> if (code != KeyEvent.KEYCODE_UNKNOWN) Buttons.perform(c, Buttons.action(c, key))
             }
         }
+
+        private const val LONG_MS = 600L
     }
 }
 
@@ -209,4 +237,23 @@ internal class FrontTracker {
         else if (launchedByUs) owned = pkg
         return FrontState(newly, owned == pkg)
     }
+}
+
+/** Når trykket startet: tiden knappen ble trykket ned, hvis stereoen oppgir den (noen sender 0). */
+internal fun pressStart(downTime: Long, eventTime: Long): Long = if (downTime in 1..eventTime) downTime else eventTime
+
+/** Taster telefonen bruker under en samtale (svar, legg på, og mediaknapper fra rattet). Testes i ServiceLogicTest2. */
+internal fun passToCall(code: Int): Boolean = code in setOf(
+    KeyEvent.KEYCODE_HEADSETHOOK, KeyEvent.KEYCODE_CALL, KeyEvent.KEYCODE_ENDCALL,
+    KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE, KeyEvent.KEYCODE_MEDIA_PLAY, KeyEvent.KEYCODE_MEDIA_PAUSE, KeyEvent.KEYCODE_MEDIA_STOP,
+    KeyEvent.KEYCODE_MEDIA_NEXT, KeyEvent.KEYCODE_MEDIA_PREVIOUS,
+)
+
+/**
+ * Vinduer som bare er innom over appen som er framme: fanelista (nylige apper) og tillatelses-/installasjonsvinduer.
+ * De skal ikke regnes som at du har forlatt appen. Testes i ServiceLogicTest2.
+ */
+internal fun isPassingWindow(pkg: String, cls: String?): Boolean {
+    if (cls != null && cls.contains("recents", ignoreCase = true)) return true
+    return pkg.endsWith(".permissioncontroller") || pkg.endsWith(".packageinstaller")
 }

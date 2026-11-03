@@ -77,14 +77,17 @@ object NetRadio {
         (c?.let { am(it) } ?: audio)?.let { runCatching { it.abandonAudioFocusRequest(r) } }
     }
 
-    fun play(c: Context, s: Station) = start(c, s, retry = false)
+    fun play(c: Context, s: Station) = start(c.applicationContext, s, retry = false)
 
+    /** [c] er alltid app-konteksten: spilleren lever lenger enn skjermen som startet den (ellers lekker skjermen). */
     private fun start(c: Context, s: Station, retry: Boolean) {
         stop(c)
         audio = am(c)
-        current = s; buffering = true; error = null; prepared = false
+        current = s; buffering = false; error = null; prepared = false; preparedAt = 0L
         Prefs.set("radio_last", s.name)
-        takeFocus(c)
+        // Får vi ikke lyden (f.eks. under en samtale), skal radioen ikke spille oppå
+        if (!takeFocus(c)) { error = "Radioen kan ikke spille akkurat nå (samtale?). Prøv igjen etterpå."; abandonFocus(c); return }
+        buffering = true
         val mp = MediaPlayer()
         player = mp
         mp.setAudioAttributes(AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA).setContentType(AudioAttributes.CONTENT_TYPE_MUSIC).build())
@@ -94,14 +97,18 @@ object NetRadio {
             runCatching { it.start(); playing = true }
         }
         mp.setOnErrorListener { it, _, _ ->
-            if (player === it) fail(c, "Fikk ikke spilt ${s.name}. Er det internett?")
+            // Brudd etter at kanalen har spilt en stund (f.eks. kort uten dekning): koble til på nytt.
+            // Feiler selve tilkoblingen, gis det opp (ingen evig prøving uten nett).
+            if (player === it) {
+                if (shouldReconnect(prepared, android.os.SystemClock.elapsedRealtime() - preparedAt)) start(c, s, retry = true)
+                else fail(c, "Fikk ikke spilt ${s.name}. Er det internett?")
+            }
             true
         }
         // Strømmen tok slutt (nettbrudd o.l.): prøv én gang til, ellers stopp
         mp.setOnCompletionListener {
             if (player !== it) return@setOnCompletionListener
-            val playedLong = android.os.SystemClock.elapsedRealtime() - preparedAt > 10_000
-            if (!retry || playedLong) start(c.applicationContext, s, retry = true)
+            if (!retry || shouldReconnect(prepared, android.os.SystemClock.elapsedRealtime() - preparedAt)) start(c, s, retry = true)
             else fail(c, "${s.name} stoppet. Er det internett?")
         }
         runCatching { mp.setDataSource(c, android.net.Uri.parse(s.url)); mp.prepareAsync() }
@@ -121,8 +128,9 @@ object NetRadio {
         when {
             p == null -> (current ?: last() ?: stations.first()).let { play(c, it) }
             !prepared -> stop(c)                                   // trykk mens den kobler til = avbryt
-            playing -> { runCatching { p.pause() }; playing = false }
-            else -> { takeFocus(c); runCatching { p.start() }; playing = true; pausedByFocus = false }
+            playing -> { runCatching { p.pause() }; playing = false; pausedByFocus = false }
+            !takeFocus(c) -> error = "Radioen kan ikke spille akkurat nå (samtale?)."
+            else -> { runCatching { p.start() }; playing = true; pausedByFocus = false; error = null }
         }
     }
 
@@ -137,6 +145,9 @@ object NetRadio {
         abandonFocus(c)
     }
 }
+
+/** Koble til på nytt bare når kanalen faktisk spilte i over 10 s før bruddet. Testes i ServiceLogicTest2. */
+internal fun shouldReconnect(prepared: Boolean, playedMs: Long): Boolean = prepared && playedMs > 10_000
 
 /* ======================= Stereoens egen FM/AM-radio ======================= */
 
@@ -165,15 +176,17 @@ object HwRadio {
             runCatching { android.provider.Settings.Global.getString(c.contentResolver, "SYS_MEDIA_INFO_JSON") != null }.getOrDefault(false)
 
     fun start(c: Context) {
-        app = c.applicationContext
-        if (observing || !hasMcu(c)) return
+        val a = c.applicationContext
+        app = a
+        if (observing || !hasMcu(a)) return
         observing = true
-        mcu = readMcu(c)
+        mcu = readMcu(a)
+        // App-konteksten (ikke skjermen): observatøren lever så lenge T'OS kjører
         runCatching {
-            c.contentResolver.registerContentObserver(
+            a.contentResolver.registerContentObserver(
                 android.provider.Settings.Global.getUriFor("SYS_MEDIA_INFO_JSON"), false,
                 object : android.database.ContentObserver(android.os.Handler(android.os.Looper.getMainLooper())) {
-                    override fun onChange(selfChange: Boolean) { mcu = readMcu(c) }
+                    override fun onChange(selfChange: Boolean) { mcu = readMcu(a) }
                 })
         }
     }
@@ -244,6 +257,9 @@ object HwRadio {
     fun stopMcu() = send(byteArrayOf(0x01, 0x63))
 
     fun open(c: Context) {
+        // Brukeren vil ha radioen nå: en ventende «skru av radioen» fra RADIO-knappen skal ikke slå den av igjen
+        RadioGuard.cancel()
+        if (app == null) app = c.applicationContext
         if (hasMcu(c)) send(byteArrayOf(0x01, 0x01))
         NetRadio.stop(c)
         AppRepository.launchTile(c, Tiles.byPrefix("Rad"))
@@ -267,7 +283,15 @@ object RadioGuard {
 
     fun looksLikeRadio(pkg: String): Boolean = isFmRadioPkg(pkg, Prefs.str("radio_pkg"))
 
-    fun silence(c: Context, pkg: String, resumePkg: String?) {
+    /** Avbryt en ventende stopp (brukeren åpnet radioen selv like etterpå). */
+    fun cancel() = handler.removeCallbacksAndMessages(null)
+
+    /**
+     * [mayClose]: appen kan lukkes helt (bare når den ser ut som en radio-app og ikke er stereoens startskjerm –
+     * på noen stereoer ligger radioen inne i hovedappen, og den skal ikke lukkes).
+     */
+    fun silence(c: Context, pkg: String, resumePkg: String?, mayClose: Boolean = looksLikeRadio(pkg)) {
+        cancel()
         val app = c.applicationContext
         val am = app.getSystemService(Context.AUDIO_SERVICE) as android.media.AudioManager
         val req = android.media.AudioFocusRequest.Builder(android.media.AudioManager.AUDIOFOCUS_GAIN)
@@ -279,22 +303,25 @@ object RadioGuard {
         }
         hush()
         // Spiller T'OS sin egen nettradio, skal den ikke miste lyden – da hoppes lydfokus-trikset over
-        val grabbed = !NetRadio.active && runCatching { am.requestAudioFocus(req) }.isSuccess
+        val grabbed = !NetRadio.active &&
+            runCatching { am.requestAudioFocus(req) }.getOrDefault(0) == android.media.AudioManager.AUDIOFOCUS_REQUEST_GRANTED
         // Radio-appen kan bruke litt tid på å starte – gjenta etter at den er ferdig
         handler.postDelayed({ hush() }, 600)
         handler.postDelayed({
             hush()
             if (grabbed) runCatching { am.abandonAudioFocusRequest(req) }
-            runCatching { (app.getSystemService(Context.ACTIVITY_SERVICE) as android.app.ActivityManager).killBackgroundProcesses(pkg) }
+            if (mayClose) runCatching { (app.getSystemService(Context.ACTIVITY_SERVICE) as android.app.ActivityManager).killBackgroundProcesses(pkg) }
             if (resumePkg != null && !NetRadio.active) MediaListener.playSessionOf(app, resumePkg)
         }, 1500)
     }
 }
 
 /** Nettradio-apper som har «radio» i navnet, men ikke er stereoens FM/AM-radio (skal ikke stoppes). */
-private val internetRadioWords = listOf("nrk", "tunein", "radiogarden", "radio.garden", "garden", "radioplayer", "iheart",
+internal val internetRadioWords = listOf("nrk", "tunein", "radiogarden", "radio.garden", "garden", "radioplayer", "iheart",
     "de.radio", "radionet", "radio.net", "streema", "simpleradio", "audials", "podcast", "spotify", "bbc", "myradio", "onlineradio",
     "internetradio", "webradio", "p4", "bauer", "sharpstream")
+
+private val systemRadioWords = listOf("radioconfig", "telephony", "radiointerface", "hardware.radio", "qti.radio")
 
 /**
  * Er [pkg] stereoens egen FM/AM-radio? Har brukeren valgt radio-app ([chosen]), gjelder bare den.
@@ -304,5 +331,7 @@ internal fun isFmRadioPkg(pkg: String, chosen: String): Boolean {
     if (chosen.isNotBlank()) return pkg == chosen
     val p = pkg.lowercase()
     if (internetRadioWords.any { it in p }) return false
+    // Telefon-/mobilnett-deler av Android heter også ofte «radio» (f.eks. radioconfig) – de er ikke FM-radioen
+    if (systemRadioWords.any { it in p }) return false
     return "radio" in p || "fmradio" in p || "tuner" in p || p.endsWith(".fm") || ".fm." in p
 }

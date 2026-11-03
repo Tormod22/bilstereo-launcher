@@ -58,7 +58,7 @@ object NowPlaying {
         durationMs = md?.getLong(MediaMetadata.METADATA_KEY_DURATION) ?: 0L
         pkg = c?.packageName
         val st = c?.playbackState
-        playing = st?.state == PlaybackState.STATE_PLAYING || st?.state == PlaybackState.STATE_BUFFERING
+        playing = isPlayingState(st?.state)
         posMs = st?.position ?: 0L
         posAt = st?.lastPositionUpdateTime?.takeIf { it > 0 } ?: SystemClock.elapsedRealtime()
         speed = st?.playbackSpeed?.takeIf { it > 0 } ?: 1f
@@ -96,6 +96,23 @@ internal fun isIncomingCall(callType: Int, hasFullScreen: Boolean, ongoing: Bool
     if (callType != 0) return callType == 1   // Notification.CallStyle.CALL_TYPE_INCOMING
     if (ongoing && !hasFullScreen) return false
     return hasFullScreen && !chronometer
+}
+
+/** Spiller (eller laster/hopper til neste sang – da kommer lyden straks). */
+internal fun isPlayingState(state: Int?): Boolean = state == PlaybackState.STATE_PLAYING || state == PlaybackState.STATE_BUFFERING ||
+    state == PlaybackState.STATE_SKIPPING_TO_NEXT || state == PlaybackState.STATE_SKIPPING_TO_PREVIOUS ||
+    state == PlaybackState.STATE_SKIPPING_TO_QUEUE_ITEM || state == PlaybackState.STATE_CONNECTING
+
+/**
+ * Hvilken mediaøkt som skal vises: den som nå vises hvis den spiller, ellers første som spiller,
+ * ellers den som vises (hvis den finnes), ellers den første. -1 = ingen. Testes i ServiceLogicTest2.
+ */
+internal fun pickSession(playing: List<Boolean>, currentIndex: Int): Int {
+    if (playing.isEmpty()) return -1
+    if (currentIndex in playing.indices && playing[currentIndex]) return currentIndex
+    val first = playing.indexOfFirst { it }
+    if (first >= 0) return first
+    return if (currentIndex in playing.indices) currentIndex else 0
 }
 
 /* ======================= Musikkontroll ======================= */
@@ -156,6 +173,8 @@ class MediaListener : NotificationListenerService() {
         callbacks.forEach { (c, cb) -> runCatching { c.unregisterCallback(cb) } }
         callbacks.clear()
         controllers = emptyList()
+        // Ingen gammel spiller igjen: musikkknappene bruker da vanlige mediaknapper i stedet for en død økt
+        NowPlaying.read(null)
         // Uten varseltilgang får vi ikke vite når sving/samtale er over – ikke vis gamle ting
         NavInfo.title = null; NavInfo.text = null; Call.clear()
     }
@@ -180,10 +199,14 @@ class MediaListener : NotificationListenerService() {
         choose()
     }
 
+    /**
+     * Spiller flere, eller ingen: den som spiller vinner. Ellers beholdes den vi viste (en sang som bytter eller
+     * laster et øyeblikk skal ikke gjøre at en annen app, f.eks. en pauset YouTube, tar over musikkknappene).
+     */
     private fun choose() {
         val list = controllers
-        val c = list.firstOrNull { it.playbackState?.state == PlaybackState.STATE_PLAYING } ?: list.firstOrNull()
-        NowPlaying.read(c)
+        val i = pickSession(list.map { isPlayingState(it.playbackState?.state) }, list.indexOfFirst { it === NowPlaying.controller })
+        NowPlaying.read(list.getOrNull(i))
     }
 
     override fun onNotificationPosted(sbn: StatusBarNotification) {

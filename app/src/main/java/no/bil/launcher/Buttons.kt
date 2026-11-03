@@ -135,6 +135,11 @@ object Buttons {
             Action.RADIO -> tile("Rad")
             Action.CARPLAY -> tile("Car")
             Action.CAMERA -> tile("Rygg")
+            // Disse åpner også apper: kartappen (naviger hjem, delt skjerm), musikkappen, CarPlay (Siri) –
+            // uten dem kunne stereoen og T'OS sendt hverandre i ring
+            Action.NAV_HOME -> tile("Nav") + listOf(Prefs.str("nav_app"), c.packageName)
+            Action.SPLIT -> tile("Mus") + tile("Nav") + listOf(Prefs.str("nav_app"))
+            Action.VOICE -> tile("Car")
             else -> emptyList()
         }
     }
