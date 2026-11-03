@@ -10,6 +10,10 @@
     <!-- GPS-fart og posisjon til kartet -->
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <!-- Posisjonstjeneste i forgrunnen (GpsService): GPS-en strupes ikke når Maps/Car link dekker skjermen -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- Installere oppdateringer lastet ned fra GitHub -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <!-- Bluetooth-siden: vise tilkoblet telefon -->
@@ -84,6 +88,12 @@
                 <action android:name="android.service.notification.NotificationListenerService" />
             </intent-filter>
         </service>
+
+        <!-- Holder GPS-en i gang i forgrunnen (stille varsel «T'OS bruker posisjon») -->
+        <service
+            android:name=".GpsService"
+            android:exported="false"
+            android:foregroundServiceType="location" />
 
         <provider
             android:name="androidx.core.content.FileProvider"
