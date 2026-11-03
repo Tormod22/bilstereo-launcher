@@ -17,7 +17,7 @@ Snakk norsk med brukeren. Han er ikke utvikler – forklar enkelt, ikke bruk fag
 - Løsningen han godkjente: **tre ting** – (1) bilkort med klokke, stort bilbilde og fart som stort tall, (2) ekte kart, (3) én rad nederst: musikk/telefon/apper. Ingen kalender, ingen vær.
 - Kalkulator skal være skjult i app-skuffen (`HiddenApps` i `Apps.kt`).
 
-## Nåværende tilstand (v4.5)
+## Nåværende tilstand (v4.6)
 - `MainActivity.kt`: Compose-UI med de tre tingene + app-skuff + oppdateringsknapp. Skjermvalg via `Nav.screen` (DASH/APPS/BT/KEYS).
 - v3.0 «stor oppdatering» – alle 50 punktene i `docs/IDEER.md` (se Begrensninger der). Nye filer:
   `Prefs.kt` (TosApp, innstillinger m/ Compose-reaktivitet via Prefs.version, sikkerhetskopi JSON, CrashLog),
@@ -35,6 +35,11 @@ Snakk norsk med brukeren. Han er ikke utvikler – forklar enkelt, ikke bruk fag
   CI-status 3. nov: bygg #2 stoppet på «Sett opp fast signatur» = secrets mangler (brukeren må legge dem inn).
   Steget tåler nå mellomrom/linjeskift og sjekker nøkkel+passord med keytool (testet lokalt med ekte verdier).
   GitHub Pages er ikke slått på (testsiden gir 404) – valgfritt.
+  v4.6: brukeren HAR en tuningboks: ChipPower CRS, kabel KCR18 (diesel common rail, sitter på rail-trykksensoren,
+  ingen app/Bluetooth, styrke via skrue + grønn LED). Tuning-siden: «Min tuningboks» (TuneBox, trinn 0=av/1–10 føres for hånd),
+  TuneLog (hver 0–100/80–120 lagres med trinn, beste per trinn), «Motordata» via samme OBD2-brikke som batteriet
+  (Engine i CarBattery.kt: PID 0C turtall, 05 kjølevæske, 0B+33 ladetrykk, 23 rail-trykk; bare mens siden er åpen).
+  Brukeren har trolig IKKE kjøpt OBD-brikke ennå. Test: TuningLogicTest (3).
   v4.5: «finn 50 feil» → 49 funn rettet (3 agenter i hver sin worktree). Viktigst: GPS ber om FINE+COARSE, GpsService
   (forgrunnstjeneste type location), GPS blir «gammel» etter 3 s, SpeedLimit Found/NoneTagged/Failed + nærmeste vei,
   KeyService omdirigerer bare når appen KOMMER fram (FrontTracker) og T'OS-åpnede apper er «eid» til man forlater dem,

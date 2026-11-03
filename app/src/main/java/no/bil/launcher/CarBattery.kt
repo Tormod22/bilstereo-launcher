@@ -55,7 +55,14 @@ object CarBattery {
 
     fun start(c: Context) {
         Hub.scope.launch { while (isActive) { stereoVolt = withContext(Dispatchers.IO) { readStereo(c) }; publish(); delay(10_000) } }
-        Hub.scope.launch { while (isActive) { if (enabled) obdLoop(c); delay(60_000) } }
+        Hub.scope.launch {
+            while (isActive) {
+                if (enabled || Engine.watching) obdLoop(c)
+                // Vent inntil 60 s – men prøv straks igjen hvis Tuning-siden (motordata) åpnes
+                val wasWatching = Engine.watching
+                for (i in 0 until 60) { if (Engine.watching && !wasWatching) break; delay(1_000) }
+            }
+        }
     }
 
     private fun publish() {
@@ -95,40 +102,112 @@ object CarBattery {
         val ok = withContext(Dispatchers.IO) {
             runCatching {
                 socket = dev.createRfcommSocketToServiceRecord(SPP).also { it.connect() }
-                listOf("ATZ", "ATE0", "ATL0").forEach { cmd(it) }
+                listOf("ATZ", "ATE0", "ATL0", "ATS0", "ATSP0").forEach { cmd(it) }
                 true
             }.getOrDefault(false)
         }
         if (!ok) { obdStatus = "Fikk ikke kontakt med ${dev.name} (er tenningen på?)"; close(); return }
         obdStatus = "Tilkoblet ${dev.name}"
-        while (Hub.scope.isActive && enabled) {
+        while (Hub.scope.isActive && (enabled || Engine.watching)) {
             val v = withContext(Dispatchers.IO) { runCatching { cmd("ATRV").filter { it.isDigit() || it == '.' }.toFloatOrNull() } }
             if (v.isFailure) { obdStatus = "Mistet kontakten med ${dev.name}"; break }
             obdVolt = v.getOrNull()?.takeIf { it in 5f..18f }
             publish()
-            delay(5_000)
+            // Motordata bare mens Tuning-siden er åpen (sparer brikka og bilens styreenhet)
+            if (Engine.watching) {
+                withContext(Dispatchers.IO) { runCatching { Engine.poll { pid, wait -> cmd(pid, wait) } } }
+                delay(700)
+            } else {
+                Engine.clear()
+                delay(5_000)
+            }
         }
         close()
     }
 
     private fun close() {
         runCatching { socket?.close() }; socket = null
-        obdVolt = null; publish()
+        obdVolt = null; publish(); Engine.clear()
     }
 
-    private fun cmd(c: String): String {
+    /** Er OBD-brikka tilkoblet akkurat nå? */
+    val obdConnected get() = socket != null
+
+    private fun cmd(c: String, waitMs: Long = 3000): String {
         val s = socket ?: error("ingen kontakt")
         s.outputStream.write("$c\r".toByteArray()); s.outputStream.flush()
         val sb = StringBuilder(); val start = System.currentTimeMillis()
         val inp = s.inputStream
         // Les bare det som har kommet – blir brikka stille (sover), henger ikke T'OS, men gir opp etter 3 s
         while (true) {
-            if (System.currentTimeMillis() - start > 3000) error("brikka svarer ikke")
+            if (System.currentTimeMillis() - start > waitMs) error("brikka svarer ikke")
             if (inp.available() <= 0) { Thread.sleep(20); continue }
             val ch = inp.read()
             if (ch < 0 || ch == '>'.code) break
             sb.append(ch.toChar())
         }
         return sb.toString().trim()
+    }
+}
+
+/**
+ * Motordata fra OBD2-brikka (standard-PID-er). Viser hva tuningboksen gjør: turtall, ladetrykk,
+ * rail-trykk (diesel) og kjølevæske. Ikke alle biler svarer på alle – da vises «–».
+ * ChipPower CRS selv har ingen utgang; dette leses fra bilens egen motorstyring.
+ */
+object Engine {
+    var watching by mutableStateOf(false)
+    var rpm by mutableStateOf<Int?>(null)
+    var coolant by mutableStateOf<Int?>(null)      // °C
+    var boostBar by mutableStateOf<Float?>(null)   // overtrykk i bar (MAP − lufttrykk)
+    var railBar by mutableStateOf<Int?>(null)      // drivstofftrykk i rail, bar
+    var maxBoost by mutableStateOf<Float?>(null)
+    var maxRail by mutableStateOf<Int?>(null)
+    private var baroKpa = 101
+    private var first = true
+    private val unsupported = mutableSetOf<String>()
+
+    fun clear() { rpm = null; coolant = null; boostBar = null; railBar = null }
+    fun resetMax() { maxBoost = null; maxRail = null }
+
+    /** Leser én runde. [ask] sender en kommando og venter på svar (ms). */
+    fun poll(ask: (String, Long) -> String) {
+        fun read(pid: String): List<Int>? {
+            if (pid in unsupported) return null
+            val r = runCatching { ask("01$pid", if (first) 10_000 else 2_000) }.getOrNull()
+            first = false
+            val b = parsePid(r ?: return null, pid)
+            if (b == null && r.contains("NO DATA", true)) unsupported += pid
+            return b
+        }
+        read("33")?.let { baroKpa = it[0].takeIf { v -> v in 60..110 } ?: baroKpa }
+        val r = read("0C"); val c = read("05"); val m = read("0B"); val f = read("23")
+        val boost = m?.let { ((it[0] - baroKpa) / 100f).coerceAtLeast(0f) }
+        val rail = f?.takeIf { it.size >= 2 }?.let { railFromBytes(it[0], it[1]) }
+        Hub.scope.launch {
+            rpm = r?.takeIf { it.size >= 2 }?.let { (it[0] * 256 + it[1]) / 4 }
+            coolant = c?.let { it[0] - 40 }
+            boostBar = boost; railBar = rail
+            if (boost != null && (maxBoost ?: 0f) < boost) maxBoost = boost
+            if (rail != null && (maxRail ?: 0) < rail) maxRail = rail
+        }
+    }
+
+    /** Rail-trykk (PID 23): (A·256+B)·10 kPa → bar. */
+    internal fun railFromBytes(a: Int, b: Int) = (a * 256 + b) * 10 / 100
+
+    /**
+     * Finner databytene etter «41 <pid>» i svaret fra ELM327 (med eller uten mellomrom, flere linjer, «SEARCHING...»).
+     * Returnerer null hvis svaret ikke inneholder PID-en.
+     */
+    internal fun parsePid(resp: String, pid: String): List<Int>? {
+        val hex = resp.uppercase().lines().joinToString("") { line ->
+            line.substringAfter(':', line).filter { it.isDigit() || it in 'A'..'F' }   // «0: 41 0C …» (CAN med linjenummer)
+        }
+        val i = hex.indexOf("41" + pid.uppercase())
+        if (i < 0) return null
+        val data = hex.substring(i + 4)
+        val bytes = data.chunked(2).filter { it.length == 2 }.mapNotNull { it.toIntOrNull(16) }
+        return bytes.take(4).takeIf { it.isNotEmpty() }
     }
 }
