@@ -32,7 +32,7 @@ enum class Action(val label: String) {
     NAVI("Kart / navigasjon"),
     MUSIC("Musikk (Spotify)"),
     BT("Bluetooth-side"),
-    RADIO("Radio-appen"),
+    RADIO("FM-radio (spiller i T'OS)"),
     RADIO_PAGE("Radio-side (nettradio + radio)"),
     PHONE("Telefon-side (favoritter)"),
     CARPLAY("CarPlay"),
@@ -129,10 +129,10 @@ object Buttons {
     fun targets(c: Context, a: Action): List<String> {
         fun tile(p: String) = Tiles.byPrefix(p).let { t -> t.candidates + listOfNotNull(AppRepository.tilePackage(c, t)) }
         return when (a) {
-            Action.HOME, Action.BT, Action.APPS, Action.RADIO_PAGE, Action.PHONE, Action.MAP_FULL, Action.CAR, Action.QUICK, Action.TUNING, Action.SETTINGS -> listOf(c.packageName)
+            // RADIO: radioen startes i bakgrunnen og T'OS sin radio-side vises (stereoens radio-app tas hånd om i KeyService)
+            Action.HOME, Action.BT, Action.APPS, Action.RADIO, Action.RADIO_PAGE, Action.PHONE, Action.MAP_FULL, Action.CAR, Action.QUICK, Action.TUNING, Action.SETTINGS -> listOf(c.packageName)
             Action.NAVI -> tile("Nav") + listOf(Prefs.str("nav_app"))
             Action.MUSIC -> tile("Mus")
-            Action.RADIO -> tile("Rad")
             Action.CARPLAY -> tile("Car")
             Action.CAMERA -> tile("Rygg")
             // Disse åpner også apper: kartappen (naviger hjem, delt skjerm), musikkappen, CarPlay (Siri) –
@@ -151,7 +151,8 @@ object Buttons {
             Action.APPS -> show(c, Screen.APPS)
             Action.NAVI -> openMaps(c)
             Action.MUSIC -> openMusic(c)
-            Action.RADIO -> AppRepository.launchTile(c, Tiles.byPrefix("Rad"))
+            // Stereoens FM/AM-radio uten radio-appens skjermbilde (se HwRadio.powerOn)
+            Action.RADIO -> HwRadio.powerOn(c, showPage = true)
             Action.RADIO_PAGE -> show(c, Screen.RADIO)
             Action.PHONE -> show(c, Screen.PHONE)
             Action.CARPLAY -> AppRepository.launchTile(c, Tiles.byPrefix("Car"))
@@ -178,6 +179,8 @@ object Buttons {
 
     /** Musikkappen brukeren har valgt, ellers første som finnes (Spotify først). */
     fun openMusic(c: Context) {
+        // Musikk i stedet for FM-radioen: slå av radioen, så de ikke spiller oppå hverandre
+        if (HwRadio.wanted) HwRadio.powerOff(c)
         val pkg = Prefs.str("music_pkg")
         if (pkg.isNotBlank() && AppRepository.isInstalled(c, pkg)) AppRepository.launch(c, pkg)
         else AppRepository.launchTile(c, Tiles.byPrefix("Mus"))
@@ -196,11 +199,16 @@ object Buttons {
         AppRepository.launchTile(c, Tiles.byPrefix("Car"))
     }
 
-    fun show(c: Context, s: Screen) {
+    /**
+     * Vis en T'OS-skjerm. [instant]: uten overgangsanimasjon (brukes når T'OS skal dekke over stereoens egne
+     * skjermbilder, så de ikke synes under animasjonen).
+     */
+    fun show(c: Context, s: Screen, instant: Boolean = false) {
         Nav.screen = s
         val i = Intent(c, MainActivity::class.java)
             .putExtra(Nav.EXTRA, s.name)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+        if (instant) i.addFlags(Intent.FLAG_ACTIVITY_NO_ANIMATION or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
         runCatching { c.startActivity(i) }
     }
 
