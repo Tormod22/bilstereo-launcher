@@ -64,11 +64,14 @@ object Hub {
         scope.launch { while (true) { Theme.update(gps?.lat ?: Prefs.float("park_lat").toDouble().takeIf { it != 0.0 }, gps?.lon ?: Prefs.float("park_lon").toDouble().takeIf { it != 0.0 }); NightBrightness.apply(app); delay(60_000) } }
         scope.launch { while (true) { readSystem(); delay(10_000) } }
         scope.launch {
+            var fails = 0
             while (true) {
                 val info = Updater.check()
                 if (info != null) update = if (info.versionCode > Updater.current(app)) info else null
-                // Fikk ikke svar (nettet fra iPhonen er sjelden klart når bilen starter): prøv igjen om 1 min
-                delay(if (info == null) 60_000 else TimeUnit.HOURS.toMillis(6))
+                // Fikk ikke svar (nettet fra iPhonen er sjelden klart når bilen starter): prøv igjen om 1 min,
+                // så sjeldnere (2, 4, 8 … maks 60 min) – ikke hvert minutt hele dagen når GitHub ikke har noen versjon
+                fails = if (info == null) fails + 1 else 0
+                delay(updateRetryMs(fails))
             }
         }
     }
@@ -170,6 +173,10 @@ object Hub {
     fun compass(bearing: Float): String = compassName(bearing)
 }
 
+/** Ventetid til neste versjonssjekk etter [fails] mislykkede forsøk på rad (0 = siste gikk bra: 6 timer). */
+internal fun updateRetryMs(fails: Int): Long =
+    if (fails <= 0) TimeUnit.HOURS.toMillis(6) else 60_000L * (1L shl (fails - 1).coerceAtMost(6)).coerceAtMost(60)
+
 /** Kompassretning på norsk (egen funksjon så den kan testes uten Android). */
 fun compassName(bearing: Float): String =
     listOf("N", "NØ", "Ø", "SØ", "S", "SV", "V", "NV")[(((bearing % 360) + 360) % 360 / 45f + 0.5f).toInt() % 8]
@@ -247,7 +254,7 @@ object Parking {
         val now = SystemClock.elapsedRealtime()
         if (g.speedKmh <= 2 && now - lastSave > 15_000) {
             lastSave = now
-            Prefs.setQuiet("park_lat", g.lat.toFloat()); Prefs.setQuiet("park_lon", g.lon.toFloat())
+            // Avstanden må regnes fra den GAMLE plassen før den overskrives (ellers er bilen aldri «flyttet»)
             val r = FloatArray(1)
             if (known) Location.distanceBetween(lat, lon, g.lat, g.lon, r)
             val moved = !known || r[0] > 25
@@ -274,6 +281,8 @@ object SpeedLimit {
     private var lastQuery = 0L
     private var busy = false
     private var beeped = false
+    /** Server → tidspunkt (elapsedRealtime) den kan spørres igjen etter «for mange forespørsler» (HTTP 429) o.l. */
+    private val pausedUntil = mutableMapOf<String, Long>()
 
     private val servers = listOf(
         "https://overpass-api.de/api/interpreter",
@@ -300,11 +309,11 @@ object SpeedLimit {
         }
         if (!over) beeped = false
 
-        if (!Prefs.bool("speed_limit", true) || busy || g.speedKmh < 5) return
+        if (!Prefs.bool("speed_limit", true) || busy || g.speedKmh < 5 || !Hub.online) return
         val now = SystemClock.elapsedRealtime()
         val prev = lastQueryPos
         val moved = prev?.let { distM(it.lat, it.lon, g.lat, g.lon) } ?: Double.MAX_VALUE
-        if (moved < 120 && now - lastQuery < 25_000) return
+        if (!shouldQuery(moved, if (lastQuery == 0L) Long.MAX_VALUE else now - lastQuery)) return
         lastQueryPos = g; lastQuery = now; busy = true
         val bearing = g.bearing.takeIf { g.speedKmh >= 10 }
         Hub.scope.launch {
@@ -321,14 +330,25 @@ object SpeedLimit {
     // Bilveier (ikke gangveier/sykkelveier som ofte ligger rett ved siden av)
     private const val ROADS = "^(motorway|trunk|primary|secondary|tertiary|unclassified|residential|living_street|service|road|motorway_link|trunk_link|primary_link|secondary_link|tertiary_link)$"
 
+    /**
+     * Spør på nytt? Når bilen har kjørt 120 m eller det er gått 25 s – men aldri oftere enn hvert 8. sekund
+     * (i 100 km/t ville det ellers blitt et spørsmål hvert 4. sekund, og de gratis serverne stenger oss ute).
+     */
+    internal fun shouldQuery(movedM: Double, sinceMs: Long): Boolean =
+        sinceMs >= 8_000 && (movedM >= 120 || sinceMs >= 25_000)
+
     private fun query(lat: Double, lon: Double, bearing: Float?): Result {
         val q = "[out:json][timeout:8];way(around:15,$lat,$lon)[highway~\"$ROADS\"];out tags geom 20;"
         for (s in servers) {
+            if (SystemClock.elapsedRealtime() < (synchronized(pausedUntil) { pausedUntil[s] } ?: 0L)) continue
             val res = runCatching {
                 val c = URL("$s?data=" + URLEncoder.encode(q, "UTF-8")).openConnection() as HttpURLConnection
                 c.connectTimeout = 6000; c.readTimeout = 9000
-                c.setRequestProperty("User-Agent", "TOS-BilstereoLauncher/1.0")
-                if (c.responseCode != 200) error("HTTP ${c.responseCode}")
+                c.setRequestProperty("User-Agent", "TOS-BilstereoLauncher/1.0 (github.com/${Updater.OWNER}/${Updater.REPO})")
+                val code = c.responseCode
+                // For mange forespørsler / opptatt: la denne serveren være i fred i 2 min
+                if (code == 429 || code == 503 || code == 504) synchronized(pausedUntil) { pausedUntil[s] = SystemClock.elapsedRealtime() + 120_000 }
+                if (code != 200) { c.disconnect(); error("HTTP $code") }
                 val els = JSONObject(c.inputStream.bufferedReader().readText()).getJSONArray("elements")
                 val ways = (0 until els.length()).map { i ->
                     val e = els.getJSONObject(i)

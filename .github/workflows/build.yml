@@ -83,12 +83,17 @@ jobs:
             fi
           fi
           VC=$((1000 + GITHUB_RUN_NUMBER))
-          VN="$(grep -oP 'else "\K[0-9.]+(?=")' app/build.gradle.kts | head -1).$GITHUB_RUN_NUMBER"
-          # Sjekk at APK-en virkelig har dette versjonsnummeret
+          VN="$(grep -oP 'else "\K[0-9.]+(?=")' app/build.gradle.kts | head -1 || true).$GITHUB_RUN_NUMBER"
+          # Sjekk at APK-en virkelig har dette versjonsnummeret, og bruk versjonsnavnet fra selve APK-en
           AAPT=$(ls "$ANDROID_HOME"/build-tools/*/aapt 2>/dev/null | tail -1 || true)
           if [ -n "$AAPT" ]; then
-            "$AAPT" dump badging bilstereo.apk | grep -q "versionCode='$VC'" || { echo "::error::APK har ikke versionCode $VC"; exit 1; }
+            BADGE="$("$AAPT" dump badging bilstereo.apk)"
+            printf '%s' "$BADGE" | grep -q "versionCode='$VC'" || { echo "::error::APK har ikke versionCode $VC"; exit 1; }
+            APKVN="$(printf '%s' "$BADGE" | grep -oP "versionName='\K[^']+" | head -1 || true)"
+            [ -n "$APKVN" ] && VN="$APKVN"
           fi
+          # Uten versjonsnavn (f.eks. endret linje i build.gradle.kts) ville stereoen vist «.123» – stopp heller
+          case "$VN" in [0-9]*) ;; *) echo "::error::Fant ikke versionName (fikk «$VN»)"; exit 1 ;; esac
           printf '{"versionCode": %d, "versionName": "%s"}\n' "$VC" "$VN" > version.json
           cat version.json
 

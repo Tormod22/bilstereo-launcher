@@ -42,6 +42,7 @@ class GpsService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        var note: android.app.Notification? = null
         val ok = runCatching {
             val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
             if (nm.getNotificationChannel(CHANNEL) == null) {
@@ -61,11 +62,18 @@ class GpsService : Service() {
                 .setPriority(NotificationCompat.PRIORITY_LOW)
                 .setContentIntent(open)
                 .build()
+            note = n
             val type = if (Build.VERSION.SDK_INT >= 29) ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION else 0
             ServiceCompat.startForeground(this, ID, n, type)
         }.isSuccess
         running = ok
-        if (!ok) stopSelf()
+        if (!ok) {
+            // Android krever startForeground() etter startForegroundService(), også når vi gir opp – ellers krasjer
+            // hele T'OS («did not then call startForeground»). Prøv uten type (bruker typen fra manifestet), og stopp så.
+            note?.let { n -> runCatching { startForeground(ID, n) } }
+            runCatching { ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE) }
+            stopSelf()
+        }
         // Drepes tjenesten, startes den igjen neste gang T'OS vises (ikke automatisk fra bakgrunnen)
         return START_NOT_STICKY
     }

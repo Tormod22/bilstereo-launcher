@@ -96,13 +96,17 @@ object OfflineMaps {
                     val code = conn.responseCode
                     // Wi-Fi med innloggingsside (hotell, ferje, kafé) svarer med en nettside i stedet for kartet.
                     // Da må ingenting slettes – det som er lastet ned så langt beholdes.
+                    // 404 først: GitHub svarer «finnes ikke» med en nettside, som ellers ble tatt for en innloggingsside
+                    if (code == 404 && conn.url.host.orEmpty().lowercase().let { it == "github.com" || it.endsWith(".github.com") }) {
+                        conn.disconnect(); return@withContext "Kartet er ikke laget på GitHub ennå"
+                    }
                     if (!fromGitHub(conn.url.host, conn.contentType)) { conn.disconnect(); fail("Wi-Fi krever innlogging – åpne nettleseren og logg inn, og trykk «Last ned» igjen") }
-                    if (code == 404) return@withContext "Kartet er ikke laget på GitHub ennå"
+                    if (code == 404) { conn.disconnect(); return@withContext "Kartet er ikke laget på GitHub ennå" }
                     if (code == 416) {
                         // «Utenfor fila»: er .part allerede hel, er den bare ikke byttet inn ennå
                         val total = parseContentRange(conn.getHeaderField("Content-Range"))?.total
                         conn.disconnect()
-                        if (total != null && total == have && have >= 10_000) { swapIn(part, target); return@withContext null }
+                        if (total != null && total == have && have >= 10_000 && isPmtiles(part)) { swapIn(part, target); return@withContext null }
                         part.delete(); return@withContext "Kartet på GitHub er endret – trykk «Last ned» for å starte på nytt"
                     }
                     if (code != 200 && code != 206) fail("GitHub svarte med feil (HTTP $code) – prøv igjen senere")
@@ -140,7 +144,7 @@ object OfflineMaps {
                     }
                     // Strømmen stoppet før hele fila var kommet (nettet falt ut): behold .part og fortsett neste gang
                     if (done != total || part.length() != total) fail("Nedlastingen ble avbrutt ved ${(done * 100 / total)} % – trykk «Last ned» igjen for å fortsette")
-                    if (part.length() < 10_000) { part.delete(); fail("Kartfila var ødelagt – prøv igjen") }
+                    if (part.length() < 10_000 || !isPmtiles(part)) { part.delete(); fail("Kartfila var ødelagt – prøv igjen") }
                     swapIn(part, target)
                     null
                 }.getOrElse { errorText(it) }
@@ -163,6 +167,17 @@ object OfflineMaps {
         e.message?.contains("ENOSPC") == true || e.message?.contains("No space", true) == true -> "Ikke nok plass på stereoen"
         else -> "Nedlastingen stoppet – trykk «Last ned» igjen for å fortsette"
     }
+
+    /** Er fila et PMTiles-kart? (Starter med «PMTiles» og versjon 3.) Ellers kan MapLibre krasje på den. */
+    private fun isPmtiles(f: File): Boolean = runCatching {
+        val head = ByteArray(8)
+        f.inputStream().use { var n = 0; while (n < 8) { val r = it.read(head, n, 8 - n); if (r < 0) break; n += r } }
+        pmtilesHeaderOk(head)
+    }.getOrDefault(false)
+
+    /** Ren logikk (testes i DataLogicTest2). */
+    internal fun pmtilesHeaderOk(head: ByteArray): Boolean =
+        head.size >= 8 && String(head, 0, 7, Charsets.US_ASCII) == "PMTiles" && head[7].toInt() == 3
 
     /** Bytt ut trygt: det gamle kartet slettes først når det nye er på plass. */
     private fun swapIn(part: File, target: File) {
