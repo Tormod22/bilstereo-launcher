@@ -25,17 +25,24 @@ android {
     // Lokale bygg uten hemmeligheten får vanlig utviklersignatur (kan ikke oppdatere en GitHub-installert T'OS).
     val keystore = System.getenv("TOS_KEYSTORE")
     val keystorePass = System.getenv("TOS_KEYSTORE_PASSWORD")
+    // Nøkkelens eget passord: eget hvis TOS_KEY_PASSWORD er satt, ellers det samme som for nøkkelfila
+    val keyPass = System.getenv("TOS_KEY_PASSWORD")?.takeIf { it.isNotBlank() } ?: keystorePass
     signingConfigs {
         if (keystore != null && keystorePass != null) create("tos") {
             storeFile = file(keystore)
             storePassword = keystorePass
             keyAlias = "tos"
-            keyPassword = keystorePass
+            keyPassword = keyPass
         }
     }
     buildTypes {
         debug { signingConfigs.findByName("tos")?.let { signingConfig = it } }
-        release { isMinifyEnabled = false; signingConfigs.findByName("tos")?.let { signingConfig = it } }
+        // GitHub publiserer release-bygget (raskere, ikke «debuggable»). Samme nøkkel og samme applicationId som før,
+        // så det installeres oppå tidligere T'OS. Lokalt uten nøkkel: vanlig utviklersignatur.
+        release {
+            isMinifyEnabled = false
+            signingConfig = signingConfigs.findByName("tos") ?: signingConfigs.getByName("debug")
+        }
     }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17

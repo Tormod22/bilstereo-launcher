@@ -8,10 +8,11 @@ on:
 permissions:
   contents: write
 
-# Bare ett bygg om gangen: et nyere bygg avbryter et eldre, så «latest» aldri får filer fra to ulike bygg
+# Bare ett bygg om gangen. Et nyere bygg venter til det eldre er ferdig (avbryter det ikke midt i
+# opplastingen – da kunne «latest» fått APK fra ett bygg og version.json fra et annet)
 concurrency:
   group: release-latest
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   build:
@@ -37,6 +38,8 @@ jobs:
         env:
           KEYSTORE_BASE64: ${{ secrets.TOS_KEYSTORE_BASE64 }}
           KEYSTORE_PASSWORD: ${{ secrets.TOS_KEYSTORE_PASSWORD }}
+          # Valgfri: bare hvis selve nøkkelen har et annet passord enn nøkkelfila
+          KEY_PASSWORD: ${{ secrets.TOS_KEY_PASSWORD }}
         run: |
           if [ -z "$KEYSTORE_BASE64" ] || [ -z "$KEYSTORE_PASSWORD" ]; then
             echo "::error title=Mangler signeringsnøkkel::Legg inn TOS_KEYSTORE_BASE64 og TOS_KEYSTORE_PASSWORD under Settings → Secrets and variables → Actions → New repository secret. Verdiene står i tos-hemmeligheter.txt."
@@ -46,22 +49,39 @@ jobs:
           printf '%s' "$KEYSTORE_BASE64" | tr -d ' \r\n\t' | base64 -d > "$RUNNER_TEMP/tos.jks" || {
             echo "::error title=Ødelagt nøkkel::TOS_KEYSTORE_BASE64 er ikke gyldig. Kopier hele den lange teksten fra tos-hemmeligheter.txt på nytt."; exit 1; }
           PW="$(printf '%s' "$KEYSTORE_PASSWORD" | tr -d ' \r\n\t')"
+          KP="$(printf '%s' "$KEY_PASSWORD" | tr -d ' \r\n\t')"
+          [ -n "$KP" ] || KP="$PW"
+          echo "::add-mask::$PW"
+          echo "::add-mask::$KP"
           keytool -list -keystore "$RUNNER_TEMP/tos.jks" -storepass "$PW" -alias tos > /dev/null 2>&1 || {
             echo "::error title=Nøkkel og passord passer ikke::Sjekk at TOS_KEYSTORE_PASSWORD og TOS_KEYSTORE_BASE64 er kopiert riktig fra tos-hemmeligheter.txt."; exit 1; }
-          echo "::add-mask::$PW"
+          # Sjekk selve nøkkelen også (ikke bare fila): certreq trenger den private nøkkelen og dermed nøkkelpassordet
+          keytool -certreq -alias tos -keystore "$RUNNER_TEMP/tos.jks" -storepass "$PW" -keypass "$KP" -file "$RUNNER_TEMP/check.csr" > /dev/null 2>&1 || {
+            echo "::error title=Nøkkelpassordet passer ikke::Nøkkelfila åpnes, men selve nøkkelen «tos» har et annet passord. Legg det inn som hemmeligheten TOS_KEY_PASSWORD."; exit 1; }
+          rm -f "$RUNNER_TEMP/check.csr"
           echo "TOS_KEYSTORE=$RUNNER_TEMP/tos.jks" >> "$GITHUB_ENV"
           echo "TOS_KEYSTORE_PASSWORD=$PW" >> "$GITHUB_ENV"
+          echo "TOS_KEY_PASSWORD=$KP" >> "$GITHUB_ENV"
 
       - name: Kjør tester
         run: gradle testDebugUnitTest --no-daemon
 
       - name: Bygg APK
-        # versionCode = 1000 + byggnummer (settes i app/build.gradle.kts fra GITHUB_RUN_NUMBER)
-        run: gradle assembleDebug --no-daemon
+        # versionCode = 1000 + byggnummer (settes i app/build.gradle.kts fra GITHUB_RUN_NUMBER).
+        # Release-bygg: raskere på stereoen og ikke «debuggable»; signert med samme faste nøkkel som før.
+        run: gradle assembleRelease --no-daemon
 
       - name: Gi fila et enkelt navn og lag version.json
         run: |
-          cp app/build/outputs/apk/debug/app-debug.apk bilstereo.apk
+          cp app/build/outputs/apk/release/app-release.apk bilstereo.apk
+          # Må være signert med den faste nøkkelen (ikke utviklersignatur), ellers kan den ikke oppdatere T'OS
+          APKSIGNER=$(ls "$ANDROID_HOME"/build-tools/*/apksigner 2>/dev/null | tail -1 || true)
+          if [ -n "$APKSIGNER" ]; then
+            CERTS="$("$APKSIGNER" verify --print-certs bilstereo.apk)" || { echo "::error::APK-en er ikke gyldig signert"; exit 1; }
+            if printf '%s' "$CERTS" | grep -q "Android Debug"; then
+              echo "::error::APK-en er signert med utviklernøkkel, ikke den faste T'OS-nøkkelen"; exit 1
+            fi
+          fi
           VC=$((1000 + GITHUB_RUN_NUMBER))
           VN="$(grep -oP 'else "\K[0-9.]+(?=")' app/build.gradle.kts | head -1).$GITHUB_RUN_NUMBER"
           # Sjekk at APK-en virkelig har dette versjonsnummeret

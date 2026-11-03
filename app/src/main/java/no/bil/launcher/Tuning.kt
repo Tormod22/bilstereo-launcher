@@ -36,11 +36,13 @@ object Accel {
     private var startAt = 0L
     private var lastSpeed = 0
     private var lastAt = 0L
+    private var candidateAt = 0L          // første måling over START_KMH (0 = ingen)
+    private const val START_KMH = 4
 
     fun best(r: Run): Float = Prefs.float("accel_best_${r.from}_${r.to}", 0f)
     fun last(r: Run): Float = Prefs.float("accel_last_${r.from}_${r.to}", 0f)
 
-    fun arm(r: Run) { armed = r; running = false; elapsed = 0f; result = null }
+    fun arm(r: Run) { armed = r; running = false; elapsed = 0f; result = null; candidateAt = 0L }
     fun cancel() { armed = null; running = false }
 
     fun onFix(g: Gps) {
@@ -48,13 +50,25 @@ object Accel {
         val now = SystemClock.elapsedRealtime()
         val v = g.speedKmh
         if (!running) {
-            val startCond = if (r.from == 0) v >= 2 && lastSpeed < 2 else lastSpeed < r.from && v >= r.from
-            if (startCond) {
+            if (r.from == 0) {
+                // 0–100: GPS-støy når bilen står kan gi et par km/t. Start først etter 2 målinger på rad over 4 km/t;
+                // starttiden er da den første av dem (regnet tilbake til da farten passerte ca. 1 km/t).
+                // Den første må komme rett etter en måling under 4 km/t (bilen sto), ellers er det ingen 0–100.
+                if (v >= START_KMH && candidateAt != 0L) {
+                    startAt = candidateAt; candidateAt = 0L; running = true
+                } else if (v >= START_KMH && lastSpeed < START_KMH) {
+                    val frac = if (v != lastSpeed) ((1 - lastSpeed).toFloat() / (v - lastSpeed)).coerceIn(0f, 1f) else 0f
+                    candidateAt = (lastAt + ((now - lastAt) * frac).toLong()).coerceAtLeast(1L)
+                } else candidateAt = 0L
+            } else if (lastSpeed < r.from && v >= r.from) {
                 // Finn starttidspunktet mellom de to målingene (lineært)
-                val frac = if (v != lastSpeed) ((r.from.coerceAtLeast(1) - lastSpeed).toFloat() / (v - lastSpeed)).coerceIn(0f, 1f) else 0f
+                val frac = if (v != lastSpeed) ((r.from - lastSpeed).toFloat() / (v - lastSpeed)).coerceIn(0f, 1f) else 0f
                 startAt = lastAt + ((now - lastAt) * frac).toLong()
                 running = true
             }
+        } else if (v < 2) {
+            // Bilen sto stille likevel (falsk start): vent på en ny start
+            running = false; elapsed = 0f; candidateAt = 0L
         } else {
             elapsed = (now - startAt) / 1000f
             if (v >= r.to) {

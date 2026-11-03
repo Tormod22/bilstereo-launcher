@@ -81,7 +81,9 @@ fun WifiPanel() {
     Section("Nettverk i nærheten")
     if (nets.isEmpty()) Text("Søker … (krever at posisjon er tillatt for T'OS)", color = TextMuted, fontSize = 14.sp)
     nets.forEach { n ->
-        val secured = listOf("WPA", "WEP", "SAE", "PSK").any { it in n.capabilities }
+        val eap = "EAP" in n.capabilities                     // bedriftsnett: brukernavn + passord
+        val owe = "OWE" in n.capabilities && !eap              // «forbedret åpent» nett: kryptert, men uten passord
+        val secured = !owe && listOf("WPA", "WEP", "SAE", "PSK").any { it in n.capabilities }
         val bars = WifiManager.calculateSignalLevel(n.level, 4)
         Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(Card)) {
             Row(
@@ -97,16 +99,19 @@ fun WifiPanel() {
                 Modifier.fillMaxWidth().padding(start = 18.dp, end = 18.dp, bottom = 14.dp),
                 verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                if (secured) Field(pass, "Passord", Modifier.weight(1f), KeyboardType.Password) { pass = it } else Spacer(Modifier.weight(1f))
+                if (secured && !eap) Field(pass, "Passord", Modifier.weight(1f), KeyboardType.Password) { pass = it } else Spacer(Modifier.weight(1f))
                 Pill("Koble til", strong = true) {
                     val wep = "WEP" in n.capabilities
                     when {
+                        eap -> { msg = "Dette nettet krever brukernavn – koble til i Android-innstillinger"; open = null; context.go(Intent(Settings.ACTION_WIFI_SETTINGS)) }
                         wep -> { msg = "«${n.SSID}» bruker gammel sikkerhet (WEP) som T'OS ikke kan koble til. Bruk Android-innstillingene."; open = null }
+                        owe && Build.VERSION.SDK_INT < 30 -> { msg = "«${n.SSID}» bruker en sikkerhet (OWE) som T'OS ikke kan koble til her – koble til i Android-innstillinger"; open = null; context.go(Intent(Settings.ACTION_WIFI_SETTINGS)) }
                         secured && pass.length !in 8..63 -> msg = "Passordet må være 8–63 tegn"
                         Build.VERSION.SDK_INT >= 30 -> {
                             // Android 11+: legges inn som brukerens eget nettverk og kobles til med én gang (ett «Lagre»-trykk)
                             val b = WifiNetworkSuggestion.Builder().setSsid(n.SSID)
-                            if (secured) { if ("SAE" in n.capabilities && "PSK" !in n.capabilities) b.setWpa3Passphrase(pass) else b.setWpa2Passphrase(pass) }
+                            if (owe) b.setIsEnhancedOpen(true)
+                            else if (secured) { if ("SAE" in n.capabilities && "PSK" !in n.capabilities) b.setWpa3Passphrase(pass) else b.setWpa2Passphrase(pass) }
                             val ok = context.go(Intent(Settings.ACTION_WIFI_ADD_NETWORKS)
                                 .putParcelableArrayListExtra(Settings.EXTRA_WIFI_NETWORK_LIST, arrayListOf(b.build())))
                             msg = if (ok) "Trykk «Lagre» for å koble til «${n.SSID}»" else connectWifi(wm, n.SSID, pass.takeIf { secured }, false)
@@ -278,8 +283,7 @@ fun EqPanel() {
         }
     }
     levels.forEachIndexed { i, v ->
-        val hz = runCatching { e.getCenterFreq(i.toShort()) / 1000 }.getOrDefault(0)
-        val label = if (hz >= 1000) "${hz / 1000} kHz" else "$hz Hz"
+        val label = eqLabel(runCatching { e.getCenterFreq(i.toShort()) }.getOrDefault(0))
         Row(
             Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(Card).padding(horizontal = 18.dp, vertical = 4.dp),
             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp),
@@ -295,6 +299,14 @@ fun EqPanel() {
         }
         Spacer(Modifier.height(6.dp))
     }
+}
+
+/** Midtfrekvens (milliHz fra Equalizer) som tekst: «60 Hz», «3,6 kHz», «14 kHz». Testes i DataLogicTest. */
+internal fun eqLabel(milliHz: Int): String {
+    val hz = milliHz / 1000
+    if (hz < 1000) return "$hz Hz"
+    val tenths = Math.round(hz / 100.0).toInt()   // kHz med én desimal
+    return if (tenths % 10 == 0) "${tenths / 10} kHz" else "${tenths / 10},${tenths % 10} kHz"
 }
 
 /* ======================= Velg apper for knapper og fliser ======================= */
@@ -345,8 +357,15 @@ fun SetupScreen(onClose: () -> Unit) {
     Page("Velkommen til T'OS", { Prefs.set("setup_done", true); onClose() }, extra = { Pill("Ferdig", Icons.Default.Check, strong = true) { Prefs.set("setup_done", true); onClose() }; Spacer(Modifier.width(12.dp)) }) {
         Text("Slå på det du vil bruke. Alt kan endres senere under Innstillinger.", color = TextMuted, fontSize = 15.sp, modifier = Modifier.padding(bottom = 12.dp))
         Column(Modifier.verticalScroll(rememberScrollState())) {
-            Step(Icons.Default.LocationOn, "Posisjon", "Fart, kart, fartsgrense, nattmodus og turmåler.", context.hasPermission(Manifest.permission.ACCESS_FINE_LOCATION)) {
-                askPerms.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION))
+            val fine = context.hasPermission(Manifest.permission.ACCESS_FINE_LOCATION)
+            val coarseOnly = !fine && context.hasPermission(Manifest.permission.ACCESS_COARSE_LOCATION)
+            Step(Icons.Default.LocationOn, "Posisjon",
+                if (coarseOnly) "Bare «omtrentlig» er tillatt – velg «Nøyaktig» for fart, fartsgrense og turmåler." else "Fart, kart, fartsgrense, nattmodus og turmåler.", fine) {
+                // Android 12+ krever at nøyaktig og omtrentlig spørres om sammen (ellers skjer ingenting).
+                // Android 13+: også lov til å vise det stille varselet «T'OS bruker posisjon».
+                val ask = mutableListOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION)
+                if (Build.VERSION.SDK_INT >= 33) ask += Manifest.permission.POST_NOTIFICATIONS
+                askPerms.launch(ask.toTypedArray())
             }
             Step(Icons.Default.Home, "T'OS som startskjerm", "Hjem-knappen og MENU åpner T'OS.", isHome) {
                 context.go(Intent(Settings.ACTION_HOME_SETTINGS)) || context.go(Intent(Settings.ACTION_MANAGE_DEFAULT_APPS_SETTINGS))
