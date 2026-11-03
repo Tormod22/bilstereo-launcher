@@ -65,8 +65,10 @@ object Hub {
         scope.launch { while (true) { readSystem(); delay(10_000) } }
         scope.launch {
             while (true) {
-                Updater.check()?.let { update = if (it.versionCode > Updater.current(app)) it else null }
-                delay(TimeUnit.HOURS.toMillis(6))
+                val info = Updater.check()
+                if (info != null) update = if (info.versionCode > Updater.current(app)) info else null
+                // Fikk ikke svar (nettet fra iPhonen er sjelden klart når bilen starter): prøv igjen om 1 min
+                delay(if (info == null) 60_000 else TimeUnit.HOURS.toMillis(6))
             }
         }
     }
@@ -124,6 +126,7 @@ object Hub {
 object Trip {
     var meters by mutableDoubleStateOf(0.0)
     var movingSec by mutableLongStateOf(0L)
+    private var movingMs = 0L
     var maxKmh by mutableIntStateOf(0)
     var startedAt by mutableLongStateOf(System.currentTimeMillis())
     private var last: Gps? = null
@@ -137,14 +140,14 @@ object Trip {
         val savedAt = Prefs.long("trip_saved")
         if (System.currentTimeMillis() - savedAt < TimeUnit.MINUTES.toMillis(30)) {
             meters = Prefs.float("trip_m").toDouble()
-            movingSec = Prefs.long("trip_s")
+            movingSec = Prefs.long("trip_s"); movingMs = movingSec * 1000
             maxKmh = Prefs.int("trip_max")
             startedAt = Prefs.long("trip_start", System.currentTimeMillis())
         }
     }
 
     fun reset() {
-        meters = 0.0; movingSec = 0; maxKmh = 0; startedAt = System.currentTimeMillis(); last = null
+        meters = 0.0; movingSec = 0; movingMs = 0; maxKmh = 0; startedAt = System.currentTimeMillis(); last = null
         save()
     }
 
@@ -154,8 +157,8 @@ object Trip {
         if (prev != null && g.speedKmh >= 3) {
             val r = FloatArray(1)
             Location.distanceBetween(prev.lat, prev.lon, g.lat, g.lon, r)
-            val dt = (now - lastTime) / 1000
-            if (r[0] < 250 && dt in 1..10) { meters += r[0]; movingSec += dt }
+            val dtMs = now - lastTime                      // millisekunder (GPS kommer ca. hvert sekund – 999 ms må telle)
+            if (r[0] < 250 && dtMs in 300..10_000) { meters += r[0]; movingMs += dtMs; movingSec = movingMs / 1000 }
         }
         if (g.speedKmh > maxKmh && g.speedKmh < 250) maxKmh = g.speedKmh
         last = g; lastTime = now
@@ -192,6 +195,7 @@ object Parking {
 /* ======================= Fartsgrense (OpenStreetMap) ======================= */
 
 object SpeedLimit {
+    private val tone by lazy { ToneGenerator(AudioManager.STREAM_NOTIFICATION, 60) }   // én gjenbrukt, ikke ny for hvert pip
     var limit by mutableStateOf<Int?>(null)
     var over by mutableStateOf(false)
     private var lastQueryPos: Gps? = null
@@ -210,7 +214,7 @@ object SpeedLimit {
         over = Prefs.bool("speed_limit", true) && l != null && g.speedKmh > l + 3
         if (over && !beeped && Prefs.bool("speed_beep", false)) {
             beeped = true
-            runCatching { ToneGenerator(AudioManager.STREAM_NOTIFICATION, 60).startTone(ToneGenerator.TONE_PROP_BEEP2, 300) }
+            runCatching { tone.startTone(ToneGenerator.TONE_PROP_BEEP2, 300) }
         }
         if (!over) beeped = false
 
@@ -253,18 +257,27 @@ object SpeedLimit {
 /* ======================= Demp hele stereoen om natten ======================= */
 
 object NightBrightness {
-    private var dimmed = false
+    /** Lagret i innstillingene, så det overlever at T'OS startes på nytt (f.eks. dempet om kvelden, ny start om morgenen). */
+    private var dimmed: Boolean
+        get() = Prefs.bool("night_dimmed")
+        set(v) = Prefs.set("night_dimmed", v)
+
     fun apply(c: Context) {
-        if (!Prefs.bool("dim_system") || !Settings.System.canWrite(c)) return
+        if (!Settings.System.canWrite(c)) return
         val r = c.contentResolver
+        val want = Prefs.bool("dim_system") && Theme.night
         runCatching {
-            if (Theme.night && !dimmed) {
+            if (want && !dimmed) {
+                // Husk dagens innstilling (bare når T'OS ikke allerede har dempet)
                 Prefs.setQuiet("day_brightness", Settings.System.getInt(r, Settings.System.SCREEN_BRIGHTNESS, 200))
+                Prefs.setQuiet("day_brightness_mode", Settings.System.getInt(r, Settings.System.SCREEN_BRIGHTNESS_MODE, Settings.System.SCREEN_BRIGHTNESS_MODE_MANUAL))
                 Settings.System.putInt(r, Settings.System.SCREEN_BRIGHTNESS_MODE, Settings.System.SCREEN_BRIGHTNESS_MODE_MANUAL)
                 Settings.System.putInt(r, Settings.System.SCREEN_BRIGHTNESS, 35)
                 dimmed = true
-            } else if (!Theme.night && dimmed) {
+            } else if (!want && dimmed) {
+                // Dag igjen, eller funksjonen er slått av: sett alt tilbake slik det var
                 Settings.System.putInt(r, Settings.System.SCREEN_BRIGHTNESS, Prefs.int("day_brightness", 200))
+                Settings.System.putInt(r, Settings.System.SCREEN_BRIGHTNESS_MODE, Prefs.int("day_brightness_mode", Settings.System.SCREEN_BRIGHTNESS_MODE_MANUAL))
                 dimmed = false
             }
         }
@@ -274,9 +287,15 @@ object NightBrightness {
 /* ======================= Påminnelser: EU-kontroll, service, dekkskift ======================= */
 
 object Reminders {
-    private val fmt = SimpleDateFormat("d.M.yyyy", Locale("nb", "NO"))
+    private val fmt = SimpleDateFormat("d.M.yyyy", Locale("nb", "NO")).apply { isLenient = false }
 
-    fun parse(s: String): Date? = runCatching { fmt.parse(s.trim()) }.getOrNull()
+    /** Godtar «15.3.2027», «15.3.27» og «15/3-2027». Ugyldige datoer (31.2) gir null. */
+    fun parse(s: String): Date? = runCatching {
+        val parts = s.trim().split(Regex("[^0-9]+")).filter { it.isNotBlank() }
+        if (parts.size != 3) return null
+        val y = parts[2].toInt().let { if (it < 100) 2000 + it else it }
+        fmt.parse("${parts[0]}.${parts[1]}.$y")
+    }.getOrNull()
     fun format(d: Date): String = fmt.format(d)
 
     data class Due(val key: String, val text: String)
@@ -285,13 +304,16 @@ object Reminders {
     fun due(): List<Due> {
         val out = mutableListOf<Due>()
         val today = Calendar.getInstance()
-        fun daysTo(d: Date) = TimeUnit.MILLISECONDS.toDays(d.time - today.timeInMillis).toInt()
+        // Fra midnatt i dag, så «i morgen» blir 1 og ikke 0
+        val midnight = (today.clone() as Calendar).apply { set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0) }
+        fun daysTo(d: Date) = Math.round((d.time - midnight.timeInMillis) / 86_400_000.0).toInt()
         fun check(key: String, label: String) {
             val d = parse(Prefs.str(key)) ?: return
             val n = daysTo(d)
             when {
                 n < 0 -> out += Due(key, "$label: på overtid")
                 n == 0 -> out += Due(key, "$label i dag")
+                n == 1 -> out += Due(key, "$label i morgen")
                 n <= 14 -> out += Due(key, "$label om $n dager")
             }
         }
@@ -386,8 +408,8 @@ object Navigate {
 
     fun recents(): List<String> = Prefs.str("nav_recent").split("\n").filter { it.isNotBlank() }
 
-    fun home(c: Context) = Prefs.str("addr_home").takeIf { it.isNotBlank() }?.let { to(c, it) } ?: Buttons.show(c, Screen.SETTINGS)
-    fun work(c: Context) = Prefs.str("addr_work").takeIf { it.isNotBlank() }?.let { to(c, it) } ?: Buttons.show(c, Screen.SETTINGS)
+    fun home(c: Context) = Prefs.str("addr_home").takeIf { it.isNotBlank() }?.let { to(c, it) } ?: run { Prefs.set("settings_cat", "MAP"); Buttons.show(c, Screen.SETTINGS) }
+    fun work(c: Context) = Prefs.str("addr_work").takeIf { it.isNotBlank() }?.let { to(c, it) } ?: run { Prefs.set("settings_cat", "MAP"); Buttons.show(c, Screen.SETTINGS) }
 
     private object Uri { fun encode(s: String): String = URLEncoder.encode(s, "UTF-8").replace("+", "%20") }
 }

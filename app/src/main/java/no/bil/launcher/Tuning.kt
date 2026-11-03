@@ -84,8 +84,10 @@ fun TuningScreen(onClose: () -> Unit) {
     val context = LocalContext.current
     var picking by remember { mutableStateOf(false) }
     val chosen = Prefs.str("tuning_pkg")
-    val pkg = chosen.takeIf { it.isNotBlank() && AppRepository.isInstalled(context, it) }
-        ?: tuningApps.firstOrNull { AppRepository.isInstalled(context, it) }
+    val pkg = remember(chosen) {
+        chosen.takeIf { it.isNotBlank() && AppRepository.isInstalled(context, it) }
+            ?: tuningApps.firstOrNull { AppRepository.isInstalled(context, it) }
+    }
     val label = remember(pkg) {
         pkg?.let { runCatching { context.packageManager.getApplicationLabel(context.packageManager.getApplicationInfo(it, 0)).toString() }.getOrNull() }
     }
@@ -159,6 +161,7 @@ fun TuningScreen(onClose: () -> Unit) {
                 }
             }
         }
+        if (picking) androidx.activity.compose.BackHandler { picking = false }
         if (picking) AppPicker("Velg tuning-app", "Automatisk (RaceChip)", { Prefs.set("tuning_pkg", it) }) { picking = false }
     }
 }

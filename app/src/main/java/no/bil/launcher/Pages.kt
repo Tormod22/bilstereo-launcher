@@ -54,7 +54,11 @@ import androidx.core.content.ContextCompat
 import androidx.core.graphics.drawable.toBitmap
 import com.google.zxing.BarcodeFormat
 import com.google.zxing.qrcode.QRCodeWriter
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.ui.input.pointer.pointerInput
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -187,7 +191,7 @@ fun Cover(size: androidx.compose.ui.unit.Dp, radius: androidx.compose.ui.unit.Dp
         when {
             NetRadio.active -> Icon(Icons.Default.Radio, null, tint = TextPrimary, modifier = Modifier.size(size * 0.5f))
             art != null -> Image(art.asImageBitmap(), null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
-            icon != null -> AppIcon(icon, size * 0.7f)
+            icon != null -> AppIcon(icon, size * 0.7f, "cover:" + (NowPlaying.pkg ?: Prefs.str("music_pkg")))
             else -> Icon(Icons.Default.MusicNote, null, tint = TextPrimary, modifier = Modifier.size(size * 0.5f))
         }
     }
@@ -251,7 +255,7 @@ fun openNotificationAccess(c: Context) {
 fun RadioScreen(onClose: () -> Unit) {
     val context = LocalContext.current
     Page("Radio", onClose, extra = {
-        if (NetRadio.active) { Pill("Stopp nettradio", Icons.Default.Stop) { NetRadio.stop() }; Spacer(Modifier.width(12.dp)) }
+        if (NetRadio.active) { Pill("Stopp nettradio", Icons.Default.Stop) { NetRadio.stop(context) }; Spacer(Modifier.width(12.dp)) }
     }) {
         // Stereoens ekte FM/AM-radio
         val hw = HwRadio.state
@@ -424,12 +428,18 @@ fun recentCalls(c: Context): List<Contact> {
 @Composable
 fun PhoneScreen(onClose: () -> Unit) {
     val context = LocalContext.current
-    val ask = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { }
-    LaunchedEffect(Unit) { ask.launch(arrayOf(Manifest.permission.CALL_PHONE, Manifest.permission.READ_CALL_LOG)) }
+    var permTick by remember { mutableIntStateOf(0) }
+    val ask = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { permTick++ }
+    val canLog = remember(permTick) { ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CALL_LOG) == PackageManager.PERMISSION_GRANTED }
+    LaunchedEffect(Unit) {
+        val need = arrayOf(Manifest.permission.CALL_PHONE, Manifest.permission.READ_CALL_LOG)
+            .filter { ContextCompat.checkSelfPermission(context, it) != PackageManager.PERMISSION_GRANTED }
+        if (need.isNotEmpty()) ask.launch(need.toTypedArray())   // spør bare om det som mangler
+    }
     var adding by remember { mutableStateOf(false) }
     var name by remember { mutableStateOf("") }
     var num by remember { mutableStateOf("") }
-    val recents by produceState(emptyList<Contact>(), Prefs.version) { value = recentCalls(context) }
+    val recents by produceState(emptyList<Contact>(), permTick) { value = withContext(Dispatchers.IO) { recentCalls(context) } }
 
     Page("Telefon", onClose, extra = {
         Pill("Åpne telefon-appen", Icons.Default.Dialpad) { AppRepository.launchTile(context, Tiles.byPrefix("Tel")) }
@@ -470,7 +480,10 @@ fun PhoneScreen(onClose: () -> Unit) {
             }
             Column(Modifier.weight(0.4f).fillMaxHeight().clip(Small).background(Card).padding(16.dp)) {
                 Text("SISTE ANROP", color = TextMuted, fontSize = 12.sp, letterSpacing = 1.sp, modifier = Modifier.padding(bottom = 8.dp))
-                if (recents.isEmpty()) Text("Stereoen deler ikke anropslisten med T'OS. Den ligger i telefon-appen.", color = TextMuted, fontSize = 14.sp)
+                if (recents.isEmpty()) Text(
+                    if (!canLog) "T'OS har ikke lov til å se anropslisten. Gi tillatelse når den spør, eller under Innstillinger → Apper."
+                    else "Stereoen deler ikke anropslisten med T'OS. Den ligger i telefon-appen.",
+                    color = TextMuted, fontSize = 14.sp)
                 LazyColumn(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     items(recents) { r ->
                         Text(r.name, color = TextPrimary, fontSize = 16.sp, maxLines = 1,
@@ -487,7 +500,8 @@ fun PhoneScreen(onClose: () -> Unit) {
 fun qr(text: String, size: Int = 360): Bitmap {
     val m = QRCodeWriter().encode(text, BarcodeFormat.QR_CODE, size, size)
     val bmp = Bitmap.createBitmap(size, size, Bitmap.Config.RGB_565)
-    for (x in 0 until size) for (y in 0 until size) bmp.setPixel(x, y, if (m[x, y]) android.graphics.Color.BLACK else android.graphics.Color.WHITE)
+    val px = IntArray(size * size) { i -> if (m[i % size, i / size]) android.graphics.Color.BLACK else android.graphics.Color.WHITE }
+    bmp.setPixels(px, 0, size, 0, 0, size, size)   // alt på én gang i stedet for 130 000 enkeltkall
     return bmp
 }
 
@@ -573,26 +587,39 @@ fun QuickPanel(onClose: () -> Unit) {
     val am = remember { context.getSystemService(Context.AUDIO_SERVICE) as AudioManager }
     val maxVol = remember { am.getStreamMaxVolume(AudioManager.STREAM_MUSIC) }
     var vol by remember { mutableFloatStateOf(am.getStreamVolume(AudioManager.STREAM_MUSIC).toFloat()) }
-    var bright by remember { mutableFloatStateOf(Prefs.float("app_brightness", -1f).let { if (it < 0) 0.7f else it }) }
+    // Har T'OS lov, styrer glideren hele stereoen; ellers bare T'OS-vinduet
+    val canWrite = remember { Settings.System.canWrite(context) }
+    var bright by remember {
+        mutableFloatStateOf(
+            if (canWrite) runCatching { Settings.System.getInt(context.contentResolver, Settings.System.SCREEN_BRIGHTNESS) / 255f }.getOrDefault(0.6f)
+            else Prefs.float("app_brightness", -1f).let { if (it < 0) 0.7f else it })
+    }
     val sliderColors = SliderDefaults.colors(thumbColor = TextPrimary, activeTrackColor = TextPrimary, inactiveTrackColor = Line)
 
     Box(Modifier.fillMaxSize().background(Bg.copy(alpha = 0.6f)).clickable(onClick = onClose)) {
         Column(
             Modifier.fillMaxWidth().clip(RoundedCornerShape(bottomStart = 28.dp, bottomEnd = 28.dp)).background(Panel)
-                .clickable(enabled = false) {}.padding(24.dp),
+                // Tar imot trykk på selve panelet, så det ikke lukkes når du bommer litt på en knapp
+                .pointerInput(Unit) { detectTapGestures { } }.padding(24.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
                 Icon(Icons.Default.LightMode, null, tint = TextMuted)
-                Slider(bright, { bright = it; Prefs.set("app_brightness", it) }, valueRange = 0.05f..1f, colors = sliderColors, modifier = Modifier.weight(1f))
+                Slider(bright, {
+                    bright = it
+                    if (canWrite) {
+                        if (Prefs.float("app_brightness", -1f) >= 0f) Prefs.set("app_brightness", -1f)
+                        runCatching {
+                            Settings.System.putInt(context.contentResolver, Settings.System.SCREEN_BRIGHTNESS_MODE, Settings.System.SCREEN_BRIGHTNESS_MODE_MANUAL)
+                            Settings.System.putInt(context.contentResolver, Settings.System.SCREEN_BRIGHTNESS, (it * 255).toInt().coerceIn(5, 255))
+                        }
+                    } else Prefs.set("app_brightness", it)
+                }, valueRange = 0.05f..1f, colors = sliderColors, modifier = Modifier.weight(1f))
                 Icon(Icons.Default.VolumeUp, null, tint = TextMuted)
                 Slider(vol, { vol = it; am.setStreamVolume(AudioManager.STREAM_MUSIC, it.toInt(), 0) }, valueRange = 0f..maxVol.toFloat(), colors = sliderColors, modifier = Modifier.weight(1f))
             }
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                Pill("Wi-Fi", Icons.Default.Wifi) {
-                    val i = if (Build.VERSION.SDK_INT >= 29) Intent(Settings.Panel.ACTION_WIFI) else Intent(Settings.ACTION_WIFI_SETTINGS)
-                    runCatching { context.startActivity(i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
-                }
+                Pill("Wi-Fi", Icons.Default.Wifi) { onClose(); Prefs.set("settings_cat", "NET"); Nav.screen = Screen.SETTINGS }
                 Pill("Bluetooth", Icons.Default.Bluetooth) { onClose(); Nav.screen = Screen.BT }
                 Pill(when (Theme.mode) { "DAY" -> "Dag"; "NIGHT" -> "Natt"; else -> "Auto lys" }, Icons.Default.DarkMode) {
                     Prefs.set("night_mode", when (Theme.mode) { "AUTO" -> "NIGHT"; "NIGHT" -> "DAY"; else -> "AUTO" })

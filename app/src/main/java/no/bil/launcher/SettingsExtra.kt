@@ -40,7 +40,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 
 private fun Context.go(i: Intent) = runCatching { startActivity(i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }.isSuccess
 
@@ -65,7 +67,7 @@ fun WifiPanel() {
             runCatching { wm.startScan() }
             value = runCatching { wm.scanResults }.getOrDefault(emptyList())
                 .filter { it.SSID.isNotBlank() }.sortedByDescending { it.level }.distinctBy { it.SSID }
-            delay(8000)
+            delay(30_000)   // Android tillater bare noen få søk per 2 min
         }
     }
     val current = runCatching { wm.connectionInfo?.ssid?.trim('"') }.getOrNull()?.takeIf { it.isNotBlank() && it != "<unknown ssid>" }
@@ -97,8 +99,21 @@ fun WifiPanel() {
             ) {
                 if (secured) Field(pass, "Passord", Modifier.weight(1f), KeyboardType.Password) { pass = it } else Spacer(Modifier.weight(1f))
                 Pill("Koble til", strong = true) {
-                    msg = connectWifi(wm, n.SSID, pass.takeIf { secured }, "SAE" in n.capabilities && "PSK" !in n.capabilities)
-                    open = null
+                    val wep = "WEP" in n.capabilities
+                    when {
+                        wep -> { msg = "«${n.SSID}» bruker gammel sikkerhet (WEP) som T'OS ikke kan koble til. Bruk Android-innstillingene."; open = null }
+                        secured && pass.length !in 8..63 -> msg = "Passordet må være 8–63 tegn"
+                        Build.VERSION.SDK_INT >= 30 -> {
+                            // Android 11+: legges inn som brukerens eget nettverk og kobles til med én gang (ett «Lagre»-trykk)
+                            val b = WifiNetworkSuggestion.Builder().setSsid(n.SSID)
+                            if (secured) { if ("SAE" in n.capabilities && "PSK" !in n.capabilities) b.setWpa3Passphrase(pass) else b.setWpa2Passphrase(pass) }
+                            val ok = context.go(Intent(Settings.ACTION_WIFI_ADD_NETWORKS)
+                                .putParcelableArrayListExtra(Settings.EXTRA_WIFI_NETWORK_LIST, arrayListOf(b.build())))
+                            msg = if (ok) "Trykk «Lagre» for å koble til «${n.SSID}»" else connectWifi(wm, n.SSID, pass.takeIf { secured }, false)
+                            open = null
+                        }
+                        else -> { msg = connectWifi(wm, n.SSID, pass.takeIf { secured }, "SAE" in n.capabilities && "PSK" !in n.capabilities); open = null }
+                    }
                 }
             }
         }
@@ -134,11 +149,18 @@ private fun connectWifi(wm: WifiManager, ssid: String, pass: String?, wpa3: Bool
 fun BtPanel() {
     val context = LocalContext.current
     val adapter = remember { (context.getSystemService(Context.BLUETOOTH_SERVICE) as? BluetoothManager)?.adapter }
-    val status by produceState(initialValue = btStatus(context), Prefs.version) { while (true) { value = btStatus(context); delay(3000) } }
+    val status by produceState(initialValue = remember { btStatus(context) }, Prefs.version) { while (true) { value = btStatus(context); delay(3000) } }
     val found = remember { mutableStateListOf<BluetoothDevice>() }
     var scanning by remember { mutableStateOf(false) }
     var msg by remember { mutableStateOf<String?>(null) }
-    val askPerms = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { }
+    // Når tillatelsen er gitt, starter søket med en gang (ikke nødvendig å trykke igjen)
+    val askPerms = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { res ->
+        if (res.values.all { it }) {
+            found.clear()
+            scanning = runCatching { adapter?.startDiscovery() == true }.getOrDefault(false)
+            if (!scanning) msg = "Fikk ikke startet søket. Er Bluetooth på?"
+        } else msg = "T'OS trenger lov til å søke etter Bluetooth-enheter"
+    }
 
     DisposableEffect(Unit) {
         val r = object : BroadcastReceiver() {
@@ -178,10 +200,12 @@ fun BtPanel() {
         status.devices.forEach { d ->
             SettingRow(d.name, if (d.connected) "Tilkoblet" + (if (d.battery in 0..100) " · ${d.battery} %" else "") else "Ikke tilkoblet") {
                 Text("Glem", color = TextPrimary, fontSize = 14.sp, modifier = Modifier.clip(RoundedCornerShape(14.dp)).background(Line).clickable {
-                    runCatching {
-                        adapter?.bondedDevices?.firstOrNull { (it.name ?: it.address) == d.name }?.let { it.javaClass.getMethod("removeBond").invoke(it) }
-                        Prefs.set("bt_v", System.currentTimeMillis()); msg = "${d.name} er glemt"
-                    }
+                    val ok = runCatching {
+                        val dev = adapter?.bondedDevices?.firstOrNull { it.address == d.address } ?: error("ikke funnet")
+                        dev.javaClass.getMethod("removeBond").invoke(dev) as Boolean
+                    }.getOrDefault(false)
+                    Prefs.set("bt_v", System.currentTimeMillis())
+                    msg = if (ok) "${d.name} er glemt" else "Fikk ikke glemt ${d.name}. Stereoen tillater det bare i Android-innstillingene."
                 }.padding(horizontal = 14.dp, vertical = 8.dp))
             }
         }
@@ -278,7 +302,10 @@ fun EqPanel() {
 @Composable
 fun AppChoiceRow(title: String, key: String, tilePrefix: String) {
     val context = LocalContext.current
-    val pkg = remember(Prefs.version) { AppRepository.tilePackage(context, Tiles.byPrefix(tilePrefix)) }
+    val chosen = Prefs.str(key)
+    val pkg by produceState<String?>(null, chosen) {
+        value = withContext(Dispatchers.IO) { AppRepository.tilePackage(context, Tiles.byPrefix(tilePrefix)) }
+    }
     val label = remember(pkg) { pkg?.let { runCatching { context.packageManager.getApplicationLabel(context.packageManager.getApplicationInfo(it, 0)).toString() }.getOrNull() } }
     SettingRow(title, (label ?: "Ikke funnet") + if (Prefs.str(key).isBlank()) " (automatisk)" else "", onClick = { Nav.pick = title to key }) {
         Icon(Icons.Default.ChevronRight, null, tint = TextMuted)
@@ -314,7 +341,8 @@ fun SetupScreen(onClose: () -> Unit) {
         Spacer(Modifier.height(8.dp))
     }
 
-    Page("Velkommen til T'OS", onClose, extra = { Pill("Ferdig", Icons.Default.Check, strong = true) { Prefs.set("setup_done", true); onClose() }; Spacer(Modifier.width(12.dp)) }) {
+    // Lukkes oppsettet med X, kommer det ikke tilbake av seg selv (finnes under Innstillinger → Om stereoen)
+    Page("Velkommen til T'OS", { Prefs.set("setup_done", true); onClose() }, extra = { Pill("Ferdig", Icons.Default.Check, strong = true) { Prefs.set("setup_done", true); onClose() }; Spacer(Modifier.width(12.dp)) }) {
         Text("Slå på det du vil bruke. Alt kan endres senere under Innstillinger.", color = TextMuted, fontSize = 15.sp, modifier = Modifier.padding(bottom = 12.dp))
         Column(Modifier.verticalScroll(rememberScrollState())) {
             Step(Icons.Default.LocationOn, "Posisjon", "Fart, kart, fartsgrense, nattmodus og turmåler.", context.hasPermission(Manifest.permission.ACCESS_FINE_LOCATION)) {

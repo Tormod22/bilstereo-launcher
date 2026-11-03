@@ -8,6 +8,11 @@ on:
 permissions:
   contents: write
 
+# Bare ett bygg om gangen: et nyere bygg avbryter et eldre, så «latest» aldri får filer fra to ulike bygg
+concurrency:
+  group: release-latest
+  cancel-in-progress: true
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -39,14 +44,20 @@ jobs:
           echo "TOS_KEYSTORE_PASSWORD=$KEYSTORE_PASSWORD" >> "$GITHUB_ENV"
 
       - name: Bygg APK
+        # versionCode = 1000 + byggnummer (settes i app/build.gradle.kts fra GITHUB_RUN_NUMBER)
         run: gradle assembleDebug --no-daemon
 
       - name: Gi fila et enkelt navn og lag version.json
         run: |
           cp app/build/outputs/apk/debug/app-debug.apk bilstereo.apk
-          VC=$(grep -oP 'versionCode = \K[0-9]+' app/build.gradle.kts)
-          VN=$(grep -oP 'versionName = "\K[^"]+' app/build.gradle.kts)
-          echo "{\"versionCode\": $VC, \"versionName\": \"$VN\"}" > version.json
+          VC=$((1000 + GITHUB_RUN_NUMBER))
+          VN="$(grep -oP 'else "\K[0-9.]+(?=")' app/build.gradle.kts | head -1).$GITHUB_RUN_NUMBER"
+          # Sjekk at APK-en virkelig har dette versjonsnummeret
+          AAPT=$(ls "$ANDROID_HOME"/build-tools/*/aapt 2>/dev/null | tail -1 || true)
+          if [ -n "$AAPT" ]; then
+            "$AAPT" dump badging bilstereo.apk | grep -q "versionCode='$VC'" || { echo "::error::APK har ikke versionCode $VC"; exit 1; }
+          fi
+          printf '{"versionCode": %d, "versionName": "%s"}\n' "$VC" "$VN" > version.json
           cat version.json
 
       - name: Last opp som artefakt
@@ -55,14 +66,27 @@ jobs:
           name: bilstereo-apk
           path: bilstereo.apk
 
-      - name: Publiser som "latest"-release (direkte nedlastingslenke)
+      - name: Flytt taggen «latest» til dette bygget
+        run: |
+          git tag -f latest
+          git push -f origin latest
+
+      # Først APK-en, så version.json til slutt – da sier stereoen aldri «ny versjon» før APK-en ligger klar
+      - name: Publiser APK på «latest»
         uses: softprops/action-gh-release@v2
         with:
           tag_name: latest
           name: Siste bygg
-          files: |
-            bilstereo.apk
-            version.json
-          body: "Nyeste APK. Last ned bilstereo.apk og installer på stereoen."
+          make_latest: true
+          files: bilstereo.apk
+          body: "Nyeste T'OS. Last ned bilstereo.apk og installer på stereoen, eller trykk «Oppdater» i T'OS."
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Publiser version.json på «latest»
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest
+          files: version.json
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

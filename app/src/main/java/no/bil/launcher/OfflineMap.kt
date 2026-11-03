@@ -58,46 +58,81 @@ object OfflineMaps {
         return "Lastet ned ${SimpleDateFormat("d. MMM", Locale("nb", "NO")).format(Date(f.lastModified()))} · ${sizeMb(f.length())} MB"
     }
 
-    /** Hvor stort kartet er på GitHub (for å vise før nedlasting). */
+    /** Hvor stort kartet er på GitHub (for å vise før nedlasting). Bare «HEAD» – laster ikke ned noe. */
     fun checkRemote() {
         Hub.scope.launch {
             remoteBytes = withContext(Dispatchers.IO) {
-                runCatching { Updater.open("$BASE/$REGION.pmtiles").let { c -> c.contentLengthLong.also { c.disconnect() } } }
+                runCatching { Updater.open("$BASE/$REGION.pmtiles", "HEAD").let { c -> (if (c.responseCode == 200) c.contentLengthLong else -1L).also { c.disconnect() } } }
                     .getOrNull()?.takeIf { it > 0 }
             }
         }
     }
 
+    /**
+     * Laster ned kartet. Tåler avbrudd: blir tenningen slått av midt i, fortsetter neste forsøk der det slapp
+     * (fila «.part» beholdes). Sjekker ledig plass, og at fila er hel før det gamle kartet byttes ut.
+     */
     fun download(c: Context) {
         if (progress != null) return
         progress = 0; status = null
         Hub.scope.launch {
-            val ok = withContext(Dispatchers.IO) {
+            val err: String? = withContext(Dispatchers.IO) {
+                val target = file(c)
+                val part = File(target.path + ".part")
                 runCatching {
-                    val part = File(file(c).path + ".part")
-                    val conn = Updater.open("$BASE/$REGION.pmtiles")
-                    if (conn.responseCode != 200) error("HTTP ${conn.responseCode}")
-                    val total = conn.contentLengthLong
+                    val have = if (part.exists()) part.length() else 0L
+                    // If-Range: er kartet på GitHub byttet ut siden forrige forsøk, sender serveren hele den nye fila
+                    val tag = Prefs.str("map_etag")
+                    val conn = Updater.open("$BASE/$REGION.pmtiles",
+                        headers = if (have > 0 && tag.isNotBlank()) mapOf("Range" to "bytes=$have-", "If-Range" to tag) else emptyMap())
+                    val code = conn.responseCode
+                    if (code == 404) return@withContext "Kartet er ikke laget på GitHub ennå"
+                    if (code == 416) { part.delete(); return@withContext "Prøv igjen" }   // .part var allerede for stor/ugyldig
+                    if (code != 200 && code != 206) error("HTTP $code")
+                    val resume = code == 206
+                    if (!resume) {
+                        part.delete()
+                        (conn.getHeaderField("ETag") ?: conn.getHeaderField("Last-Modified"))?.let { Prefs.setQuiet("map_etag", it) }
+                    }
+                    val start = if (resume) have else 0L
+                    val total = if (conn.contentLengthLong > 0) start + conn.contentLengthLong else -1L
+                    val dir = target.parentFile ?: c.filesDir
+                    if (total > 0 && dir.usableSpace < (total - start) + 50_000_000L)
+                        return@withContext "Ikke nok plass: trenger ${sizeMb(total - start + 50_000_000L)} MB ledig"
+                    var done = start
                     conn.inputStream.use { input ->
-                        part.outputStream().use { out ->
-                            val buf = ByteArray(256 * 1024); var done = 0L; var read: Int
+                        java.io.FileOutputStream(part, resume).use { out ->
+                            val buf = ByteArray(256 * 1024); var read: Int; var lastPct = -1
                             while (input.read(buf).also { read = it } > 0) {
                                 out.write(buf, 0, read); done += read
-                                if (total > 0) withContext(Dispatchers.Main) { progress = (done * 100 / total).toInt() }
+                                if (total > 0) {
+                                    val pct = (done * 100 / total).toInt()
+                                    if (pct != lastPct) { lastPct = pct; withContext(Dispatchers.Main) { progress = pct } }
+                                }
                             }
                         }
                     }
-                    if (part.length() < 10_000) error("for liten fil")
-                    file(c).delete(); part.renameTo(file(c))
-                }.isSuccess
+                    if (total > 0 && part.length() != total) error("ufullstendig")
+                    if (part.length() < 10_000) { part.delete(); error("for liten fil") }
+                    // Bytt ut trygt: det gamle kartet slettes først når det nye er på plass
+                    val old = File(target.path + ".old")
+                    old.delete()
+                    if (target.exists() && !target.renameTo(old)) error("fikk ikke flyttet gammelt kart")
+                    if (!part.renameTo(target)) { old.renameTo(target); error("fikk ikke lagret kartet") }
+                    old.delete()
+                    null
+                }.getOrElse { if (Hub.online) "Nedlastingen stoppet – trykk «Last ned» igjen for å fortsette" else "Ingen internett – fortsetter når du prøver igjen" }
             }
             progress = null
-            status = if (ok) "Kartet for $LABEL er klart – virker uten nett" else "Nedlastingen feilet. Er kartet laget på GitHub, og har stereoen internett?"
+            status = err   // ved suksess vises dato og størrelse i stedet
             version++
         }
     }
 
-    fun delete(c: Context) { file(c).delete(); version++; status = null }
+    /** Hent nyeste kart på nytt (start fra begynnelsen). */
+    fun update(c: Context) { File(file(c).path + ".part").delete(); download(c) }
+
+    fun delete(c: Context) { file(c).delete(); File(file(c).path + ".part").delete(); version++; status = null }
 
     /** Mørk kartstil i T'OS-farger for Protomaps-skjemaet (v4). */
     fun style(c: Context): String {
@@ -144,23 +179,24 @@ fun OfflineMapView(gps: Gps?, modifier: Modifier, zoom: Int, rotate: Boolean) {
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     val mapView = remember {
         MapLibre.getInstance(context)
-        MapView(context).apply { onCreate(null) }
+        // textureMode: kartet følger de runde hjørnene i kortet (vanlig modus tegner oppå alt)
+        MapView(context, org.maplibre.android.maps.MapLibreMapOptions.createFromAttributes(context).textureMode(true)).apply { onCreate(null) }
     }
     var map by remember { mutableStateOf<MapLibreMap?>(null) }
 
     DisposableEffect(lifecycle, mapView) {
+        // Hold styr på tilstanden, så MapLibre aldri får start/stopp to ganger (addObserver spiller av START/RESUME selv)
+        var started = false; var resumed = false
         val obs = LifecycleEventObserver { _, e ->
             when (e) {
-                Lifecycle.Event.ON_START -> mapView.onStart()
-                Lifecycle.Event.ON_RESUME -> mapView.onResume()
-                Lifecycle.Event.ON_PAUSE -> mapView.onPause()
-                Lifecycle.Event.ON_STOP -> mapView.onStop()
+                Lifecycle.Event.ON_START -> if (!started) { mapView.onStart(); started = true }
+                Lifecycle.Event.ON_RESUME -> if (!resumed) { mapView.onResume(); resumed = true }
+                Lifecycle.Event.ON_PAUSE -> if (resumed) { mapView.onPause(); resumed = false }
+                Lifecycle.Event.ON_STOP -> if (started) { mapView.onStop(); started = false }
                 else -> Unit
             }
         }
         lifecycle.addObserver(obs)
-        if (lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) mapView.onStart()
-        if (lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) mapView.onResume()
         mapView.getMapAsync { m ->
             m.uiSettings.setAllGesturesEnabled(false)
             m.uiSettings.isLogoEnabled = false
@@ -171,7 +207,9 @@ fun OfflineMapView(gps: Gps?, modifier: Modifier, zoom: Int, rotate: Boolean) {
         }
         onDispose {
             lifecycle.removeObserver(obs)
-            mapView.onPause(); mapView.onStop(); mapView.onDestroy()
+            if (resumed) mapView.onPause()
+            if (started) mapView.onStop()
+            mapView.onDestroy()
         }
     }
 

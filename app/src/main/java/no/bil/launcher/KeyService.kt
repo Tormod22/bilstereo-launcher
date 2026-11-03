@@ -28,12 +28,15 @@ class KeyService : AccessibilityService() {
     private val downAt = mutableMapOf<Int, Long>()
     private val longDone = mutableSetOf<Int>()
     private var screenOffAt = 0L
-    private val homePkgs by lazy {
+    // Ikke ekte startskjermer (Android-innstillinger brukes kort ved oppstart, oppsettsveivisere)
+    private val notHome = setOf("com.android.settings", "com.android.provision", "com.google.android.setupwizard", "com.android.car.settings")
+    private val homeInfos by lazy {
         packageManager.queryIntentActivities(Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME), 0)
-            .map { it.activityInfo.packageName }.toSet() -
-            // Ikke ekte startskjermer (Android-innstillinger brukes kort ved oppstart, oppsettsveivisere)
-            setOf("com.android.settings", "com.android.provision", "com.google.android.setupwizard", "com.android.car.settings")
+            .map { it.activityInfo }.filter { it.packageName !in notHome }
     }
+    private val homePkgs by lazy { homeInfos.map { it.packageName }.toSet() }
+    /** Selve startskjerm-skjermene (ikke radio/BT som noen stereoer har inne i samme app). */
+    private val homeClasses by lazy { homeInfos.map { it.name }.toSet() }
 
     private val receiver = object : BroadcastReceiver() {
         @SuppressLint("MissingPermission")
@@ -102,10 +105,13 @@ class KeyService : AccessibilityService() {
 
         // Hold T'OS som startskjerm: dukker stereoens originale startskjerm opp (f.eks. etter «fjern alle faner»),
         // vises T'OS i stedet. Trengs fordi stereoen ikke lar T'OS bli fast startskjerm.
-        if (pkg in homePkgs && Prefs.bool("keep_home", true) && Buttons.keyForPkg(this, pkg) == null) {
+        val cls = event.className?.toString()
+        if (pkg in homePkgs && cls != null && cls in homeClasses && Prefs.bool("keep_home", true) && Buttons.keyForPkg(this, pkg) == null) {
             if (now - lastRedirect > 1500 && !Buttons.inCall(this)) { lastRedirect = now; Buttons.show(this, Screen.DASH) }
             return
         }
+        // Appen ble åpnet av T'OS selv (f.eks. «Start radio», «Telefon», siste app ved oppstart) – ikke send tilbake
+        if (AppRepository.launchedByUs(pkg)) return
 
         val key = Buttons.keyForPkg(this, pkg) ?: return
         val action = Buttons.action(this, key)
@@ -115,7 +121,7 @@ class KeyService : AccessibilityService() {
         if (now - lastRedirect < 1500) return
         lastRedirect = now
         // Det som spilte før knappen ble trykket (startes igjen hvis radioen tok over lyden)
-        val resume = NowPlaying.pkg?.takeIf { NowPlaying.playing && it != pkg }
+        val resume = NowPlaying.recentMusic(exclude = pkg)
         Buttons.perform(this, action)
         // Stereoens radio-app rakk å starte radioen: skru den av igjen, så det ikke blir skurr
         if ((key == PanelKey.RADIO || RadioGuard.looksLikeRadio(pkg)) && action != Action.RADIO) RadioGuard.silence(this, pkg, resume)

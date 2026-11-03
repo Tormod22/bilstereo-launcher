@@ -64,7 +64,7 @@ object NaviPopup {
             // App-ikonet i mørk stil (samme som i T'OS)
             runCatching { ctx.packageManager.getApplicationIcon(pkg) }.getOrNull()?.let { icon ->
                 addView(ImageView(ctx).apply {
-                    val bmp = if (IconStyle.dark) IconStyle.glyph(icon) else icon.toBitmap(96, 96)
+                    val bmp = if (IconStyle.dark) IconStyle.glyph(icon, pkg) else icon.toBitmap(96, 96)
                     setImageBitmap(bmp)
                     if (IconStyle.dark) setColorFilter(fg)
                     background = GradientDrawable().apply { setColor(0xFF2A2A2E.toInt()); cornerRadius = dp(ctx, 10f).toFloat() }

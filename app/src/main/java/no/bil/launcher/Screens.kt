@@ -45,7 +45,7 @@ private fun PageHeader(title: String, onClose: () -> Unit, extra: @Composable Ro
 
 /* ======================= Bluetooth-side ======================= */
 
-data class BtDevice(val name: String, val connected: Boolean, val battery: Int = -1)
+data class BtDevice(val name: String, val connected: Boolean, val battery: Int = -1, val address: String = "")
 data class BtStatus(val available: Boolean, val on: Boolean, val devices: List<BtDevice>)
 
 /**
@@ -63,7 +63,7 @@ fun btStatus(context: Context): BtStatus {
             val connected = runCatching { d.javaClass.getMethod("isConnected").invoke(d) as Boolean }.getOrDefault(false)
             // Batteri fra telefonen (skjult Android-funksjon, virker bare der Android selv styrer Bluetooth)
             val battery = runCatching { d.javaClass.getMethod("getBatteryLevel").invoke(d) as Int }.getOrDefault(-1)
-            BtDevice(d.name ?: d.address, connected, battery)
+            BtDevice(d.name ?: d.address, connected, battery, d.address)
         }.sortedByDescending { it.connected }
         BtStatus(true, adapter.isEnabled, devices)
     }.getOrDefault(BtStatus(true, adapter.isEnabled, emptyList()))
@@ -72,7 +72,7 @@ fun btStatus(context: Context): BtStatus {
 @Composable
 fun BluetoothScreen(onClose: () -> Unit) {
     val context = LocalContext.current
-    val status by produceState(initialValue = btStatus(context)) {
+    val status by produceState(initialValue = remember { btStatus(context) }) {
         while (true) { value = btStatus(context); delay(3000) }
     }
 
@@ -138,7 +138,7 @@ fun BluetoothScreen(onClose: () -> Unit) {
                     BigTile(Icons.Default.Star, "Favoritter", Modifier.weight(1f)) { Nav.screen = Screen.PHONE }
                     BigTile(Icons.Default.PhoneIphone, "CarPlay", Modifier.weight(1f)) { AppRepository.launchTile(context, Tiles.byPrefix("Car")) }
                     BigTile(Icons.Default.Settings, "Innstillinger", Modifier.weight(1f)) {
-                        runCatching { context.startActivity(Intent(Settings.ACTION_BLUETOOTH_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
+                        Prefs.set("settings_cat", "BT"); Nav.screen = Screen.SETTINGS   // T'OS sin egen Bluetooth-side
                     }
                 }
             }
@@ -169,7 +169,8 @@ fun ActionPicker(current: Action, modifier: Modifier, prefix: String = "", onPic
             Modifier.clip(RoundedCornerShape(12.dp)).clickable { menu = true }.padding(horizontal = 8.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text(prefix + current.label, color = if (current == Action.NONE && prefix.isNotEmpty()) TextMuted else TextPrimary, fontSize = 15.sp, maxLines = 1)
+            Text(prefix + current.label, color = if (current == Action.NONE && prefix.isNotEmpty()) TextMuted else TextPrimary, fontSize = 15.sp, maxLines = 1,
+                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
             Icon(Icons.Default.ArrowDropDown, null, tint = TextMuted)
         }
         DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
@@ -183,7 +184,6 @@ fun ActionPicker(current: Action, modifier: Modifier, prefix: String = "", onPic
 @Composable
 fun KeysScreen(onClose: () -> Unit) {
     val context = LocalContext.current
-    var version by remember { mutableIntStateOf(0) }          // tvinger ny tegning etter endring
     val serviceOn by produceState(initialValue = Buttons.serviceEnabled(context)) {
         while (true) { value = Buttons.serviceEnabled(context); delay(1500) }
     }
@@ -195,7 +195,6 @@ fun KeysScreen(onClose: () -> Unit) {
             if (Learn.target == target) Learn.cancel("Fikk ikke noe signal fra ${target.label}. Prøv igjen, og sjekk at knappestyring er på.")
         }
     }
-    LaunchedEffect(Learn.message) { version++ }
 
     Column(Modifier.fillMaxSize().clip(RoundedCornerShape(28.dp)).background(Panel).padding(24.dp)) {
         PageHeader("Knapper", onClose) {
@@ -225,10 +224,9 @@ fun KeysScreen(onClose: () -> Unit) {
             modifier = Modifier.padding(bottom = 12.dp),
         )
 
-        key(version) {
-            LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                items(PanelKey.entries.toList()) { k -> KeyRow(k) { version++ } }
-            }
+        // Lista leser Buttons.version selv, så den oppdateres uten å hoppe til toppen
+        LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            items(PanelKey.entries.toList(), key = { it.name }) { k -> KeyRow(k) { } }
         }
     }
 }
@@ -255,7 +253,7 @@ private fun KeyRow(k: PanelKey, onChanged: () -> Unit) {
         Text(
             when {
                 learning -> "Venter …"
-                code != 0 -> "Kode $code"
+                code > 0 -> "Kode $code"
                 pkg != null -> pkg.substringAfterLast('.').let { "Åpner $it" }
                 else -> "Ikke lært"
             },
@@ -269,7 +267,7 @@ private fun KeyRow(k: PanelKey, onChanged: () -> Unit) {
                 .padding(horizontal = 18.dp),
             contentAlignment = Alignment.Center,
         ) {
-            Text(if (learning) "Avbryt" else if (code != 0 || pkg != null) "Lær på nytt" else "Lær",
+            Text(if (learning) "Avbryt" else if (code > 0 || pkg != null) "Lær på nytt" else "Lær",
                 color = if (learning) Bg else TextPrimary, fontSize = 14.sp)
         }
     }

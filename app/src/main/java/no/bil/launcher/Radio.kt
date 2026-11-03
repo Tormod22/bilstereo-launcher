@@ -26,41 +26,82 @@ object NetRadio {
     var playing by mutableStateOf(false)
     var buffering by mutableStateOf(false)
     var error by mutableStateOf<String?>(null)
-    private var player: MediaPlayer? = null
+    private var player by mutableStateOf<MediaPlayer?>(null)   // state: skjermen følger med når radioen starter/stopper
+    private var prepared = false
+    private var focusReq: android.media.AudioFocusRequest? = null
+    private var pausedByFocus = false
 
-    /** Radioen er «valgt» (spiller eller pauset) – da styrer musikk-knappene radioen. */
-    val active get() = current != null
+    /** Radioen er i bruk (spiller, kobler til eller er pauset) – da styrer musikk-knappene radioen. */
+    val active get() = player != null
+
+    /** Siste kanal (for spill-knappen når ingenting er valgt). */
+    fun last(): Station? = stations.firstOrNull { it.name == Prefs.str("radio_last") }
+
+    private fun am(c: Context) = c.applicationContext.getSystemService(Context.AUDIO_SERVICE) as android.media.AudioManager
+
+    /** Be om lyden (Spotify o.l. pauser da), og pause selv ved samtale/navigasjonsstemme. */
+    private fun takeFocus(c: Context): Boolean {
+        val req = android.media.AudioFocusRequest.Builder(android.media.AudioManager.AUDIOFOCUS_GAIN)
+            .setAudioAttributes(AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA).setContentType(AudioAttributes.CONTENT_TYPE_MUSIC).build())
+            .setOnAudioFocusChangeListener { f ->
+                val p = player ?: return@setOnAudioFocusChangeListener
+                when (f) {
+                    android.media.AudioManager.AUDIOFOCUS_LOSS -> stop()
+                    android.media.AudioManager.AUDIOFOCUS_LOSS_TRANSIENT, android.media.AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK ->
+                        if (prepared && playing) { runCatching { p.pause() }; playing = false; pausedByFocus = true }
+                    android.media.AudioManager.AUDIOFOCUS_GAIN ->
+                        if (prepared && pausedByFocus) { runCatching { p.start() }; playing = true; pausedByFocus = false }
+                }
+            }.build()
+        focusReq = req
+        return runCatching { am(c).requestAudioFocus(req) }.getOrDefault(0) == android.media.AudioManager.AUDIOFOCUS_REQUEST_GRANTED
+    }
 
     fun play(c: Context, s: Station) {
-        stop()
-        current = s; buffering = true; error = null
+        stop(c)
+        current = s; buffering = true; error = null; prepared = false
         Prefs.set("radio_last", s.name)
-        player = MediaPlayer().apply {
-            setAudioAttributes(AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA).setContentType(AudioAttributes.CONTENT_TYPE_MUSIC).build())
-            setOnPreparedListener { it.start(); buffering = false; playing = true }
-            setOnErrorListener { _, _, _ -> error = "Fikk ikke spilt ${s.name}. Er det internett?"; buffering = false; playing = false; true }
-            runCatching { setDataSource(c, android.net.Uri.parse(s.url)); prepareAsync() }
-                .onFailure { error = "Fikk ikke spilt ${s.name}"; buffering = false }
+        takeFocus(c)
+        val mp = MediaPlayer()
+        player = mp
+        mp.setAudioAttributes(AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA).setContentType(AudioAttributes.CONTENT_TYPE_MUSIC).build())
+        mp.setOnPreparedListener {
+            if (player !== it) return@setOnPreparedListener
+            prepared = true; buffering = false
+            runCatching { it.start(); playing = true }
         }
+        mp.setOnErrorListener { it, _, _ ->
+            if (player === it) {
+                error = "Fikk ikke spilt ${s.name}. Er det internett?"
+                runCatching { it.release() }
+                player = null; prepared = false; buffering = false; playing = false
+            }
+            true
+        }
+        runCatching { mp.setDataSource(c, android.net.Uri.parse(s.url)); mp.prepareAsync() }
+            .onFailure { error = "Fikk ikke spilt ${s.name}"; runCatching { mp.release() }; player = null; buffering = false }
     }
 
     fun toggle(c: Context) {
         val p = player
         when {
-            p == null -> current?.let { play(c, it) }
-            playing -> { p.pause(); playing = false }
-            else -> { p.start(); playing = true }
+            p == null -> (current ?: last() ?: stations.first()).let { play(c, it) }
+            !prepared -> stop(c)                                   // trykk mens den kobler til = avbryt
+            playing -> { runCatching { p.pause() }; playing = false }
+            else -> { takeFocus(c); runCatching { p.start() }; playing = true }
         }
     }
 
     fun step(c: Context, d: Int) {
-        val i = stations.indexOf(current).coerceAtLeast(0)
+        val i = stations.indexOf(current ?: last()).coerceAtLeast(0)
         play(c, stations[(i + d + stations.size) % stations.size])
     }
 
-    fun stop() {
+    fun stop(c: Context? = null) {
         runCatching { player?.release() }
-        player = null; playing = false; buffering = false; current = null
+        player = null; prepared = false; playing = false; buffering = false; current = null; pausedByFocus = false
+        focusReq?.let { r -> c?.let { runCatching { am(it).abandonAudioFocusRequest(r) } } }
+        focusReq = null
     }
 }
 
@@ -171,7 +212,7 @@ object HwRadio {
 
     fun open(c: Context) {
         if (hasMcu(c)) send(byteArrayOf(0x01, 0x01))
-        NetRadio.stop()
+        NetRadio.stop(c)
         AppRepository.launchTile(c, Tiles.byPrefix("Rad"))
         sessionControls()?.play()
     }

@@ -65,7 +65,9 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.graphics.drawable.toBitmap
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.launch
 import java.io.File
 import java.text.SimpleDateFormat
@@ -184,7 +186,8 @@ fun Root() {
                 }
         ) {
             Box(Modifier.fillMaxSize().padding(14.dp)) {
-                if (Nav.screen != Screen.DASH) BackHandler { Learn.cancel(); home() }
+                // BACK på forsiden gjør ingenting (ellers lukkes T'OS og stereoens gamle startskjerm vises)
+                BackHandler { if (Nav.screen != Screen.DASH) { Learn.cancel(); home() } }
                 when (Nav.screen) {
                     Screen.DASH -> Dashboard(onApps = { Nav.screen = Screen.APPS }, onPickSlot = { pickSlot = true })
                     Screen.APPS -> AppDrawer(home)
@@ -273,10 +276,24 @@ fun Dashboard(onApps: () -> Unit, onPickSlot: () -> Unit) {
 private fun carBitmap(): androidx.compose.ui.graphics.ImageBitmap? {
     val context = LocalContext.current
     val v = Prefs.long("car_image_v")
-    return remember(v) {
-        File(context.filesDir, "car.png").takeIf { it.exists() }?.let { BitmapFactory.decodeFile(it.path)?.asImageBitmap() }
+    // Leses i bakgrunnen, krympet – et stort kamerabilde ville ellers kunnet krasje forsiden ved hver oppstart
+    val bmp by produceState<androidx.compose.ui.graphics.ImageBitmap?>(null, v) {
+        value = withContext(Dispatchers.IO) {
+            File(context.filesDir, "car.png").takeIf { it.exists() }?.let { decodeScaled(it, 1200)?.asImageBitmap() }
+        }
     }
+    return bmp
 }
+
+/** Leser et bilde krympet slik at lengste side er høyst [max] piksler. */
+fun decodeScaled(f: File, max: Int): android.graphics.Bitmap? = runCatching {
+    val o = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+    BitmapFactory.decodeFile(f.path, o)
+    var sample = 1
+    while (maxOf(o.outWidth, o.outHeight) / sample > max) sample *= 2
+    BitmapFactory.decodeFile(f.path, BitmapFactory.Options().apply { inSampleSize = sample })
+}.getOrNull()
+
 
 /** Én diskret linje under datoen: ny versjon, påminnelse eller svakt batteri. */
 @Composable
@@ -527,7 +544,7 @@ fun ActionRow(onApps: () -> Unit, onPickSlot: () -> Unit, modifier: Modifier) {
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center,
         ) {
-            if (slotApp != null) AppIcon(slotApp.second, 36.dp)
+            if (slotApp != null) AppIcon(slotApp.second, 36.dp, slotPkg)
             else Icon(Icons.Default.Phone, null, tint = TextPrimary, modifier = Modifier.size(30.dp))
             Spacer(Modifier.height(6.dp))
             Text(slotApp?.first ?: "Telefon", color = TextMuted, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(horizontal = 8.dp))
@@ -540,7 +557,7 @@ fun ActionRow(onApps: () -> Unit, onPickSlot: () -> Unit, modifier: Modifier) {
 @Composable
 fun AppPicker(title: String, defaultLabel: String, onPick: (String) -> Unit, onClose: () -> Unit) {
     val context = LocalContext.current
-    val apps by produceState(initialValue = emptyList<AppEntry>()) { value = AppRepository.installedApps(context) }
+    val apps by produceState(initialValue = emptyList<AppEntry>()) { value = withContext(Dispatchers.IO) { AppRepository.installedApps(context) } }
     Box(Modifier.fillMaxSize().background(Bg.copy(alpha = 0.7f)).padding(40.dp)) {
         Page(title, onClose) {
             Pill(defaultLabel, Icons.Default.Refresh) { onPick(""); onClose() }
@@ -549,7 +566,7 @@ fun AppPicker(title: String, defaultLabel: String, onPick: (String) -> Unit, onC
                 items(apps, key = { it.packageName }) { app ->
                     Column(Modifier.clip(RoundedCornerShape(18.dp)).background(Card).clickable { onPick(app.packageName); onClose() }
                         .padding(14.dp).fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
-                        AppIcon(app.icon, 44.dp)
+                        AppIcon(app.icon, 44.dp, app.packageName)
                         Spacer(Modifier.height(6.dp))
                         Text(app.label, color = TextPrimary, fontSize = 13.sp, maxLines = 1)
                     }
@@ -593,10 +610,10 @@ fun UpdateButton() {
     var busy by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
-        Updater.check()?.let {
-            if (it.versionCode > Updater.current(context)) { available = it; state = "Oppdater til ${it.versionName}" }
-            else state = "Siste versjon"
-        }
+        val it = Updater.check()
+        if (it == null) state = Updater.lastError ?: "Se etter oppdatering"
+        else if (it.versionCode > Updater.current(context)) { available = it; state = "Oppdater til ${it.versionName}" }
+        else state = "Siste versjon"
     }
 
     Row(
@@ -606,12 +623,12 @@ fun UpdateButton() {
                 scope.launch {
                     busy = true
                     val upd = available ?: Updater.check()
-                    if (upd == null) state = "Ingen kontakt med GitHub"
+                    if (upd == null) state = Updater.lastError ?: "Ingen kontakt med GitHub"
                     else if (upd.versionCode <= Updater.current(context)) state = "Siste versjon"
                     else {
                         available = upd
-                        val ok = Updater.downloadAndInstall(context) { p -> state = "Laster ned $p %" }
-                        state = if (ok) "Installerer …" else "Nedlasting feilet"
+                        val err = Updater.downloadAndInstall(context) { p -> state = "Laster ned $p %" }
+                        state = err ?: "Trykk «Installer» på skjermen"
                     }
                     busy = false
                 }
@@ -653,7 +670,7 @@ fun PillButton(icon: ImageVector, label: String, onClick: () -> Unit) = Pill(lab
 @Composable
 fun AppDrawer(onClose: () -> Unit) {
     val context = LocalContext.current
-    val apps by produceState(initialValue = emptyList<AppEntry>()) { value = AppRepository.installedApps(context) }
+    val apps by produceState(initialValue = emptyList<AppEntry>(), Prefs.str("hidden_apps")) { value = withContext(Dispatchers.IO) { AppRepository.installedApps(context) } }
 
     Column(Modifier.fillMaxSize().clip(Shape).background(Panel).padding(24.dp)) {
         Row(Modifier.fillMaxWidth().padding(bottom = 16.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -698,7 +715,7 @@ fun AppDrawer(onClose: () -> Unit) {
                         .padding(14.dp).fillMaxWidth(),
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
-                    AppIcon(app.icon, 52.dp)
+                    AppIcon(app.icon, 52.dp, app.packageName)
                     Spacer(Modifier.height(8.dp))
                     Text(app.label, color = TextPrimary, fontSize = 13.sp, maxLines = 1)
                 }

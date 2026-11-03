@@ -37,10 +37,17 @@ data class Gps(val speedKmh: Int, val lat: Double, val lon: Double, val bearing:
 @android.annotation.SuppressLint("MissingPermission")   // sjekkes med hasPermission + runCatching
 fun gpsFlow(context: Context): Flow<Gps> = callbackFlow {
     val lm = context.getSystemService(Context.LOCATION_SERVICE) as LocationManager
-    val listener = LocationListener { loc: Location ->
-        val adj = 1f + (Prefs.str("speed_adj", "0").toFloatOrNull() ?: 0f) / 100f   // fartsjustering i Innstillinger
-        val kmh = if (loc.hasSpeed()) (loc.speed * 3.6f * adj).toInt() else 0
-        trySend(Gps(kmh, loc.latitude, loc.longitude, loc.bearing))
+    // Alle metodene skrives ut: på Android 8–10 krasjer en forkortet versjon når GPS slås av/på
+    val listener = object : LocationListener {
+        override fun onLocationChanged(loc: Location) {
+            val adj = 1f + (Prefs.str("speed_adj", "0").toFloatOrNull() ?: 0f) / 100f   // fartsjustering i Innstillinger
+            val kmh = if (loc.hasSpeed()) (loc.speed * 3.6f * adj).toInt() else 0
+            trySend(Gps(kmh, loc.latitude, loc.longitude, loc.bearing))
+        }
+        override fun onProviderEnabled(provider: String) {}
+        override fun onProviderDisabled(provider: String) {}
+        @Deprecated("Android < 10")
+        override fun onStatusChanged(provider: String?, status: Int, extras: android.os.Bundle?) {}
     }
     if (context.hasPermission(Manifest.permission.ACCESS_FINE_LOCATION)) {
         runCatching {
@@ -58,7 +65,8 @@ fun gpsFlow(context: Context): Flow<Gps> = callbackFlow {
 
 object MapTiles {
     private const val TILE = 256
-    private val cache = HashMap<String, Bitmap>()
+    /** Kartfliser i minnet, maks 60 (trådsikker – hentes fra mange tråder samtidig). */
+    private val cache = android.util.LruCache<String, Bitmap>(60)
 
     data class MapImage(val bitmap: Bitmap, val x0: Int, val y0: Int, val zoom: Int, val cols: Int, val rows: Int) {
         /** Hvor på bildet en posisjon er (0..1). */
@@ -94,14 +102,13 @@ object MapTiles {
 
     private fun fetch(z: Int, x: Int, y: Int): Bitmap? {
         val key = "$z/$x/$y"
-        cache[key]?.let { return it }
+        cache.get(key)?.let { return it }
         val url = URL("https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/$z/$y/$x")
         val conn = url.openConnection() as HttpURLConnection
         conn.setRequestProperty("User-Agent", "BilstereoLauncher/1.0")
         conn.connectTimeout = 5000; conn.readTimeout = 5000
         return runCatching { BitmapFactory.decodeStream(conn.inputStream) }.getOrNull()?.also {
-            if (cache.size > 150) cache.clear()
-            cache[key] = it
+            cache.put(key, it)
         }
     }
 }

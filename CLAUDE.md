@@ -17,7 +17,7 @@ Snakk norsk med brukeren. Han er ikke utvikler – forklar enkelt, ikke bruk fag
 - Løsningen han godkjente: **tre ting** – (1) bilkort med klokke, stort bilbilde og fart som stort tall, (2) ekte kart, (3) én rad nederst: musikk/telefon/apper. Ingen kalender, ingen vær.
 - Kalkulator skal være skjult i app-skuffen (`HiddenApps` i `Apps.kt`).
 
-## Nåværende tilstand (v4.1)
+## Nåværende tilstand (v4.2)
 - `MainActivity.kt`: Compose-UI med de tre tingene + app-skuff + oppdateringsknapp. Skjermvalg via `Nav.screen` (DASH/APPS/BT/KEYS).
 - v3.0 «stor oppdatering» – alle 50 punktene i `docs/IDEER.md` (se Begrensninger der). Nye filer:
   `Prefs.kt` (TosApp, innstillinger m/ Compose-reaktivitet via Prefs.version, sikkerhetskopi JSON, CrashLog),
@@ -30,6 +30,12 @@ Snakk norsk med brukeren. Han er ikke utvikler – forklar enkelt, ikke bruk fag
   Wi-Fi/Bluetooth-paring/equalizer inne i T'OS (`SettingsExtra.kt`), førstegangsoppsett (Screen.SETUP), fartsjustering.
   Play Protect blokkerer installasjon fra Drive pga. tilgjengelighet + varseltilgang – brukeren må skru av Play Protect midlertidig
   eller bruke ADB. Lokale bygg i denne sesjonen ble signert med den faste nøkkelen (fra scratchpad, ikke repo).
+  v4.2: full gjennomgang (3 agenter, ~60 funn) rettet: NetRadio-krasj, ikon-LRU per pakke + async, pakkesøk på IO,
+  knappekode 0/-1, «Ingenting» gir knappen tilbake til stereoen, ingen omdirigering fra apper T'OS selv åpnet
+  (AppRepository.launchedByUs), keep_home bare på selve HOME-aktiviteten, BACK på forsiden gjør ingenting,
+  NightBrightness i Prefs, Trip i ms, datoer strengt, robust Updater (200/størrelse/installer-tillatelse) og
+  kartnedlasting (Range+If-Range, plass, trygg bytting), CI: versionCode = 1000 + GITHUB_RUN_NUMBER, concurrency,
+  version.json lastes opp sist, taggen «latest» flyttes. Mye UVERIFISERT på enheten.
   v4.1: brukeren meldte (1) T'OS forsvinner ved «fjern alle faner» → excludeFromRecents + KeyService viser T'OS når original
   startskjerm dukker opp («Hold T'OS som startskjerm», keep_home; com.android.settings m.fl. unntatt), (2) RADIO-knappen åpner
   stereoens radio-app et øyeblikk og radioen fortsetter med skurr → `RadioGuard` i Radio.kt stopper den (mediaøkt, MCU, lydfokus,
@@ -47,20 +53,22 @@ Snakk norsk med brukeren. Han er ikke utvikler – forklar enkelt, ikke bruk fag
   Stilen er testet med ekte data i MapLibre GL JS (ser bra ut), men ikke på enheten. App-ikoner i mørkt tema (`Icons.kt`),
   T'OS-ikonet er nå hvitt/grått på svart. v3.1: sikkerhetslåsen (punkt 43) er fjernet etter brukerens ønske – ikke legg den inn igjen.
 - `Buttons.kt` + `KeyService.kt` + `Screens.kt` (v2.3, utvidet i v3.0 med langt trykk og Ratt 1–4): fysiske knapper på stereoen (MENU, BACK, NAVI venstre; RADIO, MUSIC, BT høyre).
-  Standard: MENU→T'OS forside, BACK→tilbake, NAVI→kart, MUSIC→Spotify, BT→egen Bluetooth-side, RADIO→radio-appen (brukeren har IKKE bestemt RADIO ennå – valgbar på Knapper-siden).
+  Standard: MENU→T'OS forside, BACK→tilbake, NAVI→kart (+ Waze-popup), MUSIC→Spotify, BT→egen Bluetooth-side, RADIO→T'OS sin Radio-side (RADIO_PAGE; brukeren har IKKE bestemt RADIO endelig – valgbar på Knapper-siden).
   «Lær»-funksjon: lærer enten tastekoden knappen sender, eller hvilken app stereoen åpner (da omdirigerer tjenesten). Krever at tjenesten «T'OS knapper» er slått på under Tilgjengelighet. Omdirigering hoppes over når AudioManager.mode != NORMAL (samtale).
   UVERIFISERT på enheten: om knappene sender tastekoder eller åpner apper. Be brukeren lære knappene og si hva Knapper-siden viser (kode/pakkenavn).
 - `Data.kt`: GPS-fart/posisjon (LocationManager), ekte kartfliser fra Esri World Dark Gray Base (gratis, ingen nøkkel; CARTO krever nøkkel nå), sentrert på posisjonen og dempet med MapDim, mediaknapper via AudioManager.dispatchMediaKeyEvent.
 - `Updater.kt`: sjekker `https://github.com/Tormod22/bilstereo-launcher/releases/download/latest/version.json`, laster ned `bilstereo.apk` og starter installasjon via FileProvider. Repoet må være OFFENTLIG for at dette virker.
-- `.github/workflows/build.yml`: bygger debug-APK på push til main og publiserer som release med tag `latest` (bilstereo.apk + version.json). Versjon hentes fra `versionCode`/`versionName` i `app/build.gradle.kts` – bump dem ved hver ny versjon.
+- `.github/workflows/build.yml`: bygger debug-APK på push til main og publiserer som release med tag `latest` (bilstereo.apk først, version.json sist). versionCode = 1000 + GITHUB_RUN_NUMBER settes automatisk; bump bare versionName (og lokal versionCode) i `app/build.gradle.kts`.
 - `preview/index.html`: nettleserkopi av startskjermen for å teste utseendet (samme farger/mål/kart). Holdes i takt med `MainActivity.kt`. Publiseres til GitHub Pages av `.github/workflows/preview.yml`.
 - Bilbilde: legges i `app/src/main/res/drawable/car_png.png` – koden finner den via `getIdentifier("car_png")`. Et bilde er generert i Canva (svart Avensis forfra på svart bakgrunn): https://www.canva.com/M/MAHZyi7AvB4 – brukeren må laste det ned selv og legge det inn.
 
 ## Oppdatering / signering
 - Updater forutsetter release «latest» (lages av build.yml på push til main). Per 2. nov finnes ingen release, og main er bare «Initial commit».
 - Signering: build.yml leser secrets TOS_KEYSTORE_BASE64 + TOS_KEYSTORE_PASSWORD (alias «tos») og feiler uten dem.
-  Nøkkelen må ALDRI committes (forsøk på det ble stoppet som credential leakage). APK-er bygget i Claude-sesjoner har
-  debug-signatur og kan ikke oppdatere en GitHub-signert T'OS – etter overgang skal brukeren bare bruke GitHub-bygg.
+  Nøkkelen må ALDRI committes (forsøk på det ble stoppet som credential leakage). Brukeren har fått nøkkelen som tekstfil
+  (tos-hemmeligheter.txt) og skal ta vare på den. APK-er fra 3.5–4.2 er signert med denne nøkkelen (lokalt i scratchpad).
+  APK-er bygget uten nøkkelen (TOS_KEYSTORE ikke satt) får debug-signatur og kan IKKE oppdatere T'OS på stereoen.
+- Versjon: GitHub-bygg får versionCode 1000 + byggnummer (alltid høyere enn lokale bygg, som har lave tall).
 
 ## Status / gjenstår
 1. ✅ Koden kompilerer (`gradle assembleDebug`, AGP 8.5.2 / Kotlin 2.0.20). Én feil rettet i `Updater.kt` (lese version.json).

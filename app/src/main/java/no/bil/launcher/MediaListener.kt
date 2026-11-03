@@ -35,6 +35,14 @@ object NowPlaying {
 
     val hasSession get() = controller != null
 
+    /** Siste musikkapp som spilte (ikke radio). Gjelder hvis den fortsatt spiller, eller stoppet for under 15 s siden. */
+    private var lastMusicPkg: String? = null
+    private var lastMusicPlaying = false
+    private var lastMusicStoppedAt = 0L
+    fun recentMusic(exclude: String): String? = lastMusicPkg?.takeIf {
+        it != exclude && (lastMusicPlaying || SystemClock.elapsedRealtime() - lastMusicStoppedAt < 15_000)
+    }
+
     /** Hvor langt i sangen vi er nå (regnes fram fra siste melding fra appen). */
     fun positionMs(): Long =
         if (!playing) posMs else (posMs + ((SystemClock.elapsedRealtime() - posAt) * speed).toLong()).coerceAtMost(durationMs.takeIf { it > 0 } ?: Long.MAX_VALUE)
@@ -54,7 +62,10 @@ object NowPlaying {
         posMs = st?.position ?: 0L
         posAt = st?.lastPositionUpdateTime?.takeIf { it > 0 } ?: SystemClock.elapsedRealtime()
         speed = st?.playbackSpeed?.takeIf { it > 0 } ?: 1f
-        if (pkg != null) Prefs.setQuiet("last_player", pkg!!)
+        val p = pkg
+        if (p != null) Prefs.setQuiet("last_player", p)
+        if (p != null && playing && !RadioGuard.looksLikeRadio(p)) { lastMusicPkg = p; lastMusicPlaying = true }
+        else if (lastMusicPlaying && (p != lastMusicPkg || !playing)) { lastMusicPlaying = false; lastMusicStoppedAt = SystemClock.elapsedRealtime() }
     }
 }
 

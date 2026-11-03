@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -35,12 +36,15 @@ import kotlin.math.max
 object IconStyle {
     val dark get() = Prefs.str("icon_style", "DARK") == "DARK"
     private const val PX = 128
-    private val cache = HashMap<Drawable, Bitmap>()
+    /** Ferdige symboler per app (pakkenavn), maks 150 – så minnet ikke fylles opp over tid. */
+    private val cache = android.util.LruCache<String, Bitmap>(150)
 
     /** Ferdig maske: hvit der symbolet er, gjennomsiktig ellers. Farges i Compose. */
-    fun glyph(d: Drawable): Bitmap = cache.getOrPut(d) {
+    fun glyph(d: Drawable, key: String): Bitmap = cache.get(key) ?: makeGlyph(d).also { cache.put(key, it) }
+
+    private fun makeGlyph(d: Drawable): Bitmap = run {
         if (Build.VERSION.SDK_INT >= 33 && d is AdaptiveIconDrawable && d.monochrome != null) {
-            return@getOrPut toMask(layer(d.monochrome!!), alphaOnly = true)
+            return@run toMask(layer(d.monochrome!!), alphaOnly = true)
         }
         val full = if (d is AdaptiveIconDrawable) {
             val b = Bitmap.createBitmap(PX, PX, Bitmap.Config.ARGB_8888)
@@ -110,15 +114,18 @@ object IconStyle {
     }
 }
 
+/** App-ikon i T'OS-stil. [key] = pakkenavn (brukes for å huske ferdig symbol). Regnes ut i bakgrunnen. */
 @Composable
-fun AppIcon(icon: Drawable, size: Dp) {
+fun AppIcon(icon: Drawable, size: Dp, key: String) {
     if (!IconStyle.dark) {
-        val bmp = remember(icon) { icon.toBitmap(128, 128).asImageBitmap() }
+        val bmp = remember(key) { icon.toBitmap(128, 128).asImageBitmap() }
         Image(bmp, null, Modifier.size(size))
         return
     }
-    val img = remember(icon) { IconStyle.glyph(icon).asImageBitmap() }
+    val img by androidx.compose.runtime.produceState<androidx.compose.ui.graphics.ImageBitmap?>(null, key) {
+        value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) { runCatching { IconStyle.glyph(icon, key).asImageBitmap() }.getOrNull() }
+    }
     Box(Modifier.size(size).clip(RoundedCornerShape(size * 0.27f)).background(Line), contentAlignment = Alignment.Center) {
-        Image(img, null, Modifier.size(size * 0.86f), colorFilter = ColorFilter.tint(TextPrimary))
+        img?.let { Image(it, null, Modifier.size(size * 0.86f), colorFilter = ColorFilter.tint(TextPrimary)) }
     }
 }

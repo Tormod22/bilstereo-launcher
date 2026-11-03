@@ -55,6 +55,7 @@ jobs:
         with:
           tag_name: kart
           name: Kart uten nett
+          make_latest: false
           body: "Kartdata © OpenStreetMap-bidragsytere (ODbL), bygget av Protomaps. Lastes ned av T'OS under Innstillinger → Kart uten nett."
           files: |
             ${{ env.NAVN }}.pmtiles

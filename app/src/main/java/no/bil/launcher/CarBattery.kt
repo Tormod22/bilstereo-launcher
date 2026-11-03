@@ -120,8 +120,12 @@ object CarBattery {
         val s = socket ?: error("ingen kontakt")
         s.outputStream.write("$c\r".toByteArray()); s.outputStream.flush()
         val sb = StringBuilder(); val start = System.currentTimeMillis()
-        while (System.currentTimeMillis() - start < 3000) {
-            val ch = s.inputStream.read()
+        val inp = s.inputStream
+        // Les bare det som har kommet – blir brikka stille (sover), henger ikke T'OS, men gir opp etter 3 s
+        while (true) {
+            if (System.currentTimeMillis() - start > 3000) error("brikka svarer ikke")
+            if (inp.available() <= 0) { Thread.sleep(20); continue }
+            val ch = inp.read()
             if (ch < 0 || ch == '>'.code) break
             sb.append(ch.toChar())
         }

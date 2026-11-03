@@ -36,7 +36,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -156,16 +159,26 @@ private fun ScreenSettings() {
     val context = LocalContext.current
     val canWrite = Settings.System.canWrite(context)
     val pickCar = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        if (uri != null) runCatching {
-            context.contentResolver.openInputStream(uri)?.use { input -> File(context.filesDir, "car.png").outputStream().use { input.copyTo(it) } }
-            Prefs.set("car_image_v", System.currentTimeMillis())
-            context.toast("Bilbildet er lagret")
+        if (uri != null) Hub.scope.launch {
+            // Krymp til høyst 1200 px og lagre som PNG (et stort kamerabilde kunne ellers fått forsiden til å krasje)
+            val ok = withContext(Dispatchers.IO) {
+                runCatching {
+                    val tmp = File(context.cacheDir, "car_in")
+                    context.contentResolver.openInputStream(uri)?.use { input -> tmp.outputStream().use { input.copyTo(it) } }
+                    val bmp = decodeScaled(tmp, 1200) ?: error("ikke et bilde")
+                    File(context.filesDir, "car.png").outputStream().use { bmp.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }
+                    tmp.delete()
+                }.isSuccess
+            }
+            if (ok) Prefs.set("car_image_v", System.currentTimeMillis())
+            context.toast(if (ok) "Bilbildet er lagret" else "Fikk ikke lest bildet")
         }
     }
     if (canWrite) {
         var b by remember { mutableFloatStateOf(runCatching { Settings.System.getInt(context.contentResolver, Settings.System.SCREEN_BRIGHTNESS) }.getOrDefault(150).toFloat()) }
         SliderRow("Lysstyrke", Icons.Default.LightMode, b, 5f..255f) {
             b = it
+            if (Prefs.float("app_brightness", -1f) >= 0f) Prefs.set("app_brightness", -1f)   // la systemet styre T'OS-vinduet også
             runCatching {
                 Settings.System.putInt(context.contentResolver, Settings.System.SCREEN_BRIGHTNESS_MODE, Settings.System.SCREEN_BRIGHTNESS_MODE_MANUAL)
                 Settings.System.putInt(context.contentResolver, Settings.System.SCREEN_BRIGHTNESS, it.toInt())
@@ -189,7 +202,7 @@ private fun ScreenSettings() {
         val opts = listOf(60_000 to "1 min", 300_000 to "5 min", 1_800_000 to "30 min", Int.MAX_VALUE to "Aldri")
         val i = opts.indexOfFirst { it.first == cur }.coerceAtLeast(0)
         var shown by remember { mutableIntStateOf(i) }
-        SettingRow("Skjermen slås av etter", onClick = {
+        SettingRow("Skjermen slås av etter", "Gjelder andre apper – T'OS holder skjermen på mens den vises", onClick = {
             shown = (shown + 1) % opts.size
             runCatching { Settings.System.putInt(context.contentResolver, Settings.System.SCREEN_OFF_TIMEOUT, opts[shown].first) }
         }) { Text(opts[shown].second, color = TextPrimary, fontSize = 15.sp) }
@@ -204,7 +217,9 @@ private fun ScreenSettings() {
 private fun AppsSettings() {
     val context = LocalContext.current
     val hidden = HiddenApps.userHidden()
-    val apps by produceState(emptyList<AppEntry>(), Prefs.version) { value = AppRepository.installedApps(context, includeHidden = true) }
+    val apps by produceState(emptyList<AppEntry>(), Prefs.str("hidden_apps")) {
+        value = withContext(Dispatchers.IO) { AppRepository.installedApps(context, includeHidden = true) }
+    }
     SettingRow("Startskjerm", "Velg T'OS som startskjerm", onClick = {
         context.openFirst(Settings.ACTION_HOME_SETTINGS, Settings.ACTION_MANAGE_DEFAULT_APPS_SETTINGS, Settings.ACTION_SETTINGS)
     }) { Chevron() }
@@ -224,11 +239,11 @@ private fun AppsSettings() {
                 .padding(horizontal = 14.dp),
             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp),
         ) {
-            AppIcon(a.icon, 38.dp)
+            AppIcon(a.icon, 38.dp, a.packageName)
             Text(a.label, color = TextPrimary, fontSize = 16.sp, modifier = Modifier.weight(1f), maxLines = 1)
             val isHidden = a.packageName in hidden || HiddenApps.isHidden(a)
             Text(if (isHidden) "Vis" else "Skjul", color = TextPrimary, fontSize = 14.sp,
-                modifier = Modifier.clip(RoundedCornerShape(14.dp)).background(Line).clickable { HiddenApps.toggle(a.packageName) }.padding(horizontal = 14.dp, vertical = 8.dp))
+                modifier = Modifier.clip(RoundedCornerShape(14.dp)).background(Line).clickable { HiddenApps.toggle(a) }.padding(horizontal = 14.dp, vertical = 8.dp))
         }
         Spacer(Modifier.height(6.dp))
     }
@@ -247,9 +262,14 @@ private fun StorageSettings() {
     Spacer(Modifier.height(14.dp))
     val map = OfflineMaps.file(context)
     if (map.exists()) SettingRow("Kart uten nett", "${OfflineMaps.sizeMb(map.length())} MB")
-    var cacheMb by remember { mutableIntStateOf((context.cacheDir.walkBottomUp().sumOf { it.length() } / 1_048_576).toInt()) }
+    var tick by remember { mutableIntStateOf(0) }
+    val cacheMb by produceState(0, tick) {
+        value = withContext(Dispatchers.IO) { (context.cacheDir.walkBottomUp().sumOf { it.length() } / 1_048_576).toInt() }
+    }
     SettingRow("Midlertidige filer i T'OS", "$cacheMb MB", onClick = {
-        context.cacheDir.listFiles()?.forEach { it.deleteRecursively() }; cacheMb = 0; context.toast("Tømt")
+        // «apk» (en oppdatering som lastes ned/installeres) får ligge
+        Hub.scope.launch(Dispatchers.IO) { context.cacheDir.listFiles()?.filter { it.name != "apk" }?.forEach { it.deleteRecursively() }; tick++ }
+        context.toast("Tømt")
     }) { Text("Tøm", color = TextPrimary, fontSize = 15.sp) }
     SettingRow("Lagring i Android", onClick = { context.openFirst(Settings.ACTION_INTERNAL_STORAGE_SETTINGS, Settings.ACTION_SETTINGS) }) { Chevron() }
 }
@@ -297,7 +317,7 @@ private fun MapSettings() {
     ) {
         when {
             OfflineMaps.progress != null -> {}
-            mapReady -> { Pill("Oppdater") { OfflineMaps.download(context) }; Spacer(Modifier.width(8.dp)); Pill("Slett") { OfflineMaps.delete(context) } }
+            mapReady -> { Pill("Oppdater") { OfflineMaps.update(context) }; Spacer(Modifier.width(8.dp)); Pill("Slett") { OfflineMaps.delete(context) } }
             else -> Pill("Last ned", Icons.Default.Download, strong = true) { OfflineMaps.download(context) }
         }
     }
@@ -322,14 +342,10 @@ private fun MapSettings() {
 @Composable
 private fun MusicSettings() {
     val context = LocalContext.current
-    val musicApps = remember {
-        Tiles.byPrefix("Mus").candidates.filter { AppRepository.isInstalled(context, it) }
-            .map { it to (runCatching { context.packageManager.getApplicationLabel(context.packageManager.getApplicationInfo(it, 0)).toString() }.getOrDefault(it)) }
-    }
     SettingRow("Sangtittel og cover", if (MediaListener.enabled(context)) "Slått på" else "Trykk og slå på «T'OS» under varseltilgang", onClick = { openNotificationAccess(context) }) {
         Toggle(MediaListener.enabled(context))
     }
-    if (musicApps.isNotEmpty()) ChoiceRow("Musikkapp", "music_pkg", listOf("" to "Automatisk") + musicApps, "")
+    AppChoiceRow("Musikkapp", "music_pkg", "Mus")
     ToggleRow("Fortsett musikken når bilen starter", "resume_music", true)
     ToggleRow("Åpne siste app når bilen starter", "resume_last_app", false)
 }
@@ -369,7 +385,10 @@ private fun BackupSettings() {
     SettingRow("Lagre innstillinger til fil", "Velg Google Drive for å ha dem trygt", onClick = { exportFile.launch("tos-innstillinger.json") }) { Chevron() }
     SettingRow("Hent innstillinger fra fil", onClick = { importFile.launch(arrayOf("application/json", "text/plain", "*/*")) }) { Chevron() }
     SettingRow("Del feilrapport", "Send til deg selv og lim inn i Claude", onClick = {
-        val i = Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_SUBJECT, "T'OS feilrapport").putExtra(Intent.EXTRA_TEXT, CrashLog.report(context))
-        context.open(Intent.createChooser(i, "Del feilrapport"))
+        Hub.scope.launch {
+            val text = withContext(Dispatchers.IO) { CrashLog.report(context) }
+            val i = Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_SUBJECT, "T'OS feilrapport").putExtra(Intent.EXTRA_TEXT, text)
+            context.open(Intent.createChooser(i, "Del feilrapport"))
+        }
     }) { Chevron() }
 }

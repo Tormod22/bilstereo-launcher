@@ -1,4 +1,4 @@
-# T'OS (v4.1)
+# T'OS (v4.2)
 
 T'OS er navnet på appen. Repoet heter fortsatt `bilstereo-launcher`.
 
@@ -55,7 +55,10 @@ Krav (én gang):
 2. Fast signatur: legg inn to hemmeligheter under Settings → Secrets and variables → Actions:
    `TOS_KEYSTORE_BASE64` (nøkkelfila som tekst) og `TOS_KEYSTORE_PASSWORD`. Uten dem stopper byggejobben med en feilmelding.
    Nøkkelen skal ALDRI ligge i repoet.
-3. Første gang etter dette må T'OS avinstalleres og installeres på nytt (ny signatur). Lagre innstillingene til fil først.
+3. Har du T'OS 3.5 eller nyere (installert fra Drive), har den allerede riktig signatur – den oppdateres rett.
+   Eldre T'OS må avinstalleres først. Lagre innstillingene til fil før, og merk at kartet uten nett da også må lastes ned på nytt.
+4. Ta vare på nøkkelfila (tos-hemmeligheter.txt). Mister du den, kan T'OS ikke oppdateres uten å avinstallere.
+5. Et bygg du lager selv uten nøkkelen kan ikke installeres oppå en T'OS fra GitHub.
 
 ## Kart uten nett (Rogaland)
 1. Koden må ligge på `main` og repoet være offentlig. Da lager GitHub kartet automatisk

@@ -35,9 +35,11 @@ object HiddenApps {
 
     /** Apper brukeren har skjult selv (Innstillinger → Apper). */
     fun userHidden(): Set<String> = Prefs.str("hidden_apps").split("\n").filter { it.isNotBlank() }.toSet()
-    fun toggle(pkg: String) {
+    /** Skjul en synlig app, eller vis en skjult (også de som er skjult som standard, f.eks. kalkulatoren). */
+    fun toggle(app: AppEntry) {
         val cur = userHidden().toMutableSet()
-        if (pkg in cur || pkg in packages) { cur.remove(pkg); Prefs.set("shown_$pkg", true) } else { cur.add(pkg); Prefs.set("shown_$pkg", false) }
+        if (isHidden(app)) { cur.remove(app.packageName); Prefs.set("shown_${app.packageName}", true) }
+        else { cur.add(app.packageName); Prefs.set("shown_${app.packageName}", false) }
         Prefs.set("hidden_apps", cur.joinToString("\n"))
     }
     val labelKeywords = listOf("kalkulator", "calculator")
@@ -184,7 +186,13 @@ object AppRepository {
 
     fun isInstalled(context: Context, packageName: String): Boolean = launchIntent(context, packageName) != null
 
+    /** Apper T'OS selv nettopp åpnet (pakke → tid). Knappestyringen skal ikke sende deg tilbake fra dem. */
+    private val selfLaunched = java.util.concurrent.ConcurrentHashMap<String, Long>()
+    fun launchedByUs(pkg: String, withinMs: Long = 3000): Boolean =
+        selfLaunched[pkg]?.let { android.os.SystemClock.elapsedRealtime() - it < withinMs } == true
+
     fun launch(context: Context, packageName: String) {
+        selfLaunched[packageName] = android.os.SystemClock.elapsedRealtime()
         val intent = launchIntent(context, packageName)
         if (intent != null) {
             intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
@@ -200,10 +208,23 @@ object AppRepository {
         prefix?.let { p -> Prefs.str(tileChoice.getValue(p)).takeIf { it.isNotBlank() && isInstalled(context, it) }?.let { return it } }
         tile.candidates.firstOrNull { isInstalled(context, it) }?.let { return it }
         val words = tileWords[prefix] ?: return null
-        return installedApps(context, includeHidden = true).firstOrNull { a ->
-            val hay = (a.label + " " + a.packageName).lowercase()
-            words.any { it in hay }
-        }?.packageName
+        return findByWords(context, prefix!!, words)
+    }
+
+    /** Navnesøk uten ikoner, husket i 5 minutter (brukes ved knappetrykk – må gå raskt). */
+    private val wordCache = java.util.concurrent.ConcurrentHashMap<String, Pair<Long, String?>>()
+    private fun findByWords(context: Context, key: String, words: List<String>): String? {
+        val now = android.os.SystemClock.elapsedRealtime()
+        wordCache[key]?.let { (t, pkg) -> if (now - t < 300_000) return pkg }
+        val pm = context.packageManager
+        val found = runCatching { pm.getInstalledApplications(0) }.getOrDefault(emptyList())
+            .firstOrNull { ai ->
+                if (ai.packageName == context.packageName) return@firstOrNull false
+                val hay = ((runCatching { pm.getApplicationLabel(ai).toString() }.getOrNull() ?: "") + " " + ai.packageName).lowercase()
+                words.any { it in hay } && launchIntent(context, ai.packageName) != null
+            }?.packageName
+        wordCache[key] = now to found
+        return found
     }
 
     /** Åpner appen for flisa, ellers fallback-intent. */

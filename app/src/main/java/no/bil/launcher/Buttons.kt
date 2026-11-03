@@ -81,39 +81,55 @@ fun PanelKey.defaultLong(): Action = when (this) {
 object Buttons {
     private fun prefs(c: Context) = c.getSharedPreferences("knapper", Context.MODE_PRIVATE)
 
+    /** Endres ved hver lagring, så Knapper-siden tegnes på nytt uten å nullstille rullingen. */
+    var version by androidx.compose.runtime.mutableIntStateOf(0)
+        private set
+    private fun changed() { version++ }
+
     fun action(c: Context, k: PanelKey): Action =
-        prefs(c).getString("action_${k.name}", null)?.let { n -> Action.entries.firstOrNull { it.name == n } } ?: k.default
-    fun setAction(c: Context, k: PanelKey, a: Action) = prefs(c).edit().putString("action_${k.name}", a.name).apply()
+        version.let { _ -> prefs(c) }.getString("action_${k.name}", null)?.let { n -> Action.entries.firstOrNull { it.name == n } } ?: k.default
+    fun setAction(c: Context, k: PanelKey, a: Action) { prefs(c).edit().putString("action_${k.name}", a.name).apply(); changed() }
     fun longAction(c: Context, k: PanelKey): Action =
-        prefs(c).getString("long_${k.name}", null)?.let { n -> Action.entries.firstOrNull { it.name == n } } ?: k.defaultLong()
-    fun setLongAction(c: Context, k: PanelKey, a: Action) = prefs(c).edit().putString("long_${k.name}", a.name).apply()
+        version.let { _ -> prefs(c) }.getString("long_${k.name}", null)?.let { n -> Action.entries.firstOrNull { it.name == n } } ?: k.defaultLong()
+    fun setLongAction(c: Context, k: PanelKey, a: Action) { prefs(c).edit().putString("long_${k.name}", a.name).apply(); changed() }
 
-    fun code(c: Context, k: PanelKey): Int = prefs(c).getInt("code_${k.name}", 0)
-    fun pkg(c: Context, k: PanelKey): String? = prefs(c).getString("pkg_${k.name}", null)
-    fun learnCode(c: Context, k: PanelKey, code: Int) =
-        prefs(c).edit().putInt("code_${k.name}", code).remove("pkg_${k.name}").apply()
-    fun learnPkg(c: Context, k: PanelKey, pkg: String) =
-        prefs(c).edit().putString("pkg_${k.name}", pkg).remove("code_${k.name}").apply()
+    /** Tastekoden knappen er lært med (-1 = ikke lært). */
+    fun code(c: Context, k: PanelKey): Int = version.let { _ -> prefs(c) }.getInt("code_${k.name}", -1)
+    fun pkg(c: Context, k: PanelKey): String? = version.let { _ -> prefs(c) }.getString("pkg_${k.name}", null)
+    fun learnCode(c: Context, k: PanelKey, code: Int) {
+        prefs(c).edit().putInt("code_${k.name}", code).remove("pkg_${k.name}").apply(); changed()
+    }
+    fun learnPkg(c: Context, k: PanelKey, pkg: String) {
+        prefs(c).edit().putString("pkg_${k.name}", pkg).remove("code_${k.name}").apply(); changed()
+    }
 
-    fun keyForCode(c: Context, code: Int) = PanelKey.entries.firstOrNull { code(c, it) == code }
+    /** Kode 0 (ukjent tast) og lavere teller ikke – ellers ville alle ukjente taster blitt tolket som en lært knapp. */
+    fun keyForCode(c: Context, code: Int) = if (code <= 0) null else PanelKey.entries.firstOrNull { code(c, it) == code }
     fun keyForPkg(c: Context, pkg: String) = PanelKey.entries.firstOrNull { pkg(c, it) == pkg }
 
-    /** BACK som sender vanlig tilbake-signal lar vi Android ta seg av selv. */
+    /**
+     * Skal T'OS ta knappen? «Ingenting (stereoen bestemmer)» på kort trykk betyr at stereoen får knappen helt,
+     * også langt trykk. BACK som sender vanlig tilbake-signal lar vi Android ta seg av selv.
+     */
     fun shouldIntercept(c: Context, k: PanelKey, code: Int): Boolean {
         val a = action(c, k)
+        if (a == Action.NONE) return false
         if (longAction(c, k) != Action.NONE) return true
-        return a != Action.NONE && !(a == Action.BACK && code == KeyEvent.KEYCODE_BACK)
+        return !(a == Action.BACK && code == KeyEvent.KEYCODE_BACK)
     }
 
     /** Pakkene en handling åpner – brukes for å ikke sende stereoen i ring. */
-    fun targets(c: Context, a: Action): List<String> = when (a) {
-        Action.HOME, Action.BT, Action.APPS, Action.RADIO_PAGE, Action.PHONE, Action.MAP_FULL, Action.CAR, Action.QUICK, Action.TUNING, Action.SETTINGS -> listOf(c.packageName)
-        Action.NAVI -> Tiles.byPrefix("Nav").candidates
-        Action.MUSIC -> Tiles.byPrefix("Mus").candidates
-        Action.RADIO -> Tiles.byPrefix("Rad").candidates
-        Action.CARPLAY -> Tiles.byPrefix("Car").candidates
-        Action.CAMERA -> Tiles.byPrefix("Rygg").candidates
-        else -> emptyList()
+    fun targets(c: Context, a: Action): List<String> {
+        fun tile(p: String) = Tiles.byPrefix(p).let { t -> t.candidates + listOfNotNull(AppRepository.tilePackage(c, t)) }
+        return when (a) {
+            Action.HOME, Action.BT, Action.APPS, Action.RADIO_PAGE, Action.PHONE, Action.MAP_FULL, Action.CAR, Action.QUICK, Action.TUNING, Action.SETTINGS -> listOf(c.packageName)
+            Action.NAVI -> tile("Nav") + listOf(Prefs.str("nav_app"))
+            Action.MUSIC -> tile("Mus")
+            Action.RADIO -> tile("Rad")
+            Action.CARPLAY -> tile("Car")
+            Action.CAMERA -> tile("Rygg")
+            else -> emptyList()
+        }
     }
 
     fun perform(c: Context, a: Action) {
@@ -197,6 +213,7 @@ object Learn {
     /** Knappen sendte en tastekode. */
     fun offerKey(c: Context, code: Int): Boolean {
         val k = target ?: return false
+        if (code <= 0) { message = "${k.label} sender ingen brukbar tastekode. Prøv knappen igjen, eller la stereoen bestemme."; return true }
         Buttons.learnCode(c, k, code)
         cancel("${k.label} er lært (sender tastekode $code).")
         return true

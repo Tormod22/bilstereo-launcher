@@ -20,6 +20,8 @@ concurrency:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    # Stopper ikke noe annet om GitHub Pages ikke er slått på (Settings → Pages → «GitHub Actions»)
+    continue-on-error: true
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
