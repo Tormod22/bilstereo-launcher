@@ -200,6 +200,11 @@ fun TuningScreen(onClose: () -> Unit) {
                         }
                     }
                     Spacer(Modifier.height(10.dp))
+                    when {
+                        Hub.gpsNoPermission -> Text("T'OS har ikke lov til å bruke posisjon – målingene trenger GPS. Slå på under Om stereoen → Førstegangsoppsett.", color = TextPrimary, fontSize = 14.sp)
+                        Hub.gpsCoarseOnly -> Text("Bare «omtrentlig posisjon» er tillatt – målingene blir feil. Velg «Nøyaktig» under Førstegangsoppsett.", color = TextPrimary, fontSize = 14.sp)
+                        Hub.gps == null || Hub.gps?.stale == true -> Text("Venter på GPS … (står bilen i garasje eller tunnel?)", color = TextMuted, fontSize = 14.sp)
+                    }
                     val a = Accel.armed
                     Text(
                         when {
@@ -214,7 +219,10 @@ fun TuningScreen(onClose: () -> Unit) {
 
                     // Resultat per trinn
                     val log = remember(Prefs.version) { TuneLog.all() }
-                    if (log.isNotEmpty()) {
+                    if (log.isEmpty()) {
+                        Section("Beste tid per trinn")
+                        Text("Ingen målinger ennå. Trykk «Mål» over – resultatet lagres sammen med trinnet på tuningboksen.", color = TextMuted, fontSize = 14.sp)
+                    } else {
                         Section("Beste tid per trinn")
                         Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(Card).padding(16.dp),
                             verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -231,7 +239,11 @@ fun TuningScreen(onClose: () -> Unit) {
                                 }
                             }
                             Spacer(Modifier.height(4.dp))
-                            Pill("Tøm loggen", Icons.Default.Delete) { TuneLog.clear() }
+                            var ask by remember { mutableStateOf(false) }
+                            LaunchedEffect(ask) { if (ask) { kotlinx.coroutines.delay(4000); ask = false } }
+                            Pill(if (ask) "Trykk igjen for å tømme" else "Tøm loggen", Icons.Default.Delete, strong = ask) {
+                                if (ask) { TuneLog.clear(); ask = false; Notify.show("Loggen er tømt") } else ask = true
+                            }
                         }
                     }
 
@@ -299,7 +311,9 @@ private fun EngineCard() {
                     (Engine.maxRail?.let { " · $it bar rail" } ?: ""),
                 color = TextMuted, fontSize = 13.sp, modifier = Modifier.weight(1f),
             )
-            Pill("Nullstill") { Engine.resetMax() }
+            var ask by remember { mutableStateOf(false) }
+            LaunchedEffect(ask) { if (ask) { kotlinx.coroutines.delay(4000); ask = false } }
+            Pill(if (ask) "Trykk igjen" else "Nullstill", strong = ask) { if (ask) { Engine.resetMax(); ask = false } else ask = true }
         }
         if ((Engine.coolant ?: 99) < 70) Text("Vent med måling til motoren er varm (over 70 °C).", color = TextMuted, fontSize = 13.sp)
     }
