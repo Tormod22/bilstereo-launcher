@@ -102,6 +102,7 @@ fun WifiPanel() {
                 if (secured && !eap) Field(pass, "Passord", Modifier.weight(1f), KeyboardType.Password) { pass = it } else Spacer(Modifier.weight(1f))
                 Pill("Koble til", strong = true) {
                     val wep = "WEP" in n.capabilities
+                    val wpa3 = "SAE" in n.capabilities && "PSK" !in n.capabilities   // bare WPA3 (ikke blandet WPA2/WPA3)
                     when {
                         eap -> { msg = "Dette nettet krever brukernavn – koble til i Android-innstillinger"; open = null; context.go(Intent(Settings.ACTION_WIFI_SETTINGS)) }
                         wep -> { msg = "«${n.SSID}» bruker gammel sikkerhet (WEP) som T'OS ikke kan koble til. Bruk Android-innstillingene."; open = null }
@@ -111,13 +112,13 @@ fun WifiPanel() {
                             // Android 11+: legges inn som brukerens eget nettverk og kobles til med én gang (ett «Lagre»-trykk)
                             val b = WifiNetworkSuggestion.Builder().setSsid(n.SSID)
                             if (owe) b.setIsEnhancedOpen(true)
-                            else if (secured) { if ("SAE" in n.capabilities && "PSK" !in n.capabilities) b.setWpa3Passphrase(pass) else b.setWpa2Passphrase(pass) }
+                            else if (secured) { if (wpa3) b.setWpa3Passphrase(pass) else b.setWpa2Passphrase(pass) }
                             val ok = context.go(Intent(Settings.ACTION_WIFI_ADD_NETWORKS)
                                 .putParcelableArrayListExtra(Settings.EXTRA_WIFI_NETWORK_LIST, arrayListOf(b.build())))
-                            msg = if (ok) "Trykk «Lagre» for å koble til «${n.SSID}»" else connectWifi(wm, n.SSID, pass.takeIf { secured }, false)
+                            msg = if (ok) "Trykk «Lagre» for å koble til «${n.SSID}»" else connectWifi(wm, n.SSID, pass.takeIf { secured }, wpa3, owe)
                             open = null
                         }
-                        else -> { msg = connectWifi(wm, n.SSID, pass.takeIf { secured }, "SAE" in n.capabilities && "PSK" !in n.capabilities); open = null }
+                        else -> { msg = connectWifi(wm, n.SSID, pass.takeIf { secured }, wpa3, owe); open = null }
                     }
                 }
             }
@@ -128,10 +129,12 @@ fun WifiPanel() {
 }
 
 @Suppress("DEPRECATION")
-private fun connectWifi(wm: WifiManager, ssid: String, pass: String?, wpa3: Boolean): String {
+private fun connectWifi(wm: WifiManager, ssid: String, pass: String?, wpa3: Boolean, owe: Boolean = false): String {
     return if (Build.VERSION.SDK_INT >= 29) {
         val b = WifiNetworkSuggestion.Builder().setSsid(ssid)
-        if (pass != null) { if (wpa3) b.setWpa3Passphrase(pass) else b.setWpa2Passphrase(pass) }
+        // «Forbedret åpent» nett (OWE) må merkes som det – som vanlig åpent nett kobler stereoen aldri til
+        if (owe) b.setIsEnhancedOpen(true)
+        else if (pass != null) { if (wpa3) b.setWpa3Passphrase(pass) else b.setWpa2Passphrase(pass) }
         val r = runCatching { wm.removeNetworkSuggestions(listOf(b.build())); wm.addNetworkSuggestions(listOf(b.build())) }.getOrDefault(-1)
         if (r == WifiManager.STATUS_NETWORK_SUGGESTIONS_SUCCESS)
             "«$ssid» er lagt til. Første gang: godkjenn varselet «Tillat foreslåtte Wi-Fi-nettverk». Stereoen kobler seg så til av seg selv."

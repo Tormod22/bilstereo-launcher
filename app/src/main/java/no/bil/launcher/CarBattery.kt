@@ -2,6 +2,8 @@ package no.bil.launcher
 
 import android.Manifest
 import android.annotation.SuppressLint
+import android.bluetooth.BluetoothAdapter
+import android.bluetooth.BluetoothDevice
 import android.bluetooth.BluetoothManager
 import android.bluetooth.BluetoothSocket
 import android.content.Context
@@ -9,6 +11,7 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.os.BatteryManager
 import android.os.Build
+import android.os.PowerManager
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -34,7 +37,7 @@ object CarBattery {
 
     private var obdVolt: Float? = null
     private var stereoVolt: Float? = null
-    private var socket: BluetoothSocket? = null
+    @Volatile private var socket: BluetoothSocket? = null
     private val SPP = UUID.fromString("00001101-0000-1000-8000-00805F9B34FB")
     private val names = listOf("OBD", "ELM", "V-LINK", "VLINK", "VGATE", "ICAR", "VEEPEAK", "KONNWEI")
 
@@ -57,13 +60,16 @@ object CarBattery {
         Hub.scope.launch { while (isActive) { stereoVolt = withContext(Dispatchers.IO) { readStereo(c) }; publish(); delay(10_000) } }
         Hub.scope.launch {
             while (isActive) {
-                if (enabled || Engine.watching) obdLoop(c)
+                // Ikke mens stereoen «sover» med skjermen av (bilen står): da får brikka sove, og bilbatteriet spares
+                if ((enabled || Engine.watching) && awake(c)) obdLoop(c)
                 // Vent inntil 60 s – men prøv straks igjen hvis Tuning-siden (motordata) åpnes
                 val wasWatching = Engine.watching
                 for (i in 0 until 60) { if (Engine.watching && !wasWatching) break; delay(1_000) }
             }
         }
     }
+
+    private fun awake(c: Context) = (c.getSystemService(Context.POWER_SERVICE) as? PowerManager)?.isInteractive != false
 
     private fun publish() {
         val o = obdVolt; val s = stereoVolt
@@ -101,14 +107,15 @@ object CarBattery {
         obdStatus = "Kobler til ${dev.name} …"
         val ok = withContext(Dispatchers.IO) {
             runCatching {
-                socket = dev.createRfcommSocketToServiceRecord(SPP).also { it.connect() }
+                socket = connect(adapter, dev)
                 listOf("ATZ", "ATE0", "ATL0", "ATS0", "ATSP0").forEach { cmd(it) }
                 true
             }.getOrDefault(false)
         }
         if (!ok) { obdStatus = "Fikk ikke kontakt med ${dev.name} (er tenningen på?)"; close(); return }
         obdStatus = "Tilkoblet ${dev.name}"
-        while (Hub.scope.isActive && (enabled || Engine.watching)) {
+        Engine.onConnect()
+        while (Hub.scope.isActive && (enabled || Engine.watching) && awake(c)) {
             val v = withContext(Dispatchers.IO) { runCatching { cmd("ATRV").filter { it.isDigit() || it == '.' }.toFloatOrNull() } }
             if (v.isFailure) { obdStatus = "Mistet kontakten med ${dev.name}"; break }
             obdVolt = v.getOrNull()?.takeIf { it in 5f..18f }
@@ -123,6 +130,24 @@ object CarBattery {
             }
         }
         close()
+        // Ikke la det stå «Tilkoblet» når kontakten er lukket (slått av, skjermen av e.l.)
+        if (obdStatus.startsWith("Tilkoblet")) obdStatus = "Ikke tilkoblet nå"
+    }
+
+    /**
+     * Kobler til brikka. Billige ELM327-kopier godtar ofte bare «usikker» tilkobling, så den prøves også.
+     * Søk etter enheter stoppes først (det gjør tilkoblingen treg eller hindrer den).
+     */
+    @SuppressLint("MissingPermission")
+    private fun connect(adapter: BluetoothAdapter, dev: BluetoothDevice): BluetoothSocket {
+        runCatching { adapter.cancelDiscovery() }
+        var last: Throwable? = null
+        for (secure in listOf(true, false)) {
+            val s = runCatching { if (secure) dev.createRfcommSocketToServiceRecord(SPP) else dev.createInsecureRfcommSocketToServiceRecord(SPP) }
+                .getOrElse { last = it; null } ?: continue
+            try { s.connect(); return s } catch (e: Exception) { last = e; runCatching { s.close() } }   // ikke la en halvåpen kontakt ligge
+        }
+        throw last ?: IllegalStateException("ingen kontakt")
     }
 
     private fun close() {
@@ -135,9 +160,11 @@ object CarBattery {
 
     private fun cmd(c: String, waitMs: Long = 3000): String {
         val s = socket ?: error("ingen kontakt")
+        val inp = s.inputStream
+        // Rester fra et svar som kom for sent (forrige kommando ga opp), ellers blandes det inn i dette svaret
+        while (inp.available() > 0) if (inp.read() < 0) break
         s.outputStream.write("$c\r".toByteArray()); s.outputStream.flush()
         val sb = StringBuilder(); val start = System.currentTimeMillis()
-        val inp = s.inputStream
         // Les bare det som har kommet – blir brikka stille (sover), henger ikke T'OS, men gir opp etter 3 s
         while (true) {
             if (System.currentTimeMillis() - start > waitMs) error("brikka svarer ikke")
@@ -163,51 +190,88 @@ object Engine {
     var railBar by mutableStateOf<Int?>(null)      // drivstofftrykk i rail, bar
     var maxBoost by mutableStateOf<Float?>(null)
     var maxRail by mutableStateOf<Int?>(null)
+    /** Brikka er tilkoblet, men bilens motorstyring svarer ikke (tenningen av e.l.). null = alt i orden. */
+    var problem by mutableStateOf<String?>(null)
     private var baroKpa = 101
-    private var first = true
+    private var baroKnown = false
+    // ELM327 leter etter bilens protokoll ved første spørsmål etter tilkobling (ATSP0) – det kan ta opptil 10 s
+    private var searching = true
     private val unsupported = mutableSetOf<String>()
+    private val misses = mutableMapOf<String, Int>()
 
-    fun clear() { rpm = null; coolant = null; boostBar = null; railBar = null }
+    fun clear() { rpm = null; coolant = null; boostBar = null; railBar = null; problem = null }
     fun resetMax() { maxBoost = null; maxRail = null }
 
-    /** Leser én runde. [ask] sender en kommando og venter på svar (ms). */
+    /** Ny tilkobling: alt bilen «ikke støttet» sist kan ha vært fordi den sov. Begynn på nytt. */
+    fun onConnect() { searching = true; unsupported.clear(); misses.clear(); baroKnown = false; baroKpa = 101 }
+
+    /** Én runde med svar (null = ukjent). */
+    internal data class Reading(val rpm: Int?, val coolant: Int?, val boost: Float?, val rail: Int?, val problem: String?)
+
+    /** Leser én runde og viser den. [ask] sender en kommando og venter på svar (ms). Kjøres på IO-tråden. */
     fun poll(ask: (String, Long) -> String) {
-        fun read(pid: String): List<Int>? {
-            if (pid in unsupported) return null
-            val r = runCatching { ask("01$pid", if (first) 10_000 else 2_000) }.getOrNull()
-            first = false
-            val b = parsePid(r ?: return null, pid)
-            if (b == null && r.contains("NO DATA", true)) unsupported += pid
-            return b
-        }
-        read("33")?.let { baroKpa = it[0].takeIf { v -> v in 60..110 } ?: baroKpa }
-        val r = read("0C"); val c = read("05"); val m = read("0B"); val f = read("23")
-        val boost = m?.let { ((it[0] - baroKpa) / 100f).coerceAtLeast(0f) }
-        val rail = f?.takeIf { it.size >= 2 }?.let { railFromBytes(it[0], it[1]) }
+        val x = read(ask)
         Hub.scope.launch {
-            rpm = r?.takeIf { it.size >= 2 }?.let { (it[0] * 256 + it[1]) / 4 }
-            coolant = c?.let { it[0] - 40 }
-            boostBar = boost; railBar = rail
-            if (boost != null && (maxBoost ?: 0f) < boost) maxBoost = boost
-            if (rail != null && (maxRail ?: 0) < rail) maxRail = rail
+            problem = x.problem
+            rpm = x.rpm; coolant = x.coolant; boostBar = x.boost; railBar = x.rail
+            if (x.boost != null && (maxBoost ?: 0f) < x.boost) maxBoost = x.boost
+            if (x.rail != null && (maxRail ?: 0) < x.rail) maxRail = x.rail
         }
     }
 
-    /** Rail-trykk (PID 23): (A·256+B)·10 kPa → bar. */
+    /** Selve spørringen (uten skjermoppdatering, så den kan testes). */
+    internal fun read(ask: (String, Long) -> String): Reading {
+        val noData = mutableListOf<String>()
+        var anyData = false
+        var noEcu = false
+        fun pid(pid: String): List<Int>? {
+            if (pid in unsupported || noEcu) return null           // svarer ikke bilen, spør ikke om resten i denne runden
+            val r = runCatching { ask("01$pid", if (searching) 10_000 else 2_000) }.getOrNull() ?: return null
+            val b = parsePid(r, pid)
+            when {
+                b != null -> { anyData = true; searching = false; misses.remove(pid) }
+                noEcuReply(r) -> noEcu = true
+                r.contains("NO DATA", true) -> noData += pid
+            }
+            return b
+        }
+        // Lufttrykket endrer seg lite: les det én gang per tilkobling
+        if (!baroKnown) pid("33")?.let { b -> b[0].takeIf { it in 60..110 }?.let { baroKpa = it; baroKnown = true } }
+        val r = pid("0C"); val c = pid("05"); val m = pid("0B")
+        // Rail-trykk: PID 23 (diesel). Støtter ikke bilen den, prøv 59 (absolutt rail-trykk, samme skala)
+        val f = pid("23") ?: if ("23" in unsupported) pid("59") else null
+        // «NO DATA» betyr «støttes ikke» bare når motorstyringen svarte på noe annet i samme runde (ellers sover den),
+        // og først etter 3 ganger på rad
+        if (anyData) noData.forEach { pid -> val n = (misses[pid] ?: 0) + 1; misses[pid] = n; if (n >= 3) unsupported += pid }
+        val prob = if (!anyData && (noEcu || noData.isNotEmpty())) "Bilen svarer ikke – er tenningen på?" else null
+        val boost = m?.let { ((it[0] - baroKpa) / 100f).coerceAtLeast(0f) }
+        val rail = f?.takeIf { it.size >= 2 }?.let { railFromBytes(it[0], it[1]) }
+        return Reading(r?.takeIf { it.size >= 2 }?.let { (it[0] * 256 + it[1]) / 4 }, c?.let { it[0] - 40 }, boost, rail, prob)
+    }
+
+    /** Rail-trykk (PID 23/59): (A·256+B)·10 kPa → bar. */
     internal fun railFromBytes(a: Int, b: Int) = (a * 256 + b) * 10 / 100
+
+    /** Svar som betyr at brikka ikke får kontakt med bilen (tenningen av, feil protokoll), ikke at PID-en mangler. */
+    internal fun noEcuReply(resp: String): Boolean {
+        val u = resp.uppercase()
+        return "UNABLE TO CONNECT" in u || "CAN ERROR" in u || "BUS ERROR" in u || "BUS BUSY" in u ||
+            ("BUS INIT" in u && "ERROR" in u) || Regex("""ERR\d\d""").containsMatchIn(u)
+    }
 
     /**
      * Finner databytene etter «41 <pid>» i svaret fra ELM327 (med eller uten mellomrom, flere linjer, «SEARCHING...»).
-     * Returnerer null hvis svaret ikke inneholder PID-en.
+     * Bare linjer som er rene sekstallsbytes godtas – feilmeldinger («NO DATA», «STOPPED», «?») og ekko gir null.
      */
     internal fun parsePid(resp: String, pid: String): List<Int>? {
-        val hex = resp.uppercase().lines().joinToString("") { line ->
-            line.substringAfter(':', line).filter { it.isDigit() || it in 'A'..'F' }   // «0: 41 0C …» (CAN med linjenummer)
+        val want = "41" + pid.uppercase()
+        for (raw in resp.uppercase().lines()) {
+            // «SEARCHING...41 0C …» på samme linje, og «0: 41 0C …» (CAN med linjenummer)
+            val line = raw.substringAfterLast("...").substringAfter(':').filterNot { it.isWhitespace() }
+            if (line.length < want.length + 2 || line.any { !(it.isDigit() || it in 'A'..'F') }) continue
+            if (!line.startsWith(want)) continue
+            return line.substring(want.length).chunked(2).filter { it.length == 2 }.map { it.toInt(16) }.take(4)
         }
-        val i = hex.indexOf("41" + pid.uppercase())
-        if (i < 0) return null
-        val data = hex.substring(i + 4)
-        val bytes = data.chunked(2).filter { it.length == 2 }.mapNotNull { it.toIntOrNull(16) }
-        return bytes.take(4).takeIf { it.isNotEmpty() }
+        return null
     }
 }

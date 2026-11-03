@@ -289,7 +289,7 @@ private fun TimeSettings() {
 private fun AboutSettings() {
     val context = LocalContext.current
     val v = remember { runCatching { context.packageManager.getPackageInfo(context.packageName, 0).versionName }.getOrNull() }
-    SettingRow("T'OS $v", Hub.update?.let { "Ny versjon ${it.versionName} er klar" } ?: "Du har siste versjon") { UpdateButton() }
+    SettingRow("T'OS $v", Hub.update?.let { "Ny versjon ${it.versionName} er klar" } ?: Updater.lastError?.let { "Fikk ikke sjekket: $it" } ?: "Du har siste versjon") { UpdateButton() }
     SettingRow("Stereo", "${Build.MANUFACTURER} ${Build.MODEL}")
     SettingRow("Android", "${Build.VERSION.RELEASE} (SDK ${Build.VERSION.SDK_INT})")
     SettingRow("Prosessor", "${Build.HARDWARE} · ${Runtime.getRuntime().availableProcessors()} kjerner · ${Hub.cpuTemp?.let { "$it °C" } ?: "temperatur ukjent"}")
@@ -363,7 +363,7 @@ private fun CarSettings() {
     PrefField("Neste EU-kontroll", "eu_date", "f.eks. 15.3.2027", KeyboardType.Number)
     PrefField("Neste service", "service_date", "f.eks. 1.6.2027", KeyboardType.Number)
     ToggleRow("Minn meg på dekkskift", "tire_remind", true, "Midten av oktober og slutten av mars")
-    SettingRow("Tuning og ytelse", "Tuningboks-app og 0–100-måling", onClick = { Nav.screen = Screen.TUNING }) { Chevron() }
+    SettingRow("Tuning og ytelse", "Tuningboks, 0–100-måling og motordata", onClick = { Nav.screen = Screen.TUNING }) { Chevron() }
     SettingRow("Bil og tur", "Turmåler, parkering og påminnelser", onClick = { Nav.screen = Screen.CAR }) { Chevron() }
 }
 

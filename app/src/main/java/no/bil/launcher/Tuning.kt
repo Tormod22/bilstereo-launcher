@@ -31,7 +31,7 @@ object Accel {
 
     var armed by mutableStateOf<Run?>(null)
     var running by mutableStateOf(false)
-    var elapsed by mutableStateOf(0f)
+    var elapsed by mutableFloatStateOf(0f)
     var result by mutableStateOf<String?>(null)
     private var startAt = 0L
     private var lastSpeed = 0
@@ -146,9 +146,18 @@ fun TuningScreen(onClose: () -> Unit) {
         pkg?.let { runCatching { context.packageManager.getApplicationLabel(context.packageManager.getApplicationInfo(it, 0)).toString() }.getOrNull() }
     }
 
-    DisposableEffect(Unit) {
-        Engine.watching = true
-        onDispose { Engine.watching = false }
+    // Motordata bare mens siden faktisk vises: dekker en annen app T'OS (Maps, Car link), stopper spørringene
+    val lifecycle = androidx.lifecycle.compose.LocalLifecycleOwner.current.lifecycle
+    DisposableEffect(lifecycle) {
+        val obs = androidx.lifecycle.LifecycleEventObserver { _, e ->
+            when (e) {
+                androidx.lifecycle.Lifecycle.Event.ON_START -> Engine.watching = true
+                androidx.lifecycle.Lifecycle.Event.ON_STOP -> Engine.watching = false
+                else -> Unit
+            }
+        }
+        lifecycle.addObserver(obs)   // spiller av ON_START med en gang hvis siden allerede vises
+        onDispose { lifecycle.removeObserver(obs); Engine.watching = false }
     }
 
     Box(Modifier.fillMaxSize()) {
@@ -275,6 +284,7 @@ private fun EngineCard() {
                 color = TextMuted, fontSize = 13.sp)
             return@Column
         }
+        Engine.problem?.let { Text(it, color = TextPrimary, fontSize = 14.sp) }
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             Gauge("Turtall", Engine.rpm?.let { "$it" }, "o/min", Modifier.weight(1f))
             Gauge("Ladetrykk", Engine.boostBar?.let { String.format(nb, "%.2f", it) }, "bar", Modifier.weight(1f))
