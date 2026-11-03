@@ -117,9 +117,12 @@ object Hub {
     }
 
     /** Kompassretning på norsk. */
-    fun compass(bearing: Float): String =
-        listOf("N", "NØ", "Ø", "SØ", "S", "SV", "V", "NV")[(((bearing % 360) + 360) % 360 / 45f + 0.5f).toInt() % 8]
+    fun compass(bearing: Float): String = compassName(bearing)
 }
+
+/** Kompassretning på norsk (egen funksjon så den kan testes uten Android). */
+fun compassName(bearing: Float): String =
+    listOf("N", "NØ", "Ø", "SØ", "S", "SV", "V", "NV")[(((bearing % 360) + 360) % 360 / 45f + 0.5f).toInt() % 8]
 
 /* ======================= Turmåler ======================= */
 
@@ -245,7 +248,8 @@ object SpeedLimit {
         return null
     }
 
-    private fun parse(s: String): Int? = when {
+    /** Tolker OSM sin «maxspeed» (f.eks. «80», «NO:urban», «50 km/h»). Testes i LogicTest. */
+    internal fun parse(s: String): Int? = when {
         s.isBlank() -> null
         s.equals("NO:urban", true) -> 50
         s.equals("NO:rural", true) -> 80

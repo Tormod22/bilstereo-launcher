@@ -43,6 +43,8 @@ android {
     }
     kotlinOptions { jvmTarget = "17" }
     buildFeatures { compose = true }
+    // Testene bruker Android-klasser bare indirekte; tomme svar i stedet for krasj
+    testOptions { unitTests.isReturnDefaultValues = true }
 }
 
 dependencies {
@@ -57,4 +59,5 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
     implementation("com.google.zxing:core:3.5.3")   // QR-kode for parkeringsplassen
     implementation("org.maplibre.gl:android-sdk:11.8.0")   // kart uten nett (PMTiles fra OpenStreetMap)
+    testImplementation("junit:junit:4.13.2")
 }
