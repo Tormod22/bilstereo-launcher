@@ -58,12 +58,20 @@ object OfflineMaps {
         return "Lastet ned ${SimpleDateFormat("d. MMM", Locale("nb", "NO")).format(Date(f.lastModified()))} · ${sizeMb(f.length())} MB"
     }
 
-    /** Hvor stort kartet er på GitHub (for å vise før nedlasting). Bare «HEAD» – laster ikke ned noe. */
+    /** Hvor stort kartet er på GitHub (for å vise før nedlasting). Henter bare 1 byte. */
     fun checkRemote() {
         Hub.scope.launch {
             remoteBytes = withContext(Dispatchers.IO) {
-                runCatching { Updater.open("$BASE/$REGION.pmtiles", "HEAD").let { c -> (if (c.responseCode == 200) c.contentLengthLong else -1L).also { c.disconnect() } } }
-                    .getOrNull()?.takeIf { it > 0 }
+                // GitHub sine nedlastingslenker avviser HEAD (401) – be om 1 byte og les totalen fra Content-Range
+                runCatching {
+                    val c = Updater.open("$BASE/$REGION.pmtiles", headers = mapOf("Range" to "bytes=0-0"))
+                    val total = when (c.responseCode) {
+                        206 -> c.getHeaderField("Content-Range")?.substringAfter('/')?.toLongOrNull() ?: -1L
+                        200 -> c.contentLengthLong
+                        else -> -1L
+                    }
+                    c.disconnect(); total
+                }.getOrNull()?.takeIf { it > 0 }
             }
         }
     }

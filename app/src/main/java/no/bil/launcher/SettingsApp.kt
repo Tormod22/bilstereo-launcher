@@ -384,6 +384,16 @@ private fun BackupSettings() {
     }
     SettingRow("Lagre innstillinger til fil", "Velg Google Drive for å ha dem trygt", onClick = { exportFile.launch("tos-innstillinger.json") }) { Chevron() }
     SettingRow("Hent innstillinger fra fil", onClick = { importFile.launch(arrayOf("application/json", "text/plain", "*/*")) }) { Chevron() }
+    if (SafeMode.on) SettingRow("Sikker modus er på", "T'OS krasjet flere ganger og startet uten kart uten nett, bilbilde og oppstartsmusikk. Send feilrapporten under, og slå av når feilen er rettet.") {
+        Pill("Slå av", strong = true) { SafeMode.turnOff(context) }
+    }
+    SettingRow("Send oppsettrapport", "Apper, knappekoder og tillatelser på denne stereoen – lim inn i Claude, så tilpasses T'OS", onClick = {
+        Hub.scope.launch {
+            val text = withContext(Dispatchers.IO) { SetupReport.build(context) }
+            val i = Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_SUBJECT, "T'OS oppsettrapport").putExtra(Intent.EXTRA_TEXT, text)
+            context.open(Intent.createChooser(i, "Send oppsettrapport"))
+        }
+    }) { Chevron() }
     SettingRow("Del feilrapport", "Send til deg selv og lim inn i Claude", onClick = {
         Hub.scope.launch {
             val text = withContext(Dispatchers.IO) { CrashLog.report(context) }

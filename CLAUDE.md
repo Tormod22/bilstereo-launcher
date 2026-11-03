@@ -17,7 +17,7 @@ Snakk norsk med brukeren. Han er ikke utvikler – forklar enkelt, ikke bruk fag
 - Løsningen han godkjente: **tre ting** – (1) bilkort med klokke, stort bilbilde og fart som stort tall, (2) ekte kart, (3) én rad nederst: musikk/telefon/apper. Ingen kalender, ingen vær.
 - Kalkulator skal være skjult i app-skuffen (`HiddenApps` i `Apps.kt`).
 
-## Nåværende tilstand (v4.2)
+## Nåværende tilstand (v4.3)
 - `MainActivity.kt`: Compose-UI med de tre tingene + app-skuff + oppdateringsknapp. Skjermvalg via `Nav.screen` (DASH/APPS/BT/KEYS).
 - v3.0 «stor oppdatering» – alle 50 punktene i `docs/IDEER.md` (se Begrensninger der). Nye filer:
   `Prefs.kt` (TosApp, innstillinger m/ Compose-reaktivitet via Prefs.version, sikkerhetskopi JSON, CrashLog),
@@ -30,6 +30,10 @@ Snakk norsk med brukeren. Han er ikke utvikler – forklar enkelt, ikke bruk fag
   Wi-Fi/Bluetooth-paring/equalizer inne i T'OS (`SettingsExtra.kt`), førstegangsoppsett (Screen.SETUP), fartsjustering.
   Play Protect blokkerer installasjon fra Drive pga. tilgjengelighet + varseltilgang – brukeren må skru av Play Protect midlertidig
   eller bruke ADB. Lokale bygg i denne sesjonen ble signert med den faste nøkkelen (fra scratchpad, ikke repo).
+  v4.3: SafeMode (3 krasj på 3 min → uten MapLibre/bilbilde/oppstartsmusikk), SetupReport («Send oppsettrapport»
+  i Innstillinger → Sikkerhetskopi og hjelp: pakker, knappekoder, tillatelser – be brukeren sende denne!), build.yml uten
+  setup-android (feilet på «tools»), kartstørrelse via Range 0-0 (GitHub-CDN gir 401 på HEAD). PR #1 er flettet 3. nov;
+  «kart»-release finnes (rogaland.pmtiles 178,7 MB).
   v4.2: full gjennomgang (3 agenter, ~60 funn) rettet: NetRadio-krasj, ikon-LRU per pakke + async, pakkesøk på IO,
   knappekode 0/-1, «Ingenting» gir knappen tilbake til stereoen, ingen omdirigering fra apper T'OS selv åpnet
   (AppRepository.launchedByUs), keep_home bare på selve HOME-aktiviteten, BACK på forsiden gjør ingenting,
@@ -63,7 +67,7 @@ Snakk norsk med brukeren. Han er ikke utvikler – forklar enkelt, ikke bruk fag
 - Bilbilde: legges i `app/src/main/res/drawable/car_png.png` – koden finner den via `getIdentifier("car_png")`. Et bilde er generert i Canva (svart Avensis forfra på svart bakgrunn): https://www.canva.com/M/MAHZyi7AvB4 – brukeren må laste det ned selv og legge det inn.
 
 ## Oppdatering / signering
-- Updater forutsetter release «latest» (lages av build.yml på push til main). Per 2. nov finnes ingen release, og main er bare «Initial commit».
+- Updater forutsetter release «latest» (lages av build.yml på push til main). Første bygg på main (3. nov) feilet i setup-android – rettet i v4.3.
 - Signering: build.yml leser secrets TOS_KEYSTORE_BASE64 + TOS_KEYSTORE_PASSWORD (alias «tos») og feiler uten dem.
   Nøkkelen må ALDRI committes (forsøk på det ble stoppet som credential leakage). Brukeren har fått nøkkelen som tekstfil
   (tos-hemmeligheter.txt) og skal ta vare på den. APK-er fra 3.5–4.2 er signert med denne nøkkelen (lokalt i scratchpad).
