@@ -55,7 +55,13 @@ object Prefs {
                 is Long -> putLong(k, v)
             }
         }.apply()
-        version++
+        bump()
+    }
+
+    private val main by lazy { android.os.Handler(android.os.Looper.getMainLooper()) }
+    /** Skjermene tegnes på nytt. Skjer alltid på hovedtråden (lagring fra en bakgrunnstråd kunne ellers forstyrre tegningen). */
+    private fun bump() {
+        if (android.os.Looper.myLooper() == android.os.Looper.getMainLooper()) version++ else main.post { version++ }
     }
 
     /** Lagre uten å tegne skjermen på nytt (brukes for ting som skrives ofte, som posisjon). */
@@ -67,12 +73,13 @@ object Prefs {
                 is Float -> sp.contains(k) && sp.getFloat(k, 0f) == v
                 is Long -> sp.contains(k) && sp.getLong(k, 0L) == v
                 is Int -> sp.contains(k) && sp.getInt(k, 0) == v
+                is Boolean -> sp.contains(k) && sp.getBoolean(k, false) == v
                 else -> false
             }
         }
         if (same) return
         sp.edit().apply {
-            when (v) { is String -> putString(k, v); is Float -> putFloat(k, v); is Long -> putLong(k, v); is Int -> putInt(k, v) }
+            when (v) { is String -> putString(k, v); is Float -> putFloat(k, v); is Long -> putLong(k, v); is Int -> putInt(k, v); is Boolean -> putBoolean(k, v) }
         }.apply()
     }
 
@@ -83,11 +90,14 @@ object Prefs {
         for (name in listOf("tos", "knapper")) {
             val o = JSONObject()
             c.getSharedPreferences(name, Context.MODE_PRIVATE).all.forEach { (k, v) ->
-                o.put(k, JSONObject().put("t", v?.javaClass?.simpleName ?: "null").put("v", v))
+                // Ugyldige tall (NaN/uendelig) kan ikke lagres i fila – hopp over dem i stedet for at hele kopien feiler
+                if (!backupExportable(v)) return@forEach
+                runCatching { o.put(k, JSONObject().put("t", v?.javaClass?.simpleName ?: "null").put("v", v)) }
             }
             root.put(name, o)
         }
         root.put("laget", SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.US).format(Date()))
+        root.put("versjon", runCatching { c.packageManager.getPackageInfo(c.packageName, 0).versionName }.getOrNull() ?: "?")
         return root.toString(2)
     }
 
@@ -131,7 +141,7 @@ object Prefs {
                 e.apply()
             }
         }.isSuccess
-        version++
+        bump()
         Buttons.reload()
         return ok
     }
@@ -151,10 +161,28 @@ internal fun backupValue(t: String, v: Any?): Any? = when (t) {
     else -> null
 }
 
+/** Kan verdien lagres i sikkerhetskopien? (Sett med tekster o.l. og NaN/uendelig kan ikke.) Testes i ServiceLogicTest2. */
+internal fun backupExportable(v: Any?): Boolean = when (v) {
+    is Float -> v.isFinite()
+    is Double -> v.isFinite()
+    is String, is Boolean, is Int, is Long -> true
+    else -> false
+}
+
 /** Ny verdi kan bare erstatte en lagret verdi av samme type (eller lagres der ingenting finnes). */
 internal fun backupTypeFits(existing: Any?, new: Any): Boolean = existing == null || existing.javaClass == new.javaClass
 
 /* ---------- Feillogg: krasj lagres, og kan deles fra Innstillinger ---------- */
+
+/**
+ * Ny krasj øverst, de forrige under, men fila holdes liten (høyst [max] tegn – en enkelt lang feil kortes ned).
+ * Testes i ServiceLogicTest2.
+ */
+internal fun crashLogAppend(old: String, entry: String, max: Int = 30_000): String {
+    val sep = "\n\n===== Eldre krasj =====\n"
+    val head = entry.take(max / 2)
+    return if (old.isBlank()) head else (head + sep + old).take(max)
+}
 
 object CrashLog {
     private fun file(c: Context) = File(c.filesDir, "krasj.txt")
@@ -162,10 +190,12 @@ object CrashLog {
     fun install(c: Context) {
         val prev = Thread.getDefaultUncaughtExceptionHandler()
         Thread.setDefaultUncaughtExceptionHandler { t, e ->
+            // Telleren for sikker modus først – den må lagres selv om loggfila ikke kan skrives
+            runCatching { SafeMode.recordCrash(c) }
             runCatching {
                 val sw = StringWriter(); e.printStackTrace(PrintWriter(sw))
-                file(c).writeText("${Date()}\n${t.name}\n$sw")
-                SafeMode.recordCrash(c)
+                val old = file(c).takeIf { it.exists() }?.readText().orEmpty()
+                file(c).writeText(crashLogAppend(old, "${Date()}\n${t.name}\n$sw"))
             }
             prev?.uncaughtException(t, e)
         }
@@ -198,6 +228,12 @@ object CrashLog {
  * uten oppstartsmusikk (det som er mest sannsynlig å krasje). Forsiden sier fra, og du kan sende feilrapport.
  * Etter 2 minutter uten krasj nullstilles telleren. Sikker modus slås av med én knapp.
  */
+/**
+ * Krasjet det for under 3 minutter siden? Stereoens klokke kan hoppe (stilles fra GPS/nett etter oppstart):
+ * en krasj «i framtiden» teller ikke, ellers kunne sikker modus slått seg på uten grunn. Testes i ServiceLogicTest2.
+ */
+internal fun recentCrash(now: Long, at: Long): Boolean = at <= now && now - at < 180_000
+
 object SafeMode {
     private fun sp(c: Context) = c.getSharedPreferences("sikker", Context.MODE_PRIVATE)
     var on by androidx.compose.runtime.mutableStateOf(false)
@@ -205,14 +241,14 @@ object SafeMode {
 
     fun recordCrash(c: Context) {
         val now = System.currentTimeMillis()
-        val times = (sp(c).getString("t", "") ?: "").split(",").mapNotNull { it.toLongOrNull() }.filter { now - it < 180_000 } + now
+        val times = (sp(c).getString("t", "") ?: "").split(",").mapNotNull { it.toLongOrNull() }.filter { recentCrash(now, it) } + now
         // commit (ikke apply): prosessen dør rett etter
         sp(c).edit().putString("t", times.joinToString(",")).commit()
     }
 
     fun check(c: Context) {
         val now = System.currentTimeMillis()
-        val recent = (sp(c).getString("t", "") ?: "").split(",").mapNotNull { it.toLongOrNull() }.count { now - it < 180_000 }
+        val recent = (sp(c).getString("t", "") ?: "").split(",").mapNotNull { it.toLongOrNull() }.count { recentCrash(now, it) }
         on = sp(c).getBoolean("on", false) || recent >= 3
         if (on) sp(c).edit().putBoolean("on", true).apply()
         // Har T'OS gått 2 minutter uten krasj, er løkka brutt
@@ -257,6 +293,33 @@ object SetupReport {
         }
         appendLine("Musikk som spiller nå: ${NowPlaying.pkg} (${NowPlaying.title})")
         appendLine("Radio-MCU (szchoiceway): ${HwRadio.hasMcu(c)}")
+        // Alle mediaøkter (hvilken app T'OS styrer når flere spillere er åpne)
+        appendLine("Mediaøkter: " + runCatching {
+            (c.getSystemService(Context.MEDIA_SESSION_SERVICE) as android.media.session.MediaSessionManager)
+                .getActiveSessions(android.content.ComponentName(c, MediaListener::class.java))
+                .joinToString { "${it.packageName}(${it.playbackState?.state})" }
+        }.getOrDefault("(krever varseltilgang)"))
+        appendLine("Lydmodus: ${runCatching { (c.getSystemService(Context.AUDIO_SERVICE) as android.media.AudioManager).mode }.getOrNull()} (0 = vanlig, 2/3 = samtale)")
+        appendLine()
+        appendLine("--- GPS ---")
+        val lm = c.getSystemService(Context.LOCATION_SERVICE) as? android.location.LocationManager
+        appendLine("GPS på: ${runCatching { lm?.isProviderEnabled(android.location.LocationManager.GPS_PROVIDER) }.getOrNull()}, " +
+            "nettverk: ${runCatching { lm?.isProviderEnabled(android.location.LocationManager.NETWORK_PROVIDER) }.getOrNull()}")
+        appendLine("Kun omtrentlig posisjon: ${Hub.gpsCoarseOnly}, ingen tillatelse: ${Hub.gpsNoPermission}")
+        val g = Hub.gps
+        appendLine("Siste måling: " + (g?.let { "fart=${it.speed} gammel=${it.stale} har fart=${it.hasSpeed}" } ?: "ingen"))
+        appendLine()
+        appendLine("--- Bil ---")
+        appendLine("OBD2: ${CarBattery.obdStatus}")
+        appendLine("Batteri: ${CarBattery.volt?.let { "%.1f V".format(Locale.US, it) } ?: "ukjent"} fra ${CarBattery.source}")
+        appendLine()
+        appendLine("--- Valg ---")
+        listOf("keep_home", "carplay_auto").forEach { appendLine("$it: ${Prefs.bool(it, it == "keep_home")}") }
+        listOf("music_pkg", "carplay_pkg", "radio_pkg", "phone_pkg", "camera_pkg", "btmusic_pkg", "nav_app", "last_app", "last_player")
+            .forEach { appendLine("$it: ${Prefs.str(it)}") }
+        val pw = c.getSystemService(Context.POWER_SERVICE) as? android.os.PowerManager
+        appendLine("Unntatt batterisparing: ${runCatching { pw?.isIgnoringBatteryOptimizations(c.packageName) }.getOrNull()}")
+        appendLine("Siste krasj: ${runCatching { File(c.filesDir, "krasj.txt").takeIf { it.exists() }?.useLines { l -> l.take(4).joinToString(" | ") } }.getOrNull() ?: "ingen"}")
         appendLine()
         appendLine("--- Alle installerte pakker ---")
         runCatching { pm.getInstalledApplications(0) }.getOrDefault(emptyList())
@@ -265,7 +328,9 @@ object SetupReport {
                 val label = runCatching { pm.getApplicationLabel(ai).toString() }.getOrDefault("")
                 val sys = if ((ai.flags and android.content.pm.ApplicationInfo.FLAG_SYSTEM) != 0) " [system]" else ""
                 val start = if (AppRepository.launchIntent(c, ai.packageName) != null) " [kan åpnes]" else ""
-                appendLine("${ai.packageName} – $label$sys$start")
+                // Versjonen hjelper med å finne riktige kommandoer for stereoens egne apper (radio, CarPlay …)
+                val ver = runCatching { pm.getPackageInfo(ai.packageName, 0).versionName }.getOrNull()?.let { " v$it" } ?: ""
+                appendLine("${ai.packageName} – $label$ver$sys$start")
             }
     }
 }
