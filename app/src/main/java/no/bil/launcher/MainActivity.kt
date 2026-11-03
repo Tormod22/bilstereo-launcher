@@ -134,11 +134,14 @@ class MainActivity : ComponentActivity() {
     }
 
     /** Skjuler Androids status- og navigasjonslinje. Et sveip fra kanten viser dem et øyeblikk. */
-    private fun hideSystemBars() {
+    internal fun hideSystemBars() {
         if (!Prefs.bool("hide_system_bars", true)) {
+            // Linjene vises: T'OS legger seg mellom dem i stedet for under dem
+            WindowCompat.setDecorFitsSystemWindows(window, true)
             WindowInsetsControllerCompat(window, window.decorView).show(WindowInsetsCompat.Type.systemBars())
             return
         }
+        WindowCompat.setDecorFitsSystemWindows(window, false)
         WindowInsetsControllerCompat(window, window.decorView).apply {
             systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
             hide(WindowInsetsCompat.Type.systemBars())
@@ -239,13 +242,26 @@ fun Root() {
                 val v = am.getStreamVolume(AudioManager.STREAM_MUSIC)
                 if (v != last) {
                     last = v; Ui.volume = v
-                    // Hurtigpanelet har sin egen volumglider – ikke legg vinduet oppå den
-                    if (!Nav.quick) VolumeUi.show(v, max)
+                    // Én kilde: med knappestyringen på viser HwVolume linja (se under). Egne glidere (markOwnChange)
+                    // og hurtigpanelet (har sin egen volumglider) gir ikke vinduet.
+                    if (!Nav.quick && !HwVolume.ownRecently() && !(KeyService.instance != null && HwVolume.enabled)) VolumeUi.show(v, max)
                 }
             }
         }
         context.contentResolver.registerContentObserver(Settings.System.CONTENT_URI, true, obs)
         onDispose { context.contentResolver.unregisterContentObserver(obs) }
+    }
+
+    // «Skjul stereoens statuslinje» virker med én gang
+    val hideBars = Prefs.bool("hide_system_bars", true)
+    LaunchedEffect(hideBars) { (context as? MainActivity)?.hideSystemBars() }
+
+    // Volum fra knappestyringen (volumknapper, volumhjul via MCU): samme T'OS-vindu når T'OS er framme
+    LaunchedEffect(HwVolume.shownAt) {
+        if (HwVolume.shownAt == 0L) return@LaunchedEffect
+        val lvl = if (HwVolume.muted) 0 else HwVolume.level
+        if (HwVolume.stream == AudioManager.STREAM_MUSIC) Ui.volume = HwVolume.level
+        if (Notify.appVisible && !Nav.quick) VolumeUi.show(lvl, HwVolume.max)
     }
 
     // Bluetooth-ikonet i statuslinja (leses i bakgrunnen, bare mens T'OS vises)
@@ -332,7 +348,28 @@ private fun CallBanner(name: String, modifier: Modifier) {
         Icon(Icons.Default.Call, null, tint = Bg, modifier = Modifier.size(28.dp))
         Text("$name ringer", color = Bg, fontSize = 22.sp, fontWeight = FontWeight.Medium, maxLines = 1,
             overflow = TextOverflow.Ellipsis, modifier = Modifier.widthIn(max = 460.dp))
-        Text("Trykk for å svare", color = Bg.copy(alpha = 0.6f), fontSize = 15.sp)
+        if (Call.canAnswer) {
+            // Svar/avvis rett her, så telefonappen til stereoen ikke må vises
+            CallButton("Avvis", Icons.Default.CallEnd, filled = false) {
+                if (!Call.decline()) Notify.show("Fikk ikke avvist her – avvis på telefonen")
+            }
+            CallButton("Svar", Icons.Default.Call, filled = true) { Call.answer() }
+        } else Text("Trykk for å svare", color = Bg.copy(alpha = 0.6f), fontSize = 15.sp)
+    }
+}
+
+/** Knapp i samtalelinja (lys bakgrunn): fylt = mørk knapp, ellers mørk kant. Minst 56 dp høy. */
+@Composable
+private fun CallButton(label: String, icon: ImageVector, filled: Boolean, onClick: () -> Unit) {
+    val shape = RoundedCornerShape(28.dp)
+    Row(
+        Modifier.heightIn(min = 56.dp).clip(shape)
+            .then(if (filled) Modifier.background(Bg) else Modifier.border(2.dp, Bg.copy(alpha = 0.5f), shape))
+            .clickable(onClick = onClick).padding(horizontal = 22.dp),
+        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Icon(icon, null, tint = if (filled) TextPrimary else Bg, modifier = Modifier.size(22.dp))
+        Text(label, color = if (filled) TextPrimary else Bg, fontSize = 18.sp, fontWeight = FontWeight.Medium)
     }
 }
 
@@ -859,7 +896,7 @@ fun PillButton(icon: ImageVector, label: String, onClick: () -> Unit) = Pill(lab
 fun AppDrawer(onClose: () -> Unit) {
     val context = LocalContext.current
     var loaded by remember { mutableStateOf(false) }
-    val apps by produceState(initialValue = emptyList<AppEntry>(), Prefs.str("hidden_apps")) {
+    val apps by produceState(initialValue = emptyList<AppEntry>(), Prefs.str("hidden_apps"), Prefs.bool("show_system_apps")) {
         value = withContext(Dispatchers.IO) { AppRepository.installedApps(context) }; loaded = true
     }
 

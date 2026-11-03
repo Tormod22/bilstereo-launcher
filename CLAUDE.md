@@ -17,7 +17,7 @@ Snakk norsk med brukeren. Han er ikke utvikler – forklar enkelt, ikke bruk fag
 - Løsningen han godkjente: **tre ting** – (1) bilkort med klokke, stort bilbilde og fart som stort tall, (2) ekte kart, (3) én rad nederst: musikk/telefon/apper. Ingen kalender, ingen vær.
 - Kalkulator skal være skjult i app-skuffen (`HiddenApps` i `Apps.kt`).
 
-## Nåværende tilstand (v4.7)
+## Nåværende tilstand (v4.8)
 - `MainActivity.kt`: Compose-UI med de tre tingene + app-skuff + oppdateringsknapp. Skjermvalg via `Nav.screen` (DASH/APPS/BT/KEYS).
 - v3.0 «stor oppdatering» – alle 50 punktene i `docs/IDEER.md` (se Begrensninger der). Nye filer:
   `Prefs.kt` (TosApp, innstillinger m/ Compose-reaktivitet via Prefs.version, sikkerhetskopi JSON, CrashLog),
@@ -35,6 +35,28 @@ Snakk norsk med brukeren. Han er ikke utvikler – forklar enkelt, ikke bruk fag
   CI-status 3. nov: bygg #2 stoppet på «Sett opp fast signatur» = secrets mangler (brukeren må legge dem inn).
   Steget tåler nå mellomrom/linjeskift og sjekker nøkkel+passord med keytool (testet lokalt med ekte verdier).
   GitHub Pages er ikke slått på (testsiden gir 404) – valgfritt.
+  v4.8: «T'OS er hele brukerflaten» – stereoens originale UI skal ikke dukke opp (4 parallelle grener, flettet og koblet sammen).
+  UI-skall (`TosUi.kt`, `Keyboard.kt`): egen statuslinje (TosStatusBar), eget tastatur (alle tekstfelt via `Field`),
+  egne meldinger (`Notify`/NoticeHost i stedet for Toast), eget volumvindu (VolumeUi/VolumeBar), stereoens status-/navigasjonslinje
+  skjult (Prefs «hide_system_bars», standard på; brytes av/på live i Innstillinger → Skjerm). Volum: én kilde – med knappestyringen på
+  viser Root `HwVolume` (shownAt), ellers ContentObserver; alle T'OS-glidere kaller `HwVolume.markOwnChange()` og holder Ui.volume.
+  Tjenester: radiomotor (`HwRadio.powerOn/powerOff/openApp`, radio-appen startes bak svart teppe om nødvendig, «radio_engine»),
+  volumknappene fanges av KeyService (`HwVolume`, «tos_volume»), `TosOverlay` (volum/meldinger/teppe over andre apper),
+  skall-omdirigering med `RedirectLimiter`, stereoens radio-app skjules («hide_stock_radio»), systemapper skjult i app-lista
+  («show_system_apps», app-skuffen leser lista på nytt når den endres). Musikksiden har kildevalg (`Media.sources/selectSource`:
+  musikkapp, Bluetooth, FM-radio, nettradio). Radio-siden: Start radio/Stopp; «Åpne original radio-app» bare som liten reserve nederst.
+  Telefon: `TosInCallService` + `CallActivity` (CallScreen.kt) + `DialerActivity` + `Phone.kt` (kontakter, siste anrop, favoritter);
+  PhoneCallBanner i Root; når T'OS ikke er telefon-app har CallBanner Svar/Avvis (`Call.answer/decline`) hvis varselet har knappene.
+  Innstillinger: egne sider i T'OS (Wi-Fi, Bluetooth, lyd, skjerm, apper, lagring, tid, om), stille selvoppdatering via
+  PackageInstaller-økt + `UpdateReceiver` (første gang kan Android be om «Installer» én gang), ADB-oppsett i `docs/ADB-OPPSETT.md`
+  + `docs/tos-oppsett.bat`, `LocalBackup` (Backup.kt, sikkerhetskopi i T'OS-mappa). Nye brytere: «Volum i T'OS-stil» (Lyd),
+  «Skjul stereoens statuslinje» (Skjerm), «FM-radio i bakgrunnen (radiomotor)» + «Skjul stereoens radio-app» (Musikk og oppstart).
+  UUNNGÅELIG systemvisning (Android krever det): tillatelsesdialoger (posisjon, Bluetooth, telefon, varseltilgang, tilgjengelighet,
+  «Vis over andre apper», skrive systeminnstillinger, ukjente kilder), slå på Bluetooth / parekode, avinstaller-bekreftelse,
+  første installasjon/oppdatering hvis Android krever bekreftelse, «Velg startskjerm», CarPlay/Car link, ryggekamera, Androids
+  egne innstillinger under Om stereoen → Avansert / «Avansert (Android)» per app, og stereoens telefon-/radio-app bare som reserve
+  (ingen telefon T'OS kan ringe med / «Åpne original radio-app»). Uten knappestyringen kan stereoen fortsatt vise eget volumpanel.
+  Tester totalt 96. Alt UVERIFISERT på enheten.
   v4.7: runde 2 «finn 50 feil/mangler og rett» → 59 rettet (3 agenter/worktrees). UI: 48 dp trykkflater, contentDescription,
   bekreftelse før sletting/nullstilling, kartskala fast per flis, skjermsparer ikke under navigasjon, NaviPopup følger palett.
   Tjenester: lang-trykk/FLAG_CANCELED/ACTION_MULTIPLE, samtale-taster går til telefonen (passToCall), launchedByUs 8 s +
@@ -89,8 +111,8 @@ Snakk norsk med brukeren. Han er ikke utvikler – forklar enkelt, ikke bruk fag
   «Lær»-funksjon: lærer enten tastekoden knappen sender, eller hvilken app stereoen åpner (da omdirigerer tjenesten). Krever at tjenesten «T'OS knapper» er slått på under Tilgjengelighet. Omdirigering hoppes over når AudioManager.mode != NORMAL (samtale).
   UVERIFISERT på enheten: om knappene sender tastekoder eller åpner apper. Be brukeren lære knappene og si hva Knapper-siden viser (kode/pakkenavn).
 - `Data.kt`: GPS-fart/posisjon (LocationManager), ekte kartfliser fra Esri World Dark Gray Base (gratis, ingen nøkkel; CARTO krever nøkkel nå), sentrert på posisjonen og dempet med MapDim, mediaknapper via AudioManager.dispatchMediaKeyEvent.
-- `Updater.kt`: sjekker `https://github.com/Tormod22/bilstereo-launcher/releases/download/latest/version.json`, laster ned `bilstereo.apk` og starter installasjon via FileProvider. Repoet må være OFFENTLIG for at dette virker.
-- `.github/workflows/build.yml`: bygger debug-APK på push til main og publiserer som release med tag `latest` (bilstereo.apk først, version.json sist). versionCode = 1000 + GITHUB_RUN_NUMBER settes automatisk; bump bare versionName (og lokal versionCode) i `app/build.gradle.kts`.
+- `Updater.kt`: sjekker `https://github.com/Tormod22/bilstereo-launcher/releases/download/latest/version.json`, laster ned `bilstereo.apk` og installerer via PackageInstaller-økt (svar i `UpdateReceiver`; reserve: FileProvider + Androids installasjonsbilde). Repoet må være OFFENTLIG for at dette virker.
+- `.github/workflows/build.yml`: bygger signert RELEASE-APK (assembleRelease → bilstereo.apk) på push til main og publiserer som release med tag `latest` (bilstereo.apk først, version.json sist). versionCode = 1000 + GITHUB_RUN_NUMBER settes automatisk; bump bare versionName (og lokal versionCode) i `app/build.gradle.kts`.
 - `preview/index.html`: nettleserkopi av startskjermen for å teste utseendet (samme farger/mål/kart). Holdes i takt med `MainActivity.kt`. Publiseres til GitHub Pages av `.github/workflows/preview.yml`.
 - Bilbilde: legges i `app/src/main/res/drawable/car_png.png` – koden finner den via `getIdentifier("car_png")`. Et bilde er generert i Canva (svart Avensis forfra på svart bakgrunn): https://www.canva.com/M/MAHZyi7AvB4 – brukeren må laste det ned selv og legge det inn.
 

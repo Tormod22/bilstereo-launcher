@@ -21,6 +21,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.*
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Slider
@@ -53,14 +54,14 @@ import java.util.Locale
 enum class SetCat(val label: String, val icon: ImageVector, val group: String, val words: String) {
     NET("Wi-Fi og internett", Icons.Default.Wifi, "Stereoen", "wifi wlan nett internett hotspot iphone passord"),
     BT("Bluetooth", Icons.Default.Bluetooth, "Stereoen", "bluetooth telefon paring pare obd brikke"),
-    SOUND("Lyd", Icons.Default.VolumeUp, "Stereoen", "lyd volum equalizer eq bass diskant varsel ringelyd tastelyd alarm"),
-    SCREEN("Skjerm", Icons.Default.LightMode, "Stereoen", "skjerm lysstyrke lys natt nattmodus dag ikoner tekst størrelse bilbilde skjermsparer klokke"),
+    SOUND("Lyd", Icons.AutoMirrored.Filled.VolumeUp, "Stereoen", "lyd volum volumlinje equalizer eq bass diskant varsel ringelyd tastelyd alarm"),
+    SCREEN("Skjerm", Icons.Default.LightMode, "Stereoen", "skjerm lysstyrke lys natt nattmodus dag ikoner tekst størrelse bilbilde skjermsparer klokke statuslinje"),
     APPS("Apper", Icons.Default.Apps, "Stereoen", "apper app skjul vis startskjerm carplay car link radio kamera systemapper avinstaller"),
     STORAGE("Lagring", Icons.Default.Storage, "Stereoen", "lagring plass minne cache tøm kart minnepinne"),
     TIME("Dato, tid og språk", Icons.Default.Schedule, "Stereoen", "dato tid klokke tidssone 24 timer språk tastatur norsk"),
     ABOUT("Om stereoen", Icons.Default.Info, "Stereoen", "om versjon oppdatering oppdater stereo android prosessor minne oppsett tillatelser adb pc avansert"),
     MAP("Kart og kjøring", Icons.Default.Map, "T'OS", "kart navigasjon adresse hjem jobb waze maps fart fartsgrense popup"),
-    MUSIC("Musikk og oppstart", Icons.Default.MusicNote, "T'OS", "musikk spotify oppstart sangtittel cover varseltilgang"),
+    MUSIC("Musikk og oppstart", Icons.Default.MusicNote, "T'OS", "musikk spotify oppstart sangtittel cover varseltilgang radio fm radiomotor"),
     PHONE("Telefon", Icons.Default.Phone, "T'OS", "telefon favoritter carplay ring samtale"),
     CAR("Bil", Icons.Default.DirectionsCar, "T'OS", "bil batteri spenning obd eu-kontroll service dekk dekkskift tuning tur"),
     KEYS("Knapper", Icons.Default.Tune, "T'OS", "knapper ratt lær tast menu navi"),
@@ -170,7 +171,9 @@ private fun SoundSettings() {
         LaunchedEffect(Unit) { while (true) { delay(1500); if (!dragging) v = runCatching { am.getStreamVolume(s) }.getOrDefault(v.toInt()).toFloat() } }
         SliderRow("$title  ${v.toInt()}", icon, v, 0f..max, onDone = { dragging = false }) {
             dragging = true; v = it
+            HwVolume.markOwnChange()
             runCatching { am.setStreamVolume(s, it.toInt(), 0) }.onFailure { say("Stereoen tillot ikke å endre «$title» nå") }
+            if (s == AudioManager.STREAM_MUSIC) Ui.volume = it.toInt()
         }
     }
     stream("Musikk og radio", Icons.Default.MusicNote, AudioManager.STREAM_MUSIC)
@@ -183,6 +186,7 @@ private fun SoundSettings() {
     EqPanel()
     Spacer(Modifier.height(8.dp))
     Section("Andre lyder")
+    ToggleRow("Volum i T'OS-stil", "tos_volume", true, "Volumknappene viser T'OS sin volumlinje i stedet for stereoens (krever knappestyring)")
     ToggleRow("Lyd når du er over fartsgrensen", "speed_beep", false)
     val tick = rememberResumeTick()
     val canWrite = remember(tick) { Settings.System.canWrite(context) }
@@ -236,6 +240,7 @@ private fun ScreenSettings() {
             context.open(Intent(Settings.ACTION_MANAGE_WRITE_SETTINGS, Uri.parse("package:${context.packageName}")))
         }) { Chevron() }
     }
+    ToggleRow("Skjul stereoens statuslinje", "hide_system_bars", true, "T'OS viser klokke og status selv. Sveip fra kanten viser linja et øyeblikk.")
     ChoiceRow("Nattmodus", "night_mode", listOf("AUTO" to "Automatisk (etter sola)", "DAY" to "Alltid dag", "NIGHT" to "Alltid natt"), "AUTO")
     SettingRow("Demp hele stereoen om natten", if (canWrite) "Senker lysstyrken etter solnedgang" else "Krever at T'OS får styre lysstyrken (over)",
         onClick = { if (canWrite) Prefs.set("dim_system", !Prefs.bool("dim_system")) }) { Toggle(Prefs.bool("dim_system") && canWrite) }
@@ -346,7 +351,7 @@ private fun AppSheet(a: AppEntry, tick: Int, onClose: () -> Unit) {
     sizeMb?.let { SettingRow("Størrelse på appen", "$it MB (uten appens egne data)") }
     val isHidden = HiddenApps.isHidden(a)
     Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.padding(top = 6.dp, bottom = 10.dp)) {
-        Pill("Åpne", Icons.Default.OpenInNew, strong = true) { AppRepository.launch(context, a.packageName) }
+        Pill("Åpne", Icons.AutoMirrored.Filled.OpenInNew, strong = true) { AppRepository.launch(context, a.packageName) }
         Pill(if (isHidden) "Vis i app-lista" else "Skjul fra app-lista", if (isHidden) Icons.Default.Visibility else Icons.Default.VisibilityOff) { HiddenApps.toggle(a) }
         Pill("Lukk i bakgrunnen", Icons.Default.Close) {
             val am = context.getSystemService(Context.ACTIVITY_SERVICE) as android.app.ActivityManager
@@ -553,6 +558,10 @@ private fun MusicSettings() {
     AppChoiceRow("Musikkapp", "music_pkg", "Mus")
     ToggleRow("Fortsett musikken når bilen starter", "resume_music", true)
     ToggleRow("Åpne siste app når bilen starter", "resume_last_app", false)
+    Section("Radio")
+    ToggleRow("FM-radio i bakgrunnen (radiomotor)", "radio_engine", true,
+        "Starter stereoens radio et øyeblikk bak T'OS hvis radioen ikke kom i gang av seg selv")
+    ToggleRow("Skjul stereoens radio-app", "hide_stock_radio", true, "Viser T'OS sin radio-side når stereoens radio-app dukker opp")
 }
 
 @Composable

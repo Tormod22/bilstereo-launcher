@@ -25,6 +25,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.*
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Slider
@@ -336,7 +337,7 @@ fun BtPanel() {
     }
     Section("Par ny enhet")
     SettingRow(if (scanning) "Søker etter enheter …" else "Søk etter enheter", "Telefon, OBD-brikke, tuningboks o.l. Sett enheten i paringsmodus først.") {
-        Pill(if (scanning) "Stopp" else "Søk", Icons.Default.BluetoothSearching, strong = !scanning) {
+        Pill(if (scanning) "Stopp" else "Søk", Icons.AutoMirrored.Filled.BluetoothSearching, strong = !scanning) {
             if (scanning) { runCatching { adapter?.cancelDiscovery() }; scanning = false; return@Pill }
             val need = if (Build.VERSION.SDK_INT >= 31) arrayOf(Manifest.permission.BLUETOOTH_SCAN, Manifest.permission.BLUETOOTH_CONNECT) else arrayOf(Manifest.permission.ACCESS_FINE_LOCATION)
             if (need.any { !context.hasPermission(it) }) { askPerms.launch(need); return@Pill }
@@ -352,7 +353,11 @@ fun BtPanel() {
             if (!runCatching { d.createBond() }.getOrDefault(false)) msg = "Fikk ikke startet paring med $name"
         }) { Icon(Icons.Default.Add, "Par", tint = TextMuted) }
     }
-    SettingRow("Telefon og Bluetooth-musikk", "Stereoens egen Bluetooth-app (samtaler, kontakter)", onClick = { AppRepository.launchTile(context, Tiles.byPrefix("Tel")) }) {
+    // T'OS sine egne sider (stereoens Bluetooth-app trengs ikke)
+    SettingRow("Telefon", "Samtaler, kontakter og siste anrop i T'OS", onClick = { Nav.screen = Screen.PHONE }) {
+        Icon(Icons.Default.ChevronRight, null, tint = TextMuted)
+    }
+    SettingRow("Bluetooth-musikk", "Velg «Bluetooth» øverst på musikksiden", onClick = { Nav.screen = Screen.MUSIC }) {
         Icon(Icons.Default.ChevronRight, null, tint = TextMuted)
     }
 }

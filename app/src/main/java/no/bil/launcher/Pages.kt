@@ -20,6 +20,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
@@ -29,6 +30,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.*
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Slider
@@ -246,9 +248,27 @@ fun Progress(modifier: Modifier) {
 fun MusicScreen(onClose: () -> Unit) {
     val context = LocalContext.current
     Page("Musikk", onClose, extra = {
-        Pill("Åpne app", Icons.Default.OpenInNew) { Buttons.openMusic(context) }
+        Pill("Åpne app", Icons.AutoMirrored.Filled.OpenInNew) { Buttons.openMusic(context) }
         Spacer(Modifier.width(12.dp))
     }) {
+        // Lydkilder: bytt mellom musikkapp, Bluetooth, FM-radio og nettradio uten å åpne appene
+        val sources = Media.sources(context)
+        if (sources.size > 1) {
+            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(bottom = 12.dp),
+                horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                val anySelected = sources.any { it.selected }
+                sources.forEach { src ->
+                    val on = src.selected || (!anySelected && src.playing)
+                    val icon = when (src.kind) {
+                        SourceKind.MUSIC -> Icons.Default.MusicNote
+                        SourceKind.BLUETOOTH -> Icons.Default.Bluetooth
+                        SourceKind.RADIO -> Icons.Default.Radio
+                        SourceKind.NET_RADIO -> Icons.Default.Language
+                    }
+                    Pill(src.label, icon, strong = on) { if (!src.selected) Media.selectSource(context, src.pkg) }
+                }
+            }
+        }
       // Coveret krymper når skjermen er lav (stor tekst / 1024×600), så knappene under ikke kuttes
       BoxWithConstraints(Modifier.fillMaxSize()) {
         val coverSize = minOf(300.dp, maxHeight)
@@ -309,7 +329,9 @@ fun RadioScreen(onClose: () -> Unit) {
                 RoundIcon(Icons.Default.FastForward, 52.dp, desc = "Søk opp") { HwRadio.seekUp() }
                 if (hw.canTune) { Pill("FM") { HwRadio.cycleFm() }; Pill("AM") { HwRadio.am() } }
             }
-            Pill(if (hw != null) "Åpne" else "Start radio", Icons.Default.Radio, strong = hw == null) { HwRadio.open(context) }
+            // På = T'OS styrer radioen (i bakgrunnen); stereoens radio-app vises ikke
+            if (HwRadio.wanted || hw != null) Pill("Stopp", Icons.Default.Stop) { HwRadio.powerOff(context) }
+            else Pill("Start radio", Icons.Default.Radio, strong = true) { HwRadio.powerOn(context) }
         }
         Section("Nettradio")
         NetRadio.error?.let { Text(it, color = TextMuted, fontSize = 15.sp, modifier = Modifier.padding(bottom = 10.dp)) }
@@ -326,6 +348,14 @@ fun RadioScreen(onClose: () -> Unit) {
                         when { !on -> "Nettradio"; NetRadio.buffering -> "Kobler til …"; NetRadio.playing -> "Spiller"; else -> "Pause" },
                         color = if (on) Bg else TextMuted, fontSize = 13.sp,
                     )
+                }
+            }
+            // Reserve, lite synlig: stereoens egen radio-app (hvis noe ikke virker fra T'OS)
+            item(span = { GridItemSpan(maxLineSpan) }) {
+                Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.CenterEnd) {
+                    Text("Åpne original radio-app", color = TextMuted, fontSize = 13.sp,
+                        modifier = Modifier.heightIn(min = 48.dp).clip(Small).clickable { HwRadio.openApp(context) }
+                            .padding(horizontal = 14.dp, vertical = 14.dp))
                 }
             }
         }
@@ -889,10 +919,10 @@ fun QuickPanel(onClose: () -> Unit) {
                         }
                     } else Prefs.set("app_brightness", it)
                 }, valueRange = 0.05f..1f, colors = sliderColors, modifier = Modifier.weight(1f).semantics { contentDescription = "Lysstyrke" })
-                Icon(Icons.Default.VolumeUp, null, tint = TextMuted)
+                Icon(Icons.AutoMirrored.Filled.VolumeUp, null, tint = TextMuted)
                 Slider(Ui.volume.coerceAtLeast(0).toFloat(), {
                     val v = it.roundToInt()
-                    if (v != Ui.volume) { Ui.volume = v; am.setStreamVolume(AudioManager.STREAM_MUSIC, v, 0) }
+                    if (v != Ui.volume) { Ui.volume = v; HwVolume.markOwnChange(); runCatching { am.setStreamVolume(AudioManager.STREAM_MUSIC, v, 0) } }
                 }, valueRange = 0f..maxVol.toFloat(), colors = sliderColors, modifier = Modifier.weight(1f).semantics { contentDescription = "Volum" })
             }
             // Rulles sidelengs når teksten er stor, så ingen knapp blir kuttet av
