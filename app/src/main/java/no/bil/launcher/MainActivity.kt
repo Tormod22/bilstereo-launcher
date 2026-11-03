@@ -26,14 +26,20 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
@@ -51,6 +57,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -65,6 +72,9 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.graphics.drawable.toBitmap
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
@@ -85,17 +95,57 @@ class MainActivity : ComponentActivity() {
     private val askPermissions = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { Hub.startGps() }
     private val downAt = mutableMapOf<Int, Long>()
     private val longDone = mutableSetOf<Int>()
+    /** Knapper som nettopp ble lært: slipp-signalet (og gjentak) skal ikke også utløse handlingen. */
+    private val swallowUp = mutableSetOf<Int>()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-        val perms = mutableListOf(Manifest.permission.ACCESS_FINE_LOCATION)
+        // T'OS tegner hele skjermen selv – stereoens statuslinje og navigasjonslinje skjules
+        WindowCompat.setDecorFitsSystemWindows(window, false)
+        if (android.os.Build.VERSION.SDK_INT >= 28) window.attributes = window.attributes.apply {
+            layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+        }
+        hideSystemBars()
+        // Android 12+ ignorerer spørsmålet om nøyaktig posisjon hvis ikke omtrentlig spørres om samtidig
+        val perms = mutableListOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION)
         if (android.os.Build.VERSION.SDK_INT >= 31) perms += Manifest.permission.BLUETOOTH_CONNECT
         askPermissions.launch(perms.toTypedArray())
         handle(intent)
         if (Startup.isFreshBoot(this) && !SafeMode.on) Startup.run(applicationContext)
-        if (!Prefs.bool("setup_done")) Nav.screen = Screen.SETUP
         setContent { Root() }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        Notify.appVisible = true
+        hideSystemBars()
+    }
+
+    override fun onPause() {
+        Notify.appVisible = false
+        super.onPause()
+    }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        // Linjene kan ha blitt vist (sveip fra kanten, en dialog) – skjul dem igjen
+        if (hasFocus) hideSystemBars()
+    }
+
+    /** Skjuler Androids status- og navigasjonslinje. Et sveip fra kanten viser dem et øyeblikk. */
+    internal fun hideSystemBars() {
+        if (!Prefs.bool("hide_system_bars", true)) {
+            // Linjene vises: T'OS legger seg mellom dem i stedet for under dem
+            WindowCompat.setDecorFitsSystemWindows(window, true)
+            WindowInsetsControllerCompat(window, window.decorView).show(WindowInsetsCompat.Type.systemBars())
+            return
+        }
+        WindowCompat.setDecorFitsSystemWindows(window, false)
+        WindowInsetsControllerCompat(window, window.decorView).apply {
+            systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            hide(WindowInsetsCompat.Type.systemBars())
+        }
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -105,16 +155,28 @@ class MainActivity : ComponentActivity() {
 
     private fun handle(intent: Intent?) {
         val s = intent?.getStringExtra(Nav.EXTRA)
-        Nav.screen = Screen.entries.firstOrNull { it.name == s } ?: Screen.DASH
+        val next = Screen.entries.firstOrNull { it.name == s } ?: Screen.DASH
+        // Hjem lukker alt som ligger oppå (hurtigpanel, app-velgere)
+        Nav.quick = false; Nav.pick = null; Ui.pickSlot = false; TosKeyboard.close()
+        // Førstegangsoppsettet blir stående til det er fullført
+        Nav.screen = if (next == Screen.DASH && !Prefs.bool("setup_done")) Screen.SETUP else next
+        // Læring av en knapp gjelder bare mens Knapper-siden er åpen
+        if (Nav.screen != Screen.KEYS && Learn.target != null) Learn.cancel()
     }
 
     /** Knappene på stereoen når T'OS er framme og knappestyring (tjenesten) ikke er slått på. */
     @android.annotation.SuppressLint("RestrictedApi")
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
         val code = event.keyCode
+        if (code in swallowUp) {
+            if (event.action == KeyEvent.ACTION_UP) { swallowUp -= code; return true }
+            if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount > 0) return true
+            swallowUp -= code   // nytt trykk uten at slipp kom: behandles vanlig
+        }
         if (Learn.target != null && event.action == KeyEvent.ACTION_DOWN &&
             code != KeyEvent.KEYCODE_VOLUME_UP && code != KeyEvent.KEYCODE_VOLUME_DOWN) {
-            Learn.offerKey(this, code); return true
+            // Utløpt læring (offerKey = false): knappen skal virke som vanlig, ikke bli «spist»
+            if (Learn.offerKey(this, code)) { swallowUp += code; return true }
         }
         val key = Buttons.keyForCode(this, code)
         if (key != null && Buttons.shouldIntercept(this, key, code)) {
@@ -127,13 +189,19 @@ class MainActivity : ComponentActivity() {
 
 /* ======================= Rot: skjermene + det som ligger oppå ======================= */
 
+/** Felles skjermtilstand som må kunne endres utenfra (Hjem-knappen, volumhjulet). */
+object Ui {
+    /** «Velg app for midtflisa» er åpen. */
+    var pickSlot by mutableStateOf(false)
+    /** Musikkvolumet akkurat nå (følger volumhjulet). -1 = ukjent. */
+    var volume by mutableIntStateOf(-1)
+}
+
 @Composable
 fun Root() {
     val context = LocalContext.current
     val home = { Nav.screen = Screen.DASH }
     var lastTouch by remember { mutableLongStateOf(SystemClock.elapsedRealtime()) }
-    var volumeShown by remember { mutableStateOf<Int?>(null) }
-    var pickSlot by remember { mutableStateOf(false) }
 
     // Nattmodus og lysstyrke for T'OS sitt vindu
     LaunchedEffect(Theme.mode) { Theme.update(Hub.gps?.lat, Hub.gps?.lon) }
@@ -142,7 +210,9 @@ fun Root() {
         (context as? Activity)?.window?.let { w ->
             w.attributes = w.attributes.apply {
                 screenBrightness = when {
-                    Theme.night -> min(if (appBright < 0) 0.25f else appBright, 0.25f)
+                    // Ikke valgt egen lysstyrke: stereoen bestemmer (også om natten, se NightBrightness)
+                    appBright < 0 -> WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE
+                    Theme.night -> min(appBright, 0.25f)
                     else -> appBright
                 }
             }
@@ -155,25 +225,55 @@ fun Root() {
             delay(5000)
             val mins = Prefs.str("saver_min", "3").toIntOrNull() ?: 0
             val still = (Hub.gps?.speedKmh ?: 0) < 3
-            if (mins > 0 && still && Nav.screen == Screen.DASH && !Nav.quick &&
-                SystemClock.elapsedRealtime() - lastTouch > mins * 60_000L) Nav.screen = Screen.CLOCK
+            // Ikke over neste sving (navigasjon i kø) eller en app-velger som er åpen
+            if (mins > 0 && still && Nav.screen == Screen.DASH && !Nav.quick && Nav.pick == null && !Ui.pickSlot &&
+                !NavInfo.active && SystemClock.elapsedRealtime() - lastTouch > mins * 60_000L) Nav.screen = Screen.CLOCK
         }
     }
 
-    // Volum: vis et diskret tall når volumhjulet brukes
+    // Volum: T'OS sitt eget volumvindu når volumhjulet brukes
     DisposableEffect(Unit) {
         val am = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+        val max = am.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
         var last = am.getStreamVolume(AudioManager.STREAM_MUSIC)
+        Ui.volume = last
         val obs = object : ContentObserver(Handler(Looper.getMainLooper())) {
             override fun onChange(selfChange: Boolean) {
                 val v = am.getStreamVolume(AudioManager.STREAM_MUSIC)
-                if (v != last) { last = v; volumeShown = v }
+                if (v != last) {
+                    last = v; Ui.volume = v
+                    // Én kilde: med knappestyringen på viser HwVolume linja (se under). Egne glidere (markOwnChange)
+                    // og hurtigpanelet (har sin egen volumglider) gir ikke vinduet.
+                    if (!Nav.quick && !HwVolume.ownRecently() && !(KeyService.instance != null && HwVolume.enabled)) VolumeUi.show(v, max)
+                }
             }
         }
         context.contentResolver.registerContentObserver(Settings.System.CONTENT_URI, true, obs)
         onDispose { context.contentResolver.unregisterContentObserver(obs) }
     }
-    LaunchedEffect(volumeShown) { if (volumeShown != null) { delay(1500); volumeShown = null } }
+
+    // «Skjul stereoens statuslinje» virker med én gang
+    val hideBars = Prefs.bool("hide_system_bars", true)
+    LaunchedEffect(hideBars) { (context as? MainActivity)?.hideSystemBars() }
+
+    // Volum fra knappestyringen (volumknapper, volumhjul via MCU): samme T'OS-vindu når T'OS er framme
+    LaunchedEffect(HwVolume.shownAt) {
+        if (HwVolume.shownAt == 0L) return@LaunchedEffect
+        val lvl = if (HwVolume.muted) 0 else HwVolume.level
+        if (HwVolume.stream == AudioManager.STREAM_MUSIC) Ui.volume = HwVolume.level
+        if (Notify.appVisible && !Nav.quick) VolumeUi.show(lvl, HwVolume.max)
+    }
+
+    // Bluetooth-ikonet i statuslinja (leses i bakgrunnen, bare mens T'OS vises)
+    LaunchedEffect(Unit) {
+        while (true) {
+            if (Notify.appVisible) TosStatus.bt = withContext(Dispatchers.IO) { btState(btStatus(context)) }
+            delay(5000)
+        }
+    }
+
+    // Trykk utenfor tastaturet lukker det (etter at trykket er levert, så et annet felt eller «Lagre» virker med én gang)
+    val main = remember { Handler(Looper.getMainLooper()) }
 
     val d = LocalDensity.current
     CompositionLocalProvider(LocalDensity provides Density(d.density, d.fontScale * Theme.textScale)) {
@@ -181,51 +281,63 @@ fun Root() {
             Modifier.fillMaxSize().background(Bg)
                 .pointerInput(Unit) {
                     awaitPointerEventScope {
-                        while (true) { awaitPointerEvent(PointerEventPass.Initial); lastTouch = SystemClock.elapsedRealtime() }
+                        var atPress: KbBinding? = null
+                        while (true) {
+                            val ev = awaitPointerEvent(PointerEventPass.Initial)
+                            lastTouch = SystemClock.elapsedRealtime()
+                            val b = TosKeyboard.binding
+                            val p = ev.changes.firstOrNull()?.position
+                            if (ev.type == PointerEventType.Press) {
+                                val r = TosKeyboard.bounds
+                                atPress = if (b != null && p != null && r != null && !r.contains(p)) b else null
+                            } else if (ev.type == PointerEventType.Release && atPress != null) {
+                                val was = atPress; atPress = null
+                                main.post { if (TosKeyboard.binding === was) TosKeyboard.close() }
+                            }
+                        }
                     }
                 }
         ) {
-            Box(Modifier.fillMaxSize().padding(14.dp)) {
-                // BACK på forsiden gjør ingenting (ellers lukkes T'OS og stereoens gamle startskjerm vises)
-                BackHandler { if (Nav.screen != Screen.DASH) { Learn.cancel(); home() } }
-                when (Nav.screen) {
-                    Screen.DASH -> Dashboard(onApps = { Nav.screen = Screen.APPS }, onPickSlot = { pickSlot = true })
-                    Screen.APPS -> AppDrawer(home)
-                    Screen.BT -> BluetoothScreen(home)
-                    Screen.KEYS -> KeysScreen { Learn.cancel(); home() }
-                    Screen.MUSIC -> MusicScreen(home)
-                    Screen.MAP -> MapScreen(home)
-                    Screen.NAV -> NavScreen(home)
-                    Screen.RADIO -> RadioScreen(home)
-                    Screen.CAR -> CarScreen(home)
-                    Screen.PHONE -> PhoneScreen(home)
-                    Screen.SETTINGS -> SettingsScreen(home)
-                    Screen.TUNING -> TuningScreen(home)
-                    Screen.SETUP -> SetupScreen(home)
-                    Screen.CLOCK -> {}
+            // Statuslinja vises på sidene, ikke på forsiden (bilkortet har klokka) eller skjermspareren
+            val status = Nav.screen != Screen.DASH && Nav.screen != Screen.CLOCK
+            Column(Modifier.fillMaxSize().padding(start = 14.dp, end = 14.dp, bottom = 14.dp, top = if (status) 4.dp else 14.dp)) {
+                if (status) TosStatusBar(Modifier.fillMaxWidth().height(34.dp).padding(bottom = 4.dp))
+                Box(Modifier.fillMaxWidth().weight(1f)) {
+                    // BACK på forsiden gjør ingenting (ellers lukkes T'OS og stereoens gamle startskjerm vises)
+                    BackHandler { if (Nav.screen != Screen.DASH) { Learn.cancel(); home() } }
+                    when (Nav.screen) {
+                        Screen.DASH -> Dashboard(onApps = { Nav.screen = Screen.APPS }, onPickSlot = { Ui.pickSlot = true })
+                        Screen.APPS -> AppDrawer(home)
+                        Screen.BT -> BluetoothScreen(home)
+                        Screen.KEYS -> KeysScreen { Learn.cancel(); home() }
+                        Screen.MUSIC -> MusicScreen(home)
+                        Screen.MAP -> MapScreen(home)
+                        Screen.NAV -> NavScreen(home)
+                        Screen.RADIO -> RadioScreen(home)
+                        Screen.CAR -> CarScreen(home)
+                        Screen.PHONE -> PhoneScreen(home)
+                        Screen.SETTINGS -> SettingsScreen(home)
+                        Screen.TUNING -> TuningScreen(home)
+                        Screen.SETUP -> SetupScreen(home)
+                        Screen.CLOCK -> {}
+                    }
                 }
             }
             if (Nav.screen == Screen.CLOCK) ClockScreen(home)
             if (Nav.quick) { BackHandler { Nav.quick = false }; QuickPanel { Nav.quick = false } }
             Nav.pick?.let { (title, key) -> BackHandler { Nav.pick = null }; AppPicker(title, "Automatisk", { Prefs.set(key, it) }) { Nav.pick = null } }
-            if (pickSlot) { BackHandler { pickSlot = false }; AppPicker("Velg app for midtflisa", "Telefon (standard)", { Prefs.set("slot_pkg", it) }) { pickSlot = false } }
-            volumeShown?.let { VolumeOverlay(it, Modifier.align(Alignment.Center)) }
-            Call.name?.let { CallBanner(it, Modifier.align(Alignment.TopCenter)) }
+            if (Ui.pickSlot) { BackHandler { Ui.pickSlot = false }; AppPicker("Velg app for midtflisa", "Telefon (standard)", { Prefs.set("slot_pkg", it) }) { Ui.pickSlot = false } }
+            VolumeHost(Modifier.align(Alignment.Center))
+            // T'OS som telefon-app: egen samtalelinje. Ellers (stereoens egen BT-app) varselet fra MediaListener.
+            if (Phone.calls.isNotEmpty()) PhoneCallBanner(Modifier.align(Alignment.TopCenter))
+            else Call.name?.let { CallBanner(it, Modifier.align(Alignment.TopCenter)) }
+            // Meldinger: over bunnraden, eller øverst når tastaturet er oppe
+            NoticeHost(
+                if (TosKeyboard.visible) Modifier.align(Alignment.TopCenter).padding(top = if (Call.name != null || Phone.calls.isNotEmpty()) 100.dp else 20.dp, start = 24.dp, end = 24.dp)
+                else Modifier.align(Alignment.BottomCenter).padding(bottom = 124.dp, start = 24.dp, end = 24.dp)
+            )
+            KeyboardHost(Modifier.align(Alignment.BottomCenter))
         }
-    }
-}
-
-@Composable
-private fun VolumeOverlay(v: Int, modifier: Modifier) {
-    val context = LocalContext.current
-    val max = remember { (context.getSystemService(Context.AUDIO_SERVICE) as AudioManager).getStreamMaxVolume(AudioManager.STREAM_MUSIC) }
-    Row(modifier.clip(RoundedCornerShape(28.dp)).background(Card).padding(horizontal = 28.dp, vertical = 18.dp),
-        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-        Icon(if (v == 0) Icons.Default.VolumeOff else Icons.Default.VolumeUp, null, tint = TextPrimary, modifier = Modifier.size(32.dp))
-        Box(Modifier.width(220.dp).height(6.dp).clip(RoundedCornerShape(3.dp)).background(Line)) {
-            Box(Modifier.fillMaxWidth(v / max.coerceAtLeast(1).toFloat()).fillMaxHeight().background(TextPrimary))
-        }
-        Text("$v", color = TextPrimary, fontSize = 24.sp, fontWeight = FontWeight.Medium)
     }
 }
 
@@ -234,8 +346,30 @@ private fun CallBanner(name: String, modifier: Modifier) {
     Row(modifier.padding(top = 20.dp).clip(RoundedCornerShape(28.dp)).background(TextPrimary).clickable { Call.openCall() }
         .padding(horizontal = 28.dp, vertical = 16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
         Icon(Icons.Default.Call, null, tint = Bg, modifier = Modifier.size(28.dp))
-        Text("$name ringer", color = Bg, fontSize = 22.sp, fontWeight = FontWeight.Medium)
-        Text("Trykk for å svare", color = Bg.copy(alpha = 0.6f), fontSize = 15.sp)
+        Text("$name ringer", color = Bg, fontSize = 22.sp, fontWeight = FontWeight.Medium, maxLines = 1,
+            overflow = TextOverflow.Ellipsis, modifier = Modifier.widthIn(max = 460.dp))
+        if (Call.canAnswer) {
+            // Svar/avvis rett her, så telefonappen til stereoen ikke må vises
+            CallButton("Avvis", Icons.Default.CallEnd, filled = false) {
+                if (!Call.decline()) Notify.show("Fikk ikke avvist her – avvis på telefonen")
+            }
+            CallButton("Svar", Icons.Default.Call, filled = true) { Call.answer() }
+        } else Text("Trykk for å svare", color = Bg.copy(alpha = 0.6f), fontSize = 15.sp)
+    }
+}
+
+/** Knapp i samtalelinja (lys bakgrunn): fylt = mørk knapp, ellers mørk kant. Minst 56 dp høy. */
+@Composable
+private fun CallButton(label: String, icon: ImageVector, filled: Boolean, onClick: () -> Unit) {
+    val shape = RoundedCornerShape(28.dp)
+    Row(
+        Modifier.heightIn(min = 56.dp).clip(shape)
+            .then(if (filled) Modifier.background(Bg) else Modifier.border(2.dp, Bg.copy(alpha = 0.5f), shape))
+            .clickable(onClick = onClick).padding(horizontal = 22.dp),
+        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Icon(icon, null, tint = if (filled) TextPrimary else Bg, modifier = Modifier.size(22.dp))
+        Text(label, color = if (filled) TextPrimary else Bg, fontSize = 18.sp, fontWeight = FontWeight.Medium)
     }
 }
 
@@ -308,13 +442,14 @@ private fun Notice() {
         Hub.update != null -> "Ny versjon ${Hub.update?.versionName} – trykk for å oppdatere" to Screen.APPS
         else -> return
     }
-    Row(Modifier.padding(top = 8.dp).clip(RoundedCornerShape(12.dp)).background(Card).clickable {
+    // Minst 48 dp høy, så den kan treffes under kjøring
+    Row(Modifier.padding(top = 8.dp).heightIn(min = 48.dp).clip(RoundedCornerShape(12.dp)).background(Card).clickable {
         if (go == Screen.SETTINGS) Prefs.set("settings_cat", "BACKUP")
         Nav.screen = go
     }
         .padding(horizontal = 12.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         Icon(Icons.Default.Info, null, tint = TextMuted, modifier = Modifier.size(16.dp))
-        Text(text, color = TextPrimary, fontSize = 13.sp, maxLines = 1)
+        Text(text, color = TextPrimary, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
 
@@ -326,8 +461,10 @@ fun CarCard(gps: Gps?, modifier: Modifier) {
     val picked = carBitmap()
     var now by remember { mutableStateOf(Date()) }
     LaunchedEffect(Unit) { while (true) { now = Date(); delay(1000) } }
-    val time = SimpleDateFormat("HH:mm", Locale.getDefault()).format(now)
-    val date = SimpleDateFormat("EEEE d. MMMM", Locale("nb", "NO")).format(now).replaceFirstChar { it.uppercase() }
+    val timeFmt = remember { SimpleDateFormat("HH:mm", Locale.getDefault()) }
+    val dateFmt = remember { SimpleDateFormat("EEEE d. MMMM", Locale("nb", "NO")) }
+    val time = timeFmt.format(now)
+    val date = dateFmt.format(now).replaceFirstChar { it.uppercase() }
     val speed = gps?.speedKmh ?: 0
 
     Column(modifier.clip(Shape).background(Panel).padding(28.dp)) {
@@ -338,7 +475,8 @@ fun CarCard(gps: Gps?, modifier: Modifier) {
                 Notice()
             }
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                if (!Hub.online) Icon(Icons.Default.WifiOff, "Ikke internett", tint = TextMuted, modifier = Modifier.size(18.dp))
+                // Bare det som er verdt å vite: uten nett, og tilkoblet telefon
+                StatusIcons(full = false)
                 val bv = CarBattery.volt
                 if (CarBattery.enabled && bv != null) {
                     Icon(Icons.Default.BatteryChargingFull, "Bilbatteri", tint = TextMuted, modifier = Modifier.size(18.dp))
@@ -394,6 +532,30 @@ fun SpeedLine(speed: Int) {
 
 /* ---------- 2. Kart: ekte fliser, zoom etter fart, snur etter kjøreretning ---------- */
 
+/** Esri World_Dark_Gray_Base har fliser bare til zoom 16. */
+internal const val MAX_TILE_ZOOM = 16
+
+/** Zoomnivået flisene hentes på. */
+internal fun tileZoom(zoom: Int): Int = min(zoom, MAX_TILE_ZOOM)
+
+/** Hvor mye et kartbilde hentet på [imageZoom] må forstørres for å vises på [zoom] (aldri forminsket). */
+internal fun overZoom(zoom: Int, imageZoom: Int): Float = (1 shl (zoom - imageZoom).coerceIn(0, 8)).toFloat()
+
+/** Hvilken kartflis (x, y) en posisjon ligger i på zoom [z] (samme regning som MapTiles). */
+internal fun tileOf(lat: Double, lon: Double, z: Int): Pair<Int, Int> {
+    val n = (1 shl z).toDouble()
+    val latR = Math.toRadians(lat.coerceIn(-85.0, 85.0))
+    val x = ((lon + 180.0) / 360.0 * n).toInt()
+    val y = ((1.0 - kotlin.math.ln(kotlin.math.tan(latR) + 1 / kotlin.math.cos(latR)) / Math.PI) / 2.0 * n).toInt()
+    return x to y
+}
+
+/**
+ * Hvor langt (i piksler) kartbildet rekker ut fra posisjonen. Så lenge posisjonen er i midtflisa er det
+ * alltid minst [half] hele fliser – da brukes det faste tallet, så kartet ikke zoomer inn og ut mens du kjører.
+ */
+internal fun mapReach(pos: Float, size: Float, half: Float): Float = minOf(pos, size - pos, half).coerceAtLeast(1f)
+
 fun zoomFor(speed: Int): Int =
     if (!Prefs.bool("map_zoom_speed", true)) 15 else when { speed < 35 -> 16; speed < 70 -> 15; speed < 100 -> 14; else -> 13 }
 
@@ -402,19 +564,31 @@ fun MapView(gps: Gps?, modifier: Modifier, zoomOffset: Int = 0) {
     val context = LocalContext.current
     val zoom = ((gps?.let { zoomFor(it.speedKmh) } ?: 15) + zoomOffset).coerceIn(11, 18)
     val rotate = Prefs.bool("map_rotate", true) && (gps?.speedKmh ?: 0) > 8
-    // Nedlastet kart (uten nett) brukes når det finnes, ellers nettkartet
-    if (OfflineMaps.ready(context) && !SafeMode.on) { OfflineMapView(gps, modifier, zoom, rotate); return }
+    // Nedlastet kart (uten nett) brukes når det finnes, ellers nettkartet.
+    // Fila sjekkes bare når kartet lastes ned/slettes, innstillinger endres, eller hvert 30. sekund – ikke hvert sekund.
+    val recheck by produceState(0) { while (true) { delay(30_000); value = value + 1 } }
+    val offline by remember(recheck, Prefs.version) { derivedStateOf { OfflineMaps.ready(context) } }
+    if (offline && !SafeMode.on) { OfflineMapView(gps, modifier, zoom, rotate); return }
     OnlineMapView(gps, modifier, zoom, rotate)
 }
 
 @Composable
 private fun OnlineMapView(gps: Gps?, modifier: Modifier, zoom: Int, rotate: Boolean) {
     var map by remember { mutableStateOf<MapTiles.MapImage?>(null) }
-    val f = 1 shl (zoom - 8).coerceAtLeast(0)
-    val key = gps?.let { Triple(zoom, (it.lat * f).toInt(), (it.lon * f).toInt()) }
-    LaunchedEffect(key) {
-        val g = gps ?: return@LaunchedEffect
-        MapTiles.around(g.lat, g.lon, zoom)?.let { map = it }
+    val tz = tileZoom(zoom)
+    // Nytt bilde hver gang du kjører inn i en ny flis – da ligger posisjonen alltid i midten av bildet
+    val key = gps?.let { val (tx, ty) = tileOf(it.lat, it.lon, tz); Triple(tz, tx, ty) }
+    val latest by rememberUpdatedState(gps)
+    // Hentes på nytt når posisjon/zoom endres eller nettet kommer tilbake. Feiler det, prøves det igjen
+    // hvert 10. sekund; ellers hvert minutt (fliser som allerede er hentet, ligger i minnet).
+    LaunchedEffect(key, Hub.online) {
+        if (key == null) return@LaunchedEffect
+        while (true) {
+            val g = latest ?: return@LaunchedEffect
+            val img = MapTiles.around(g.lat, g.lon, tz)
+            if (img != null) map = img
+            delay(if (img == null) 10_000 else 60_000)
+        }
     }
 
     Box(modifier) {
@@ -427,9 +601,11 @@ private fun OnlineMapView(gps: Gps?, modifier: Modifier, zoom: Int, rotate: Bool
                 // Sentrer kartet på posisjonen og skaler så kortet alltid er fylt (også når det er snudd)
                 val bw = img.width.toFloat(); val bh = img.height.toFloat()
                 val x = bw * px; val y = bh * py
-                val mx = min(x, bw - x).coerceAtLeast(1f); val my = min(y, bh - y).coerceAtLeast(1f)
-                val s = if (rotate) sqrt(size.width * size.width + size.height * size.height) / 2 / min(mx, my)
+                val mx = mapReach(x, bw, bw * (m.cols / 2) / m.cols); val my = mapReach(y, bh, bh * (m.rows / 2) / m.rows)
+                val fill = if (rotate) sqrt(size.width * size.width + size.height * size.height) / 2 / min(mx, my)
                         else maxOf(size.width / (2 * mx), size.height / (2 * my))
+                // Over zoom 16 finnes ingen fliser: forstørr bildet i stedet
+                val s = fill * overZoom(zoom, m.zoom)
                 rotate(if (rotate) -bearing else 0f, center) {
                     drawImage(
                         img,
@@ -471,7 +647,7 @@ fun MapCard(gps: Gps?, modifier: Modifier) {
         if (NavInfo.active) {
             Column(Modifier.align(Alignment.TopStart).padding(16.dp).clip(RoundedCornerShape(18.dp)).background(Card.copy(alpha = 0.94f))
                 .padding(horizontal = 18.dp, vertical = 12.dp)) {
-                Text(NavInfo.title ?: "", color = TextPrimary, fontSize = 22.sp, fontWeight = FontWeight.Medium, maxLines = 1)
+                Text(NavInfo.title ?: "", color = TextPrimary, fontSize = 22.sp, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 NavInfo.text?.let { Text(it, color = TextMuted, fontSize = 14.sp, maxLines = 2, overflow = TextOverflow.Ellipsis) }
             }
         }
@@ -486,7 +662,7 @@ fun MapCard(gps: Gps?, modifier: Modifier) {
 @Composable
 private fun MapChip(icon: ImageVector, label: String, onClick: () -> Unit) {
     Row(
-        Modifier.clip(RoundedCornerShape(18.dp)).background(Card.copy(alpha = 0.92f)).clickable(onClick = onClick)
+        Modifier.heightIn(min = 48.dp).clip(RoundedCornerShape(18.dp)).background(Card.copy(alpha = 0.92f)).clickable(onClick = onClick)
             .padding(horizontal = 18.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(10.dp),
@@ -506,7 +682,10 @@ fun openMaps(context: Context) {
         ?: Intent(Intent.ACTION_VIEW, android.net.Uri.parse("geo:0,0"))
     // LAUNCH_ADJACENT = delt skjerm der enheten støtter det, ellers fullskjerm
     intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_LAUNCH_ADJACENT)
-    if (runCatching { context.startActivity(intent) }.isFailure) return
+    // Si fra til knappestyringen at det er T'OS som åpner kartappen (ellers kan den sende deg tilbake)
+    (intent.component?.packageName ?: intent.`package` ?: runCatching { intent.resolveActivity(context.packageManager)?.packageName }.getOrNull() ?: pkg)
+        ?.let { AppRepository.markLaunched(it) }
+    if (runCatching { context.startActivity(intent) }.isFailure) { context.toast("Fant ingen kartapp på stereoen"); return }
     // Tilby den andre kartappen
     val other = if (pkg == waze) maps else waze
     if (AppRepository.isInstalled(context, other)) NaviPopup.show(context, if (other == waze) "Waze" else "Google Maps", other)
@@ -537,15 +716,16 @@ fun ActionRow(onApps: () -> Unit, onPickSlot: () -> Unit, modifier: Modifier) {
                     Text(musicTitle ?: "Musikk", color = TextPrimary, fontSize = 15.sp, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     Text(musicSub ?: if (MediaListener.enabled(context)) "Ingenting spiller" else "Trykk for mer", color = TextMuted, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
-                RoundIcon(if (musicPlaying) Icons.Default.Pause else Icons.Default.PlayArrow, 48.dp, outlined = true) { Media.playPause(context) }
-                RoundIcon(Icons.Default.SkipNext, 40.dp) { Media.next(context) }
+                RoundIcon(if (musicPlaying) Icons.Default.Pause else Icons.Default.PlayArrow, 48.dp, outlined = true, desc = if (musicPlaying) "Pause" else "Spill") { Media.playPause(context) }
+                RoundIcon(Icons.Default.SkipNext, 48.dp, desc = "Neste sang") { Media.next(context) }
             }
             Progress(Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(horizontal = 28.dp, vertical = 10.dp))
         }
         // Midtflisa: Telefon som standard. Langt trykk = velg en annen app.
         Column(
             Modifier.weight(0.8f).fillMaxHeight().clip(Shape).background(Panel)
-                .combinedClickable(onClick = { if (slotPkg.isNotBlank()) AppRepository.launch(context, slotPkg) else Nav.screen = Screen.PHONE }, onLongClick = onPickSlot),
+                // Valgt app avinstallert? Da viser flisa «Telefon», og da skal den også åpne Telefon
+                .combinedClickable(onClick = { if (slotApp != null) AppRepository.launch(context, slotPkg) else Nav.screen = Screen.PHONE }, onLongClick = onPickSlot),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center,
         ) {
@@ -562,22 +742,30 @@ fun ActionRow(onApps: () -> Unit, onPickSlot: () -> Unit, modifier: Modifier) {
 @Composable
 fun AppPicker(title: String, defaultLabel: String, onPick: (String) -> Unit, onClose: () -> Unit) {
     val context = LocalContext.current
-    val apps by produceState(initialValue = emptyList<AppEntry>()) { value = withContext(Dispatchers.IO) { AppRepository.installedApps(context) } }
-    Box(Modifier.fillMaxSize().background(Bg.copy(alpha = 0.7f)).padding(40.dp)) {
+    var loaded by remember { mutableStateOf(false) }
+    val apps by produceState(initialValue = emptyList<AppEntry>()) { value = withContext(Dispatchers.IO) { AppRepository.installedApps(context) }; loaded = true }
+    // Trykk utenfor lukker; trykk på selve siden skal ikke gå gjennom til forsiden under
+    Box(Modifier.fillMaxSize().background(Bg.copy(alpha = 0.7f))
+        .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { onClose() }
+        .padding(40.dp)) {
+      Box(Modifier.fillMaxSize().pointerInput(Unit) { detectTapGestures { } }) {
         Page(title, onClose) {
             Pill(defaultLabel, Icons.Default.Refresh) { onPick(""); onClose() }
             Spacer(Modifier.height(14.dp))
+            if (!loaded) Text("Henter appene …", color = TextMuted, fontSize = 15.sp)
+            else if (apps.isEmpty()) Text("Fant ingen apper å velge.", color = TextMuted, fontSize = 15.sp)
             LazyVerticalGrid(GridCells.Adaptive(120.dp), verticalArrangement = Arrangement.spacedBy(12.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 items(apps, key = { it.packageName }) { app ->
                     Column(Modifier.clip(RoundedCornerShape(18.dp)).background(Card).clickable { onPick(app.packageName); onClose() }
                         .padding(14.dp).fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
                         AppIcon(app.icon, 44.dp, app.packageName)
                         Spacer(Modifier.height(6.dp))
-                        Text(app.label, color = TextPrimary, fontSize = 13.sp, maxLines = 1)
+                        Text(app.label, color = TextPrimary, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
                 }
             }
         }
+      }
     }
 }
 
@@ -595,55 +783,63 @@ fun ActionTile(icon: ImageVector, label: String, modifier: Modifier, onClick: ()
 }
 
 @Composable
-fun RoundIcon(icon: ImageVector, size: Dp, outlined: Boolean = false, onClick: () -> Unit) {
+fun RoundIcon(icon: ImageVector, size: Dp, outlined: Boolean = false, desc: String? = null, onClick: () -> Unit) {
     Box(
         Modifier.size(size).clip(CircleShape)
             .then(if (outlined) Modifier.border(1.5.dp, TextPrimary, CircleShape) else Modifier)
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center,
-    ) { Icon(icon, null, tint = TextPrimary, modifier = Modifier.size(if (outlined) size * 0.52f else size * 0.58f)) }
+    ) { Icon(icon, desc, tint = TextPrimary, modifier = Modifier.size(if (outlined) size * 0.52f else size * 0.58f)) }
 }
 
 /* ======================= Oppdatering fra GitHub ======================= */
 
+/** Oppdateringen holdes her (ikke i knappen), så nedlastingen fortsetter når app-skuffen lukkes. */
+object UpdateState {
+    var text by mutableStateOf("Se etter oppdatering")
+    var available by mutableStateOf<Updater.Info?>(null)
+    var busy by mutableStateOf(false)
+}
+
 @Composable
 fun UpdateButton() {
     val context = LocalContext.current
-    val scope = rememberCoroutineScope()
-    var state by remember { mutableStateOf("Se etter oppdatering") }
-    var available by remember { mutableStateOf<Updater.Info?>(null) }
-    var busy by remember { mutableStateOf(false) }
+    val st = UpdateState
 
     LaunchedEffect(Unit) {
+        if (st.busy) return@LaunchedEffect
         val it = Updater.check()
-        if (it == null) state = Updater.lastError ?: "Se etter oppdatering"
-        else if (it.versionCode > Updater.current(context)) { available = it; state = "Oppdater til ${it.versionName}" }
-        else state = "Siste versjon"
+        if (st.busy) return@LaunchedEffect
+        if (it == null) st.text = Updater.lastError ?: "Se etter oppdatering"
+        else if (it.versionCode > Updater.current(context)) { st.available = it; st.text = "Oppdater til ${it.versionName}" }
+        else { st.available = null; st.text = "Siste versjon" }
     }
 
     Row(
-        Modifier.height(48.dp).clip(RoundedCornerShape(24.dp))
-            .background(if (available != null) TextPrimary else Card)
-            .clickable(enabled = !busy) {
-                scope.launch {
-                    busy = true
-                    val upd = available ?: Updater.check()
-                    if (upd == null) state = Updater.lastError ?: "Ingen kontakt med GitHub"
-                    else if (upd.versionCode <= Updater.current(context)) state = "Siste versjon"
-                    else {
-                        available = upd
-                        val err = Updater.downloadAndInstall(context) { p -> state = "Laster ned $p %" }
-                        state = err ?: "Trykk «Installer» på skjermen"
-                    }
-                    busy = false
+        Modifier.height(48.dp).widthIn(max = 300.dp).clip(RoundedCornerShape(24.dp))
+            .background(if (st.available != null) TextPrimary else Card)
+            .clickable(enabled = !st.busy) {
+                val app = context.applicationContext
+                st.busy = true
+                Hub.scope.launch {
+                    try {
+                        val upd = st.available ?: Updater.check()
+                        if (upd == null) st.text = Updater.lastError ?: "Ingen kontakt med GitHub"
+                        else if (upd.versionCode <= Updater.current(app)) st.text = "Siste versjon"
+                        else {
+                            st.available = upd
+                            val err = Updater.downloadAndInstall(app) { p -> st.text = "Laster ned $p %" }
+                            st.text = err ?: "Trykk «Installer» på skjermen"
+                        }
+                    } finally { st.busy = false }
                 }
             }
             .padding(horizontal = 18.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        Icon(Icons.Default.Refresh, null, tint = if (available != null) Bg else TextPrimary, modifier = Modifier.size(20.dp))
-        Text(state, color = if (available != null) Bg else TextPrimary, fontSize = 14.sp)
+        Icon(Icons.Default.Refresh, null, tint = if (st.available != null) Bg else TextPrimary, modifier = Modifier.size(20.dp))
+        Text(st.text, color = if (st.available != null) Bg else TextPrimary, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
 
@@ -661,10 +857,34 @@ private fun openHomeSettings(context: Context) {
     }
 }
 
+/** Er T'OS valgt som startskjerm nå? */
+fun isDefaultHome(context: Context): Boolean = runCatching {
+    context.packageManager.resolveActivity(Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME), 0)
+        ?.activityInfo?.packageName == context.packageName
+}.getOrDefault(false)
+
+/** Engangsoppsett nederst i app-skuffen (åpner Android-innstillingene, så den ligger ikke blant de vanlige knappene). */
 @Composable
-fun HomeButton() {
+fun HomeSetupRow() {
     val context = LocalContext.current
-    PillButton(Icons.Default.Home, "Startskjerm") { openHomeSettings(context) }
+    val isHome = remember { isDefaultHome(context) }
+    Row(
+        Modifier.fillMaxWidth().heightIn(min = 64.dp).clip(RoundedCornerShape(18.dp)).background(Card)
+            .clickable(onClickLabel = "Åpne Android-innstillingene") { openHomeSettings(context) }
+            .padding(horizontal = 18.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        Icon(if (isHome) Icons.Default.CheckCircle else Icons.Default.Home, null, tint = TextMuted, modifier = Modifier.size(24.dp))
+        Column(Modifier.weight(1f)) {
+            Text("Oppsett: velg startskjerm", color = TextPrimary, fontSize = 16.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(
+                if (isHome) "T'OS er startskjermen. Trykk bare hvis Hjem-knappen likevel viser stereoens gamle skjerm."
+                else "Gjøres én gang: velg T'OS, så viser Hjem-knappen alltid T'OS. Åpner Android-innstillingene.",
+                color = TextMuted, fontSize = 13.sp, maxLines = 2, overflow = TextOverflow.Ellipsis,
+            )
+        }
+        Icon(Icons.AutoMirrored.Filled.OpenInNew, null, tint = TextMuted, modifier = Modifier.size(20.dp))
+    }
 }
 
 @Composable
@@ -675,20 +895,27 @@ fun PillButton(icon: ImageVector, label: String, onClick: () -> Unit) = Pill(lab
 @Composable
 fun AppDrawer(onClose: () -> Unit) {
     val context = LocalContext.current
-    val apps by produceState(initialValue = emptyList<AppEntry>(), Prefs.str("hidden_apps")) { value = withContext(Dispatchers.IO) { AppRepository.installedApps(context) } }
+    var loaded by remember { mutableStateOf(false) }
+    val apps by produceState(initialValue = emptyList<AppEntry>(), Prefs.str("hidden_apps"), Prefs.bool("show_system_apps")) {
+        value = withContext(Dispatchers.IO) { AppRepository.installedApps(context) }; loaded = true
+    }
 
     Column(Modifier.fillMaxSize().clip(Shape).background(Panel).padding(24.dp)) {
         Row(Modifier.fillMaxWidth().padding(bottom = 16.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text("Apper", color = TextPrimary, fontSize = 28.sp, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f))
-            PillButton(Icons.Default.Settings, "Innstillinger") { Nav.screen = Screen.SETTINGS }
+            Text("Apper", color = TextPrimary, fontSize = 28.sp, fontWeight = FontWeight.Medium, maxLines = 1)
             Spacer(Modifier.width(12.dp))
-            PillButton(Icons.Default.Tune, "Knapper") { Nav.screen = Screen.KEYS }
+            // Knappene får plassen som er igjen (kan rulles sidelengs med stor tekst), så X alltid synes
+            Row(
+                Modifier.weight(1f).horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.End),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                PillButton(Icons.Default.Settings, "Innstillinger") { Nav.screen = Screen.SETTINGS }
+                PillButton(Icons.Default.Tune, "Knapper") { Nav.screen = Screen.KEYS }
+                UpdateButton()
+            }
             Spacer(Modifier.width(12.dp))
-            HomeButton()
-            Spacer(Modifier.width(12.dp))
-            UpdateButton()
-            Spacer(Modifier.width(12.dp))
-            RoundIcon(Icons.Default.Close, 48.dp) { onClose() }
+            RoundIcon(Icons.Default.Close, 48.dp, desc = "Lukk") { onClose() }
         }
         LazyVerticalGrid(
             columns = GridCells.Adaptive(120.dp),
@@ -697,9 +924,11 @@ fun AppDrawer(onClose: () -> Unit) {
         ) {
             // T'OS sine egne sider først
             val own = listOf(
-                Triple(Icons.Default.Radio, "Radio", Screen.RADIO), Triple(Icons.Default.Bluetooth, "Bluetooth", Screen.BT),
-                Triple(Icons.Default.DirectionsCar, "Bil og tur", Screen.CAR), Triple(Icons.Default.Map, "Kart", Screen.MAP),
-                Triple(Icons.Default.Settings, "Innstillinger", Screen.SETTINGS), Triple(Icons.Default.Speed, "Tuning", Screen.TUNING),
+                Triple(Icons.Default.MusicNote, "Musikk", Screen.MUSIC), Triple(Icons.Default.Radio, "Radio", Screen.RADIO),
+                Triple(Icons.Default.Phone, "Telefon", Screen.PHONE), Triple(Icons.Default.Bluetooth, "Bluetooth", Screen.BT),
+                Triple(Icons.Default.Navigation, "Navigasjon", Screen.NAV), Triple(Icons.Default.Map, "Kart", Screen.MAP),
+                Triple(Icons.Default.DirectionsCar, "Bil og tur", Screen.CAR), Triple(Icons.Default.Speed, "Tuning", Screen.TUNING),
+                Triple(Icons.Default.Settings, "Innstillinger", Screen.SETTINGS),
             )
             items(own, key = { it.second }) { (icon, label, screen) ->
                 Column(
@@ -710,8 +939,11 @@ fun AppDrawer(onClose: () -> Unit) {
                         Icon(icon, null, tint = TextPrimary, modifier = Modifier.size(28.dp))
                     }
                     Spacer(Modifier.height(8.dp))
-                    Text(label, color = TextPrimary, fontSize = 13.sp, maxLines = 1)
+                    Text(label, color = TextPrimary, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
+            }
+            if (!loaded) item(span = { GridItemSpan(maxLineSpan) }) {
+                Text("Henter appene …", color = TextMuted, fontSize = 15.sp, modifier = Modifier.padding(8.dp))
             }
             items(apps, key = { it.packageName }) { app ->
                 Column(
@@ -722,9 +954,10 @@ fun AppDrawer(onClose: () -> Unit) {
                 ) {
                     AppIcon(app.icon, 52.dp, app.packageName)
                     Spacer(Modifier.height(8.dp))
-                    Text(app.label, color = TextPrimary, fontSize = 13.sp, maxLines = 1)
+                    Text(app.label, color = TextPrimary, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
             }
+            item(span = { GridItemSpan(maxLineSpan) }) { Box(Modifier.padding(top = 10.dp)) { HomeSetupRow() } }
         }
     }
 }

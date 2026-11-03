@@ -32,7 +32,7 @@ enum class Action(val label: String) {
     NAVI("Kart / navigasjon"),
     MUSIC("Musikk (Spotify)"),
     BT("Bluetooth-side"),
-    RADIO("Radio-appen"),
+    RADIO("FM-radio (spiller i T'OS)"),
     RADIO_PAGE("Radio-side (nettradio + radio)"),
     PHONE("Telefon-side (favoritter)"),
     CARPLAY("CarPlay"),
@@ -85,6 +85,8 @@ object Buttons {
     var version by androidx.compose.runtime.mutableIntStateOf(0)
         private set
     private fun changed() { version++ }
+    /** Tegn Knapper-siden på nytt etter at innstillingene er byttet ut (f.eks. hentet fra sikkerhetskopi). */
+    fun reload() = changed()
 
     fun action(c: Context, k: PanelKey): Action =
         version.let { _ -> prefs(c) }.getString("action_${k.name}", null)?.let { n -> Action.entries.firstOrNull { it.name == n } } ?: k.default
@@ -96,11 +98,16 @@ object Buttons {
     /** Tastekoden knappen er lært med (-1 = ikke lært). */
     fun code(c: Context, k: PanelKey): Int = version.let { _ -> prefs(c) }.getInt("code_${k.name}", -1)
     fun pkg(c: Context, k: PanelKey): String? = version.let { _ -> prefs(c) }.getString("pkg_${k.name}", null)
+    /** Lær tastekoden. Hadde en annen knapp samme kode, glemmes den der (ellers ville bare den første virket). */
     fun learnCode(c: Context, k: PanelKey, code: Int) {
-        prefs(c).edit().putInt("code_${k.name}", code).remove("pkg_${k.name}").apply(); changed()
+        val e = prefs(c).edit().putInt("code_${k.name}", code).remove("pkg_${k.name}")
+        learnedConflicts(prefs(c).all, "code_", code, k).forEach { e.remove(it) }
+        e.apply(); changed()
     }
     fun learnPkg(c: Context, k: PanelKey, pkg: String) {
-        prefs(c).edit().putString("pkg_${k.name}", pkg).remove("code_${k.name}").apply(); changed()
+        val e = prefs(c).edit().putString("pkg_${k.name}", pkg).remove("code_${k.name}")
+        learnedConflicts(prefs(c).all, "pkg_", pkg, k).forEach { e.remove(it) }
+        e.apply(); changed()
     }
 
     /** Kode 0 (ukjent tast) og lavere teller ikke – ellers ville alle ukjente taster blitt tolket som en lært knapp. */
@@ -122,12 +129,17 @@ object Buttons {
     fun targets(c: Context, a: Action): List<String> {
         fun tile(p: String) = Tiles.byPrefix(p).let { t -> t.candidates + listOfNotNull(AppRepository.tilePackage(c, t)) }
         return when (a) {
-            Action.HOME, Action.BT, Action.APPS, Action.RADIO_PAGE, Action.PHONE, Action.MAP_FULL, Action.CAR, Action.QUICK, Action.TUNING, Action.SETTINGS -> listOf(c.packageName)
+            // RADIO: radioen startes i bakgrunnen og T'OS sin radio-side vises (stereoens radio-app tas hånd om i KeyService)
+            Action.HOME, Action.BT, Action.APPS, Action.RADIO, Action.RADIO_PAGE, Action.PHONE, Action.MAP_FULL, Action.CAR, Action.QUICK, Action.TUNING, Action.SETTINGS -> listOf(c.packageName)
             Action.NAVI -> tile("Nav") + listOf(Prefs.str("nav_app"))
             Action.MUSIC -> tile("Mus")
-            Action.RADIO -> tile("Rad")
             Action.CARPLAY -> tile("Car")
             Action.CAMERA -> tile("Rygg")
+            // Disse åpner også apper: kartappen (naviger hjem, delt skjerm), musikkappen, CarPlay (Siri) –
+            // uten dem kunne stereoen og T'OS sendt hverandre i ring
+            Action.NAV_HOME -> tile("Nav") + listOf(Prefs.str("nav_app"), c.packageName)
+            Action.SPLIT -> tile("Mus") + tile("Nav") + listOf(Prefs.str("nav_app"))
+            Action.VOICE -> tile("Car")
             else -> emptyList()
         }
     }
@@ -139,7 +151,8 @@ object Buttons {
             Action.APPS -> show(c, Screen.APPS)
             Action.NAVI -> openMaps(c)
             Action.MUSIC -> openMusic(c)
-            Action.RADIO -> AppRepository.launchTile(c, Tiles.byPrefix("Rad"))
+            // Stereoens FM/AM-radio uten radio-appens skjermbilde (se HwRadio.powerOn)
+            Action.RADIO -> HwRadio.powerOn(c, showPage = true)
             Action.RADIO_PAGE -> show(c, Screen.RADIO)
             Action.PHONE -> show(c, Screen.PHONE)
             Action.CARPLAY -> AppRepository.launchTile(c, Tiles.byPrefix("Car"))
@@ -166,6 +179,8 @@ object Buttons {
 
     /** Musikkappen brukeren har valgt, ellers første som finnes (Spotify først). */
     fun openMusic(c: Context) {
+        // Musikk i stedet for FM-radioen: slå av radioen, så de ikke spiller oppå hverandre
+        if (HwRadio.wanted) HwRadio.powerOff(c)
         val pkg = Prefs.str("music_pkg")
         if (pkg.isNotBlank() && AppRepository.isInstalled(c, pkg)) AppRepository.launch(c, pkg)
         else AppRepository.launchTile(c, Tiles.byPrefix("Mus"))
@@ -184,11 +199,16 @@ object Buttons {
         AppRepository.launchTile(c, Tiles.byPrefix("Car"))
     }
 
-    fun show(c: Context, s: Screen) {
+    /**
+     * Vis en T'OS-skjerm. [instant]: uten overgangsanimasjon (brukes når T'OS skal dekke over stereoens egne
+     * skjermbilder, så de ikke synes under animasjonen).
+     */
+    fun show(c: Context, s: Screen, instant: Boolean = false) {
         Nav.screen = s
         val i = Intent(c, MainActivity::class.java)
             .putExtra(Nav.EXTRA, s.name)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+        if (instant) i.addFlags(Intent.FLAG_ACTIVITY_NO_ANIMATION or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
         runCatching { c.startActivity(i) }
     }
 
@@ -203,16 +223,35 @@ object Buttons {
 
 /* ======================= «Lær knapp» ======================= */
 
+/** Andre knappers lagrede verdier ([prefix] + knappnavn) som er lik [value] – de skal glemmes når [keep] lærer den. */
+internal fun learnedConflicts(all: Map<String, *>, prefix: String, value: Any, keep: PanelKey): List<String> =
+    PanelKey.entries.filter { it != keep }.map { prefix + it.name }.filter { all[it] == value }
+
 object Learn {
     var target by mutableStateOf<PanelKey?>(null)
     var message by mutableStateOf<String?>(null)
+    private var startedAt = 0L
+    /** Etter så lang tid regnes læringen som glemt (Knapper-siden gir også opp av seg selv). */
+    internal const val TIMEOUT_MS = 15_000L
 
-    fun start(k: PanelKey) { target = k; message = null }
+    fun start(k: PanelKey) { target = k; message = null; startedAt = android.os.SystemClock.elapsedRealtime() }
     fun cancel(msg: String? = null) { target = null; message = msg }
 
-    /** Knappen sendte en tastekode. */
+    internal fun expired(now: Long, started: Long) = now - started > TIMEOUT_MS
+
+    /** Læringen har stått for lenge (f.eks. Knapper-siden ble lukket): avbryt. Gir true hvis den ble avbrutt. */
+    private fun timedOut(): Boolean {
+        if (!expired(android.os.SystemClock.elapsedRealtime(), startedAt)) return false
+        cancel("Fikk ikke noe signal i tide. Trykk «Lær» og prøv igjen.")
+        return true
+    }
+
+    /** Knappen sendte en tastekode. Gir false hvis tasten ikke ble brukt til læring (da behandles den vanlig). */
     fun offerKey(c: Context, code: Int): Boolean {
         val k = target ?: return false
+        if (timedOut()) return false
+        // Tilbake avbryter læringen (BACK-knappen virker som tilbake uten å læres)
+        if (code == KeyEvent.KEYCODE_BACK) { cancel("Læring avbrutt."); return true }
         if (code <= 0) { message = "${k.label} sender ingen brukbar tastekode. Prøv knappen igjen, eller la stereoen bestemme."; return true }
         Buttons.learnCode(c, k, code)
         cancel("${k.label} er lært (sender tastekode $code).")
@@ -222,6 +261,7 @@ object Learn {
     /** Knappen åpnet en app i stedet. Vi husker appen og går tilbake til Knapper-siden. */
     fun offerPackage(c: Context, pkg: String): Boolean {
         val k = target ?: return false
+        if (timedOut()) return false
         Buttons.learnPkg(c, k, pkg)
         cancel("${k.label} er lært (stereoen åpner $pkg).")
         Buttons.show(c, Screen.KEYS)

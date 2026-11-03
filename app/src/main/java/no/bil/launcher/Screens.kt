@@ -7,6 +7,7 @@ import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.provider.Settings
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -20,6 +21,7 @@ import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MenuDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -30,16 +32,21 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 
 /* ---------- Felles topp: tittel + lukk ---------- */
 
 @Composable
 private fun PageHeader(title: String, onClose: () -> Unit, extra: @Composable RowScope.() -> Unit = {}) {
     Row(Modifier.fillMaxWidth().padding(bottom = 16.dp), verticalAlignment = Alignment.CenterVertically) {
-        Text(title, color = TextPrimary, fontSize = 28.sp, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f))
+        Text(title, color = TextPrimary, fontSize = 28.sp, fontWeight = FontWeight.Medium, maxLines = 1,
+            overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
         extra()
-        RoundIcon(Icons.Default.Close, 48.dp) { onClose() }
+        RoundIcon(Icons.Default.Close, 48.dp, desc = "Lukk") { onClose() }
     }
 }
 
@@ -73,7 +80,8 @@ fun btStatus(context: Context): BtStatus {
 fun BluetoothScreen(onClose: () -> Unit) {
     val context = LocalContext.current
     val status by produceState(initialValue = remember { btStatus(context) }) {
-        while (true) { value = btStatus(context); delay(3000) }
+        // Bluetooth-oppslaget går via systemet (og prøver skjulte funksjoner) – ikke på hovedtråden hvert 3. sekund
+        while (true) { value = withContext(Dispatchers.IO) { btStatus(context) }; delay(3000) }
     }
 
     Column(Modifier.fillMaxSize().clip(RoundedCornerShape(28.dp)).background(Panel).padding(24.dp)) {
@@ -97,7 +105,8 @@ fun BluetoothScreen(onClose: () -> Unit) {
                 )
                 Text(
                     when {
-                        connected == null -> "Åpne Telefon for å koble til"
+                        !status.available || !status.on -> "Slå på og par telefonen under Innstillinger"
+                        connected == null -> "Koble til telefonen under Innstillinger"
                         connected.battery in 0..100 -> "Tilkoblet · batteri ${connected.battery} %"
                         else -> "Tilkoblet"
                     },
@@ -113,7 +122,7 @@ fun BluetoothScreen(onClose: () -> Unit) {
                                     Modifier.size(10.dp).clip(CircleShape)
                                         .then(if (d.connected) Modifier.background(TextPrimary) else Modifier.border(1.5.dp, TextMuted, CircleShape))
                                 )
-                                Text(d.name, color = if (d.connected) TextPrimary else TextMuted, fontSize = 16.sp, maxLines = 1)
+                                Text(d.name, color = if (d.connected) TextPrimary else TextMuted, fontSize = 16.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                             }
                         }
                     }
@@ -122,20 +131,20 @@ fun BluetoothScreen(onClose: () -> Unit) {
                 // Musikk fra telefonen over Bluetooth
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     Text("Musikk", color = TextMuted, fontSize = 14.sp, modifier = Modifier.weight(1f))
-                    RoundIcon(Icons.Default.SkipPrevious, 44.dp) { Media.previous(context) }
-                    RoundIcon(Icons.Default.PlayArrow, 56.dp, outlined = true) { Media.playPause(context) }
-                    RoundIcon(Icons.Default.SkipNext, 44.dp) { Media.next(context) }
+                    RoundIcon(Icons.Default.SkipPrevious, 48.dp, desc = "Forrige sang") { Media.previous(context) }
+                    RoundIcon(if (musicPlaying) Icons.Default.Pause else Icons.Default.PlayArrow, 56.dp, outlined = true,
+                        desc = if (musicPlaying) "Pause" else "Spill") { Media.playPause(context) }
+                    RoundIcon(Icons.Default.SkipNext, 48.dp, desc = "Neste sang") { Media.next(context) }
                 }
             }
 
-            // Høyre: fire store valg
+            // Høyre: fire store valg. Telefon og musikk er T'OS sine egne sider (ikke stereoens Bluetooth-app).
             Column(Modifier.weight(0.55f).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(14.dp)) {
                 Row(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                    BigTile(Icons.Default.Phone, "Telefon", Modifier.weight(1f)) { AppRepository.launchTile(context, Tiles.byPrefix("Tel")) }
-                    BigTile(Icons.Default.Headphones, "Bluetooth-musikk", Modifier.weight(1f)) { AppRepository.launchTile(context, Tiles.byPrefix("Blu")) }
+                    BigTile(Icons.Default.Phone, "Telefon", Modifier.weight(1f)) { Nav.screen = Screen.PHONE }
+                    BigTile(Icons.Default.Headphones, "Bluetooth-musikk", Modifier.weight(1f)) { Nav.screen = Screen.MUSIC }
                 }
                 Row(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                    BigTile(Icons.Default.Star, "Favoritter", Modifier.weight(1f)) { Nav.screen = Screen.PHONE }
                     BigTile(Icons.Default.PhoneIphone, "CarPlay", Modifier.weight(1f)) { AppRepository.launchTile(context, Tiles.byPrefix("Car")) }
                     BigTile(Icons.Default.Settings, "Innstillinger", Modifier.weight(1f)) {
                         Prefs.set("settings_cat", "BT"); Nav.screen = Screen.SETTINGS   // T'OS sin egen Bluetooth-side
@@ -155,7 +164,8 @@ fun BigTile(icon: ImageVector, label: String, modifier: Modifier, onClick: () ->
     ) {
         Icon(icon, null, tint = TextPrimary, modifier = Modifier.size(40.dp))
         Spacer(Modifier.height(10.dp))
-        Text(label, color = TextPrimary, fontSize = 16.sp)
+        Text(label, color = TextPrimary, fontSize = 16.sp, textAlign = TextAlign.Center, maxLines = 2,
+            overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(horizontal = 8.dp))
     }
 }
 
@@ -166,16 +176,24 @@ fun ActionPicker(current: Action, modifier: Modifier, prefix: String = "", onPic
     var menu by remember { mutableStateOf(false) }
     Box(modifier) {
         Row(
-            Modifier.clip(RoundedCornerShape(12.dp)).clickable { menu = true }.padding(horizontal = 8.dp, vertical = 8.dp),
+            Modifier.heightIn(min = 48.dp).clip(RoundedCornerShape(12.dp)).clickable { menu = true }.padding(horizontal = 8.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(prefix + current.label, color = if (current == Action.NONE && prefix.isNotEmpty()) TextMuted else TextPrimary, fontSize = 15.sp, maxLines = 1,
-                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+                overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
             Icon(Icons.Default.ArrowDropDown, null, tint = TextMuted)
         }
-        DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+        // Mørk meny i T'OS-farger (ellers blir den hvit som i Android)
+        DropdownMenu(expanded = menu, onDismissRequest = { menu = false }, containerColor = Card,
+            shape = RoundedCornerShape(16.dp), border = BorderStroke(1.dp, Line)) {
             Action.entries.forEach { a ->
-                DropdownMenuItem(text = { Text(a.label) }, onClick = { onPick(a); menu = false })
+                DropdownMenuItem(
+                    text = { Text(a.label, fontSize = 16.sp, fontWeight = if (a == current) FontWeight.Medium else FontWeight.Normal) },
+                    onClick = { onPick(a); menu = false },
+                    leadingIcon = { if (a == current) Icon(Icons.Default.Check, null, tint = TextPrimary) else Spacer(Modifier.size(24.dp)) },
+                    colors = MenuDefaults.itemColors(textColor = TextPrimary, leadingIconColor = TextPrimary),
+                    modifier = Modifier.heightIn(min = 48.dp),
+                )
             }
         }
     }
@@ -187,11 +205,13 @@ fun KeysScreen(onClose: () -> Unit) {
     val serviceOn by produceState(initialValue = Buttons.serviceEnabled(context)) {
         while (true) { value = Buttons.serviceEnabled(context); delay(1500) }
     }
-    // Gi opp læring etter 10 sekunder
+    // Forlates siden (Hjem, en annen side …), stopper læringen – ellers ville neste app som åpnes bli «lært»
+    DisposableEffect(Unit) { onDispose { if (Learn.target != null) Learn.cancel() } }
+    // Gi opp læring etter like lang tid som Learn selv (ellers sier siden «ingen signal» før tiden er ute)
     val target = Learn.target
     LaunchedEffect(target) {
         if (target != null) {
-            delay(10_000)
+            delay(Learn.TIMEOUT_MS)
             if (Learn.target == target) Learn.cancel("Fikk ikke noe signal fra ${target.label}. Prøv igjen, og sjekk at knappestyring er på.")
         }
     }
@@ -257,11 +277,11 @@ private fun KeyRow(k: PanelKey, onChanged: () -> Unit) {
                 pkg != null -> pkg.substringAfterLast('.').let { "Åpner $it" }
                 else -> "Ikke lært"
             },
-            color = TextMuted, fontSize = 13.sp, maxLines = 1, modifier = Modifier.widthIn(max = 130.dp),
+            color = TextMuted, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.widthIn(max = 130.dp),
         )
 
         Box(
-            Modifier.height(44.dp).clip(RoundedCornerShape(22.dp))
+            Modifier.height(48.dp).clip(RoundedCornerShape(24.dp))
                 .background(if (learning) TextPrimary else Line)
                 .clickable { if (learning) Learn.cancel() else Learn.start(k); onChanged() }
                 .padding(horizontal = 18.dp),

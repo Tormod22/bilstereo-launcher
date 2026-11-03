@@ -4,13 +4,15 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.drawable.Drawable
-import android.widget.Toast
+import kotlinx.coroutines.launch
 
 /** En installert app som kan startes fra launcheren. */
 data class AppEntry(
     val label: String,
     val packageName: String,
     val icon: Drawable,
+    /** Stereoens egen «skall»-app (original startskjerm, radio, BT, musikk, fabrikkoppsett …) – skjult som standard. */
+    val shell: Boolean = false,
 )
 
 /**
@@ -30,8 +32,14 @@ object HiddenApps {
         "com.android.calculator2",
         "com.google.android.calculator",
         "com.ts.calculator",
-        "com.android.settings",          // erstattet av T'OS Innstillinger (finnes under Om stereoen → Avansert)
     )
+
+    /**
+     * «Vis systemapper» (Innstillinger → Apper): viser stereoens egne apper som ellers er skjult fordi T'OS gjør
+     * det samme (original startskjerm, radio, Bluetooth/telefon, musikk, video, filer, galleri, innstillinger,
+     * fabrikk- og oppdateringsapper).
+     */
+    val showSystem get() = Prefs.bool("show_system_apps", false)
 
     /** Apper brukeren har skjult selv (Innstillinger → Apper). */
     fun userHidden(): Set<String> = Prefs.str("hidden_apps").split("\n").filter { it.isNotBlank() }.toSet()
@@ -47,8 +55,62 @@ object HiddenApps {
     fun isHidden(app: AppEntry): Boolean {
         if (app.packageName in userHidden()) return true
         if (Prefs.bool("shown_${app.packageName}", false)) return false
-        return app.packageName in packages || labelKeywords.any { app.label.lowercase().contains(it) }
+        if (app.packageName in packages || labelKeywords.any { app.label.lowercase().contains(it) }) return true
+        return app.shell && !showSystem
     }
+}
+
+/** Stereoens egne apper som T'OS erstatter (pakkenavn). Gjetninger for vanlige kinesiske stereoer – utvid etter oppsettrapporten. */
+internal val stockShellPackages = setOf(
+    "com.android.settings", "com.android.launcher", "com.android.launcher2", "com.android.launcher3", "com.android.quicksearchbox",
+    "com.ts.radio", "com.syu.radio", "com.android.radio", "com.hzbhd.radio", "com.android.fmradio", "com.caf.fmradio",
+    "com.ts.bt", "com.syu.bt", "com.microntek.bluetooth", "com.microntek.btmusic", "com.microntek.radio", "com.microntek.music",
+    "com.android.music", "com.android.gallery3d", "com.android.documentsui", "com.android.deskclock", "com.android.soundrecorder",
+    "com.ts.music", "com.ts.video", "com.ts.filemanager", "com.ts.launcher", "com.syu.music", "com.syu.video", "com.syu.launcher",
+    "com.syu.filemanager", "com.syu.gallery", "com.fyt.launcher", "com.hzbhd.launcher", "com.android.car.launcher",
+)
+
+/** CarPlay/Android Auto-apper (Car link, Zlink …): aldri skjult, og aldri byttet ut med T'OS. */
+internal val projectionWords = listOf("carlink", "car link", "carplay", "zlink", "autokit", "android auto", "gearhead", "projection",
+    "phonemirror", "cplay")
+
+/** Er dette en CarPlay/Android Auto-app? ([text] = pakkenavn og/eller navn.) */
+internal fun isProjectionApp(text: String): Boolean = text.lowercase().let { t -> projectionWords.any { it in t } }
+
+/** Apper som alltid skal vises selv om de er systemapper (CarPlay/Car link, kart, musikk-tjenester, nettleser, Play). */
+private val keepWords = projectionWords + listOf(
+    "maps", "waze", "spotify", "youtube", "google", "chrome", "browser", "nettleser", "vending", "play store", "netflix", "tidal",
+    "deezer", "apple", "amazon", "nrk", "tunein", "dvr", "tpms", "camera", "kamera", "steering", "swc", "ratt")
+
+/** Ord (hele ord i navn eller pakkenavn) som avslører stereoens «skall»-apper. */
+private val shellTokens = setOf("launcher", "launcher3", "home", "carhome", "desktop", "mainui", "mainmenu",
+    "radio", "fmradio", "fm", "bt", "btphone", "btmusic", "bluetooth", "dialer", "music", "musikk", "video", "videos", "videoplayer",
+    "gallery", "galleri", "gallery3d", "photo", "photos", "bilder", "filemanager", "filbehandler", "files", "documentsui",
+    "settings", "innstillinger", "carsettings", "factory", "fabrikk", "factorytest", "engineer", "engmode", "aging",
+    "update", "updater", "upgrade", "ota", "fota", "oppdatering", "systemupdate", "equalizer", "eq", "avin", "aux", "deskclock",
+    "soundrecorder", "quicksearchbox", "usb", "sd")
+
+/** Uttrykk med flere ord i appnavnet. */
+private val shellPhrases = listOf("car home", "main menu", "bt music", "bt phone", "file manager", "media player",
+    "music player", "video player", "system update", "systemoppdatering", "car settings")
+
+/**
+ * Er appen stereoens egen «skall»-app som T'OS erstatter? Bare systemapper (forhåndsinstallert) regnes med.
+ * Kjente pakkenavn, en startskjerm-app, eller navn/pakkenavn med typiske ord (radio, Bluetooth, musikk, video,
+ * filer, galleri, innstillinger, fabrikk, oppdatering …). Car link/CarPlay, kart, Spotify, YouTube osv. vises alltid.
+ * Testes i ServiceLogicTest3.
+ */
+internal fun isStockShellApp(pkg: String, label: String, isSystem: Boolean, isHome: Boolean, ownPkg: String = "no.bil.launcher"): Boolean {
+    if (pkg == ownPkg || !isSystem) return false
+    val hay = (label + " " + pkg).lowercase()
+    if (keepWords.any { it in hay }) return false
+    if (pkg in stockShellPackages || isHome) return true
+    // Nettradio-apper (NRK, TuneIn …) er ikke stereoens FM-radio
+    if (internetRadioWords.any { it in pkg.lowercase() }) return false
+    val tokens = hay.split(Regex("[^\\p{L}\\p{N}]+")).filter { it.isNotEmpty() }
+    if (tokens.any { it in shellTokens }) return true
+    val l = label.lowercase()
+    return shellPhrases.any { it in l }
 }
 
 object Tiles {
@@ -160,12 +222,29 @@ object AppRepository {
             }.getOrNull()
     }
 
+    /** Er appen forhåndsinstallert på stereoen (systemapp, også når den er oppdatert)? */
+    fun isSystemApp(ai: android.content.pm.ApplicationInfo?): Boolean =
+        ai != null && (ai.flags and (android.content.pm.ApplicationInfo.FLAG_SYSTEM or android.content.pm.ApplicationInfo.FLAG_UPDATED_SYSTEM_APP)) != 0
+
+    /** Pakkene som har en startskjerm (stereoens originale startskjerm m.fl.), uten T'OS. */
+    fun homePackages(context: Context): Set<String> = runCatching {
+        context.packageManager.queryIntentActivities(Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME), 0)
+            .map { it.activityInfo.packageName }.filter { it != context.packageName }.toSet()
+    }.getOrDefault(emptySet())
+
     fun installedApps(context: Context, includeHidden: Boolean = false): List<AppEntry> {
         val pm = context.packageManager
+        val homes = homePackages(context)
+        fun shell(ai: android.content.pm.ApplicationInfo?, pkg: String, label: String) =
+            isStockShellApp(pkg, label, isSystemApp(ai), pkg in homes, context.packageName)
         val intent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
         val normal = pm.queryIntentActivities(intent, 0)
             .filter { it.activityInfo.packageName != context.packageName }
-            .map { AppEntry(label = it.loadLabel(pm).toString(), packageName = it.activityInfo.packageName, icon = it.loadIcon(pm)) }
+            .map {
+                val label = it.loadLabel(pm).toString()
+                val pkg = it.activityInfo.packageName
+                AppEntry(label = label, packageName = pkg, icon = it.loadIcon(pm), shell = shell(it.activityInfo.applicationInfo, pkg, label))
+            }
         val known = normal.map { it.packageName }.toSet()
         // Bil-apper uten startikon (CarPlay/Car link, radio, kamera …) – ellers usynlige
         val hidden = runCatching { pm.getInstalledApplications(0) }.getOrDefault(emptyList())
@@ -176,7 +255,7 @@ object AppRepository {
                 val hay = (label + " " + ai.packageName).lowercase()
                 if (carWords.none { it in hay }) return@mapNotNull null
                 if (launchIntent(context, ai.packageName) == null) return@mapNotNull null
-                AppEntry(label, ai.packageName, pm.getApplicationIcon(ai))
+                AppEntry(label, ai.packageName, pm.getApplicationIcon(ai), shell = shell(ai, ai.packageName, label))
             }.toList()
         return (normal + hidden)
             .distinctBy { it.packageName }
@@ -186,19 +265,29 @@ object AppRepository {
 
     fun isInstalled(context: Context, packageName: String): Boolean = launchIntent(context, packageName) != null
 
-    /** Apper T'OS selv nettopp åpnet (pakke → tid). Knappestyringen skal ikke sende deg tilbake fra dem. */
+    /**
+     * Apper T'OS selv nettopp åpnet (pakke → tid). Knappestyringen skal ikke sende deg tilbake fra dem.
+     * 8 s fordi treg kaldstart (CarPlay, radio) på stereoen kan ta flere sekunder; merket brukes opp når appen
+     * kommer fram ([forgetLaunched]), så et senere trykk på stereoens knapp ikke regnes som T'OS sitt.
+     */
     private val selfLaunched = java.util.concurrent.ConcurrentHashMap<String, Long>()
-    fun launchedByUs(pkg: String, withinMs: Long = 3000): Boolean =
+    fun launchedByUs(pkg: String, withinMs: Long = 8000): Boolean =
         selfLaunched[pkg]?.let { android.os.SystemClock.elapsedRealtime() - it < withinMs } == true
 
+    /** Appen T'OS åpnet har kommet fram – merket trengs ikke lenger. */
+    fun forgetLaunched(pkg: String) { selfLaunched.remove(pkg) }
+
+    /** Merk at T'OS selv åpner [pkg] (så KeyService ikke sender brukeren tilbake). */
+    fun markLaunched(pkg: String) { selfLaunched[pkg] = android.os.SystemClock.elapsedRealtime() }
+
     fun launch(context: Context, packageName: String) {
-        selfLaunched[packageName] = android.os.SystemClock.elapsedRealtime()
         val intent = launchIntent(context, packageName)
         if (intent != null) {
+            markLaunched(packageName)
             intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            runCatching { context.startActivity(intent) }.onFailure { Toast.makeText(context, "Fikk ikke åpnet appen", Toast.LENGTH_SHORT).show() }
+            runCatching { context.startActivity(intent) }.onFailure { selfLaunched.remove(packageName); Notify.show("Fikk ikke åpnet appen") }
         } else {
-            Toast.makeText(context, "Fant ikke appen", Toast.LENGTH_SHORT).show()
+            Notify.show("Fant ikke appen")
         }
     }
 
@@ -208,23 +297,49 @@ object AppRepository {
         prefix?.let { p -> Prefs.str(tileChoice.getValue(p)).takeIf { it.isNotBlank() && isInstalled(context, it) }?.let { return it } }
         tile.candidates.firstOrNull { isInstalled(context, it) }?.let { return it }
         val words = tileWords[prefix] ?: return null
-        return findByWords(context, prefix!!, words)
+        // Radio-flisa er stereoens FM/AM-radio: nettradio-apper (NRK Radio, TuneIn …) skal ikke velges
+        return findByWords(context, words, skip = if (prefix == "Rad") internetRadioWords else emptyList())
     }
 
-    /** Navnesøk uten ikoner, husket i 5 minutter (brukes ved knappetrykk – må gå raskt). */
-    private val wordCache = java.util.concurrent.ConcurrentHashMap<String, Pair<Long, String?>>()
-    private fun findByWords(context: Context, key: String, words: List<String>): String? {
-        val now = android.os.SystemClock.elapsedRealtime()
-        wordCache[key]?.let { (t, pkg) -> if (now - t < 300_000) return pkg }
+    /**
+     * Navnesøk uten ikoner (brukes ved knappetrykk – må gå raskt). Navnene på alle apper leses i bakgrunnen
+     * ([warm], ved oppstart av knappetjenesten og første bruk) og leses på nytt når en app installeres/fjernes
+     * ([invalidate]) eller etter 10 minutter. Selve svaret huskes ikke, så en app som installeres senere blir funnet.
+     */
+    private class NameIndex(val at: Long, val entries: List<Pair<String, String>>)   // pakke til «navn pakke» (små bokstaver)
+    @Volatile private var nameIndex: NameIndex? = null
+    private val warming = java.util.concurrent.atomic.AtomicBoolean(false)
+    private val io = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.IO)
+
+    private fun buildIndex(context: Context): NameIndex {
         val pm = context.packageManager
-        val found = runCatching { pm.getInstalledApplications(0) }.getOrDefault(emptyList())
-            .firstOrNull { ai ->
-                if (ai.packageName == context.packageName) return@firstOrNull false
-                val hay = ((runCatching { pm.getApplicationLabel(ai).toString() }.getOrNull() ?: "") + " " + ai.packageName).lowercase()
-                words.any { it in hay } && launchIntent(context, ai.packageName) != null
-            }?.packageName
-        wordCache[key] = now to found
-        return found
+        val list = runCatching { pm.getInstalledApplications(0) }.getOrDefault(emptyList())
+            .filter { it.packageName != context.packageName }
+            .map { ai -> ai.packageName to ((runCatching { pm.getApplicationLabel(ai).toString() }.getOrNull() ?: "") + " " + ai.packageName).lowercase() }
+        return NameIndex(android.os.SystemClock.elapsedRealtime(), list)
+    }
+
+    /** Les app-navnene i bakgrunnen (ved oppstart, og når noe er installert/fjernet). */
+    fun warm(context: Context) {
+        val app = context.applicationContext
+        if (!warming.compareAndSet(false, true)) return
+        io.launch {
+            try { nameIndex = buildIndex(app) } catch (_: Exception) {} finally { warming.set(false) }
+        }
+    }
+
+    /** En app er installert, oppdatert eller fjernet: les navnene på nytt (de gamle brukes til de nye er klare). */
+    fun invalidate(context: Context) { warm(context) }
+
+    private fun findByWords(context: Context, words: List<String>, skip: List<String> = emptyList()): String? {
+        var idx = nameIndex
+        if (idx == null) {
+            // Første gang (bakgrunnslesingen er ikke ferdig): les nå, én gang. Senere brukes lista som finnes.
+            idx = buildIndex(context).also { nameIndex = it }
+        } else if (android.os.SystemClock.elapsedRealtime() - idx.at > 600_000) {
+            warm(context)
+        }
+        return idx.entries.firstOrNull { (pkg, hay) -> words.any { it in hay } && skip.none { it in hay } && launchIntent(context, pkg) != null }?.first
     }
 
     /** Åpner appen for flisa, ellers fallback-intent. */
@@ -233,11 +348,14 @@ object AppRepository {
         when {
             pkg != null -> launch(context, pkg)
             tile.fallbackIntent != null -> runCatching {
-                context.startActivity(tile.fallbackIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                val i = Intent(tile.fallbackIntent).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                // Appen som svarer (f.eks. stereoens egen kartapp) er også åpnet av T'OS – ikke send brukeren tilbake fra den
+                runCatching { i.resolveActivity(context.packageManager)?.packageName }.getOrNull()?.let { markLaunched(it) }
+                context.startActivity(i)
             }.onFailure {
-                Toast.makeText(context, "Ingen app for ${tile.title}", Toast.LENGTH_SHORT).show()
+                Notify.show("Ingen app for ${tile.title}")
             }
-            else -> Toast.makeText(context, "Ingen app for ${tile.title}. Velg den under Innstillinger → Apper.", Toast.LENGTH_LONG).show()
+            else -> Notify.show("Ingen app for ${tile.title}. Velg den under Innstillinger → Apper.", long = true)
         }
     }
 

@@ -116,7 +116,7 @@ svg.i { fill: currentColor; display: block; }
 .map .wait { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: var(--muted); font-size: 15px; text-align: center; padding: 20px; }
 .navchip {
   position: absolute; left: 16px; bottom: 16px; display: flex; align-items: center; gap: 10px;
-  background: rgba(28, 28, 31, .92); border-radius: 18px; padding: 12px 18px; font-size: 17px; font-weight: 500;
+  background: rgba(28, 28, 31, .92); border-radius: 18px; padding: 12px 18px; min-height: 48px; font-size: 17px; font-weight: 500;
 }
 .attrib { position: absolute; right: 10px; bottom: 6px; font-size: 9px; color: #55555a; }
 
@@ -130,11 +130,12 @@ svg.i { fill: currentColor; display: block; }
 .mprog { position: absolute; left: 28px; right: 28px; bottom: 10px; height: 3px; border-radius: 2px; background: var(--line); overflow: hidden; }
 .mprog div { height: 100%; width: 0; background: var(--text); }
 .round.m { width: 48px; height: 48px; border: 1.5px solid var(--text); flex: none; }
+.round.m2 { width: 48px; height: 48px; flex: none; }
 .limit { width: 46px; height: 46px; border-radius: 50%; border: 3px solid var(--text); display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 17px; }
 .limit.over { background: var(--text); color: var(--bg); }
 .speed.over { background: var(--text); color: var(--bg); border-radius: 16px; padding: 0 12px; }
 .gpsrow { margin-left: auto; display: flex; align-items: center; gap: 12px; padding-bottom: 8px; color: var(--muted); font-size: 14px; }
-.notice { margin-top: 8px; display: inline-flex; align-items: center; gap: 6px; background: var(--card); border-radius: 12px; padding: 6px 12px; font-size: 13px; }
+.notice { margin-top: 8px; min-height: 48px; display: inline-flex; align-items: center; gap: 6px; background: var(--card); border-radius: 12px; padding: 6px 12px; font-size: 13px; }
 .notice svg { color: var(--muted); }
 .chips { position: absolute; left: 16px; bottom: 16px; display: flex; gap: 10px; }
 .chips .navchip { position: static; }
@@ -159,7 +160,7 @@ svg.i { fill: currentColor; display: block; }
 .quick.show { display: block; }
 .quick > div { background: var(--panel); border-radius: 0 0 28px 28px; padding: 24px; display: flex; flex-direction: column; gap: 14px; }
 .quick input[type=range] { flex: 1; accent-color: #F5F5F7; }
-.qrow { display: flex; gap: 12px; align-items: center; color: var(--muted); }
+.qrow { display: flex; gap: 12px; align-items: center; color: var(--muted); overflow-x: auto; }
 .musicbig { display: flex; gap: 28px; align-items: center; flex: 1; }
 .musicbig .cv { width: 300px; height: 300px; border-radius: 24px; background: var(--card); display: flex; align-items: center; justify-content: center; }
 .carwrap { display: flex; gap: 14px; flex: 1; min-height: 0; }
@@ -219,13 +220,28 @@ svg.i { fill: currentColor; display: block; }
   border: 1px solid var(--line); border-radius: 26px; padding: 12px 22px 12px 14px; box-shadow: 0 8px 24px rgba(0,0,0,.5); transition: opacity .6s; }
 .navipop b { display: block; font-size: 17px; font-weight: 400; } .navipop span { color: var(--muted); font-size: 13px; }
 .navipop.fade { opacity: 0; }
+/* T'OS-melding (Notify): mørkt kort over bunnraden, trykk = lukk */
 .toast {
-  position: absolute; left: 50%; bottom: 40px; transform: translateX(-50%);
-  background: #2c2c30; color: var(--text); font-size: 15px; padding: 12px 20px; border-radius: 22px;
-  opacity: 0; transition: opacity .25s; pointer-events: none; white-space: nowrap; max-width: 90%;
-  overflow: hidden; text-overflow: ellipsis;
+  position: absolute; left: 50%; bottom: 124px; transform: translate(-50%, 12px); z-index: 7;
+  display: flex; align-items: center; gap: 12px; min-height: 52px; max-width: 640px;
+  background: var(--card); border: 1px solid var(--line); color: var(--text); font-size: 16px;
+  padding: 12px 22px; border-radius: 24px; opacity: 0; pointer-events: none;
+  transition: opacity .25s, transform .25s;
 }
-.toast.show { opacity: 1; }
+.toast svg { flex: none; fill: var(--muted); }
+.toast span { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.toast.show { opacity: 1; transform: translate(-50%, 0); pointer-events: auto; cursor: pointer; }
+/* T'OS-statuslinje på sidene (forsiden har klokka i bilkortet) */
+.tosbar { display: none; height: 30px; margin: -10px 0 4px; padding: 0 12px; align-items: center; gap: 10px; color: var(--muted); font-size: 13px; }
+.tosbar b { font-weight: 500; letter-spacing: .08em; margin-right: auto; }
+.tosbar svg { fill: var(--muted); }
+.tosbar .t { color: var(--text); font-size: 15px; font-weight: 500; margin-left: 4px; }
+.screen:not([data-view="dash"]) .tosbar { display: flex; }
+.screen:not([data-view="dash"]) .drawer, .screen:not([data-view="dash"]) .page { height: calc(100% - 24px); }
+.model svg { fill: var(--muted); vertical-align: -3px; margin-right: 8px; }
+.homesetup { margin-top: 12px; display: flex; align-items: center; gap: 14px; background: var(--card); border-radius: 18px; padding: 10px 18px; min-height: 64px; }
+.homesetup b { display: block; font-weight: 400; font-size: 16px; } .homesetup small { color: var(--muted); font-size: 13px; }
+.homesetup svg { fill: var(--muted); flex: none; }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
 </style>
 </head>
@@ -262,12 +278,13 @@ svg.i { fill: currentColor; display: block; }
     <button class="hw" type="button" data-key="NAVI">NAVI</button>
   </div>
   <div class="screen" id="screen" data-view="dash">
+    <div class="tosbar tap" id="tosbar" title="Trykk = hurtigpanelet"><b>T'OS</b><svg class="i" viewBox="0 0 24 24" width="18" height="18"><path d="M14.24 12.01l2.32 2.32c.28-.72.44-1.51.44-2.33 0-.82-.16-1.59-.43-2.31l-2.33 2.32zm5.29-5.3l-1.26 1.26c.63 1.21.98 2.57.98 4.02s-.36 2.82-.98 4.02l1.2 1.2c.97-1.54 1.54-3.36 1.54-5.31-.01-1.89-.55-3.67-1.48-5.19zm-3.82 1L10 2H9v7.59L4.41 5 3 6.41 8.59 12 3 17.59 4.41 19 9 14.41V22h1l5.71-5.71-4.3-4.29 4.3-4.29zM11 5.83l1.88 1.88L11 9.59V5.83zm1.88 10.46L11 18.17v-3.76l1.88 1.88z"/></svg><svg class="i" viewBox="0 0 24 24" width="18" height="18"><path d="M1 9l2 2c4.97-4.97 13.03-4.97 18 0l2-2C16.93 2.93 7.08 2.93 1 9zm8 8l3 3 3-3c-1.65-1.66-4.34-1.66-6 0zm-4-4l2 2c2.76-2.76 7.24-2.76 10 0l2-2C15.14 9.14 8.87 9.14 5 13z"/></svg><svg class="i" viewBox="0 0 24 24" width="18" height="18"><path d="M12 8c-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4-1.79-4-4-4zm8.94 3c-.46-4.17-3.77-7.48-7.94-7.94V1h-2v2.06C6.83 3.52 3.52 6.83 3.06 11H1v2h2.06c.46 4.17 3.77 7.48 7.94 7.94V23h2v-2.06c4.17-.46 7.48-3.77 7.94-7.94H23v-2h-2.06zM12 19c-3.87 0-7-3.13-7-7s3.13-7 7-7 7 3.13 7 7-3.13 7-7 7z"/></svg><svg class="i" viewBox="0 0 24 24" width="18" height="18"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02z"/></svg><span>12</span><span class="t" id="tosclock">--:--</span></div>
     <div class="dash">
       <!-- 1. Bilen -->
       <section class="car panel">
         <div class="car-top">
           <div><div class="clock" id="clock">--:--</div><div class="date" id="date"></div><div class="notice tap" id="notice" hidden><svg class="i" viewBox="0 0 24 24" width="16" height="16"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg><span id="noticetext"></span></div></div>
-          <div class="model" title="Bilbatteri (eksempel)">12,6 V&nbsp;&nbsp;·&nbsp;&nbsp;Avensis</div>
+          <div class="model" title="Telefon tilkoblet · bilbatteri (eksempel)"><svg class="i" viewBox="0 0 24 24" width="18" height="18"><path d="M14.24 12.01l2.32 2.32c.28-.72.44-1.51.44-2.33 0-.82-.16-1.59-.43-2.31l-2.33 2.32zm5.29-5.3l-1.26 1.26c.63 1.21.98 2.57.98 4.02s-.36 2.82-.98 4.02l1.2 1.2c.97-1.54 1.54-3.36 1.54-5.31-.01-1.89-.55-3.67-1.48-5.19zm-3.82 1L10 2H9v7.59L4.41 5 3 6.41 8.59 12 3 17.59 4.41 19 9 14.41V22h1l5.71-5.71-4.3-4.29 4.3-4.29zM11 5.83l1.88 1.88L11 9.59V5.83zm1.88 10.46L11 18.17v-3.76l1.88 1.88z"/></svg>12,6 V&nbsp;&nbsp;·&nbsp;&nbsp;Avensis</div>
         </div>
         <div class="stage" id="stage">
           <svg class="i" viewBox="0 0 24 24" id="caricon"><path d="M18.92 6.01C18.72 5.42 18.16 5 17.5 5h-11c-.66 0-1.21.42-1.42 1.01L3 12v8c0 .55.45 1 1 1h1c.55 0 1-.45 1-1v-1h12v1c0 .55.45 1 1 1h1c.55 0 1-.45 1-1v-8l-2.08-5.99zM6.5 16c-.83 0-1.5-.67-1.5-1.5S5.67 13 6.5 13s1.5.67 1.5 1.5S7.33 16 6.5 16zm11 0c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5zM5 11l1.5-4.5h11L19 11H5z"/></svg>
@@ -296,8 +313,8 @@ svg.i { fill: currentColor; display: block; }
           <div class="music panel">
             <div class="cover tap" data-go="music"><svg class="i" viewBox="0 0 24 24" width="28" height="28"><path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/></svg></div>
             <div class="mtext tap" data-go="music"><b id="mtitle">Musikk</b><span id="msub">Ingenting spiller</span></div>
-            <div class="round m tap" id="play"><svg class="i" viewBox="0 0 24 24" width="28" height="28"><path d="M8 5v14l11-7z"/></svg></div>
-            <div class="round s tap" id="mnext"><svg class="i" viewBox="0 0 24 24" width="26" height="26"><path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z"/></svg></div>
+            <div class="round m tap" id="play" aria-label="Spill / pause"><svg class="i" viewBox="0 0 24 24" width="28" height="28"><path d="M8 5v14l11-7z"/></svg></div>
+            <div class="round m2 tap" id="mnext" aria-label="Neste sang"><svg class="i" viewBox="0 0 24 24" width="26" height="26"><path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z"/></svg></div>
             <div class="mprog"><div id="mprog"></div></div>
           </div>
           <div class="tile panel tap" data-say="Åpner Telefon-siden med favoritter (langt trykk = velg en annen app)">
@@ -316,9 +333,8 @@ svg.i { fill: currentColor; display: block; }
     <section class="drawer panel">
       <div class="drawer-head">
         <h2>Apper</h2>
-        <div class="pill tap" data-go="keys"><svg class="i" viewBox="0 0 24 24" width="20" height="20"><path d="M3 17v2h6v-2H3zM3 5v2h10V5H3zm10 16v-2h8v-2h-8v-2h-2v6h2zM7 9v2H3v2h4v2h2V9H7zm14 4v-2H11v2h10zm-6-4h2V7h4V5h-4V3h-2v6z"/></svg><span>Knapper</span></div>
         <div class="pill tap" data-go="settings"><svg class="i" viewBox="0 0 24 24" width="20" height="20"><path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/></svg><span>Innstillinger</span></div>
-        <div class="pill tap" data-say="Åpner valget av startskjerm i Innstillinger"><svg class="i" viewBox="0 0 24 24" width="20" height="20"><path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"/></svg><span>Startskjerm</span></div>
+        <div class="pill tap" data-go="keys"><svg class="i" viewBox="0 0 24 24" width="20" height="20"><path d="M3 17v2h6v-2H3zM3 5v2h10V5H3zm10 16v-2h8v-2h-8v-2h-2v6h2zM7 9v2H3v2h4v2h2V9H7zm14 4v-2H11v2h10zm-6-4h2V7h4V5h-4V3h-2v6z"/></svg><span>Knapper</span></div>
         <div class="upd tap" id="upd">
           <svg class="i" viewBox="0 0 24 24" width="20" height="20"><path d="M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/></svg>
           <span id="updtext">Se etter oppdatering</span>
@@ -328,6 +344,7 @@ svg.i { fill: currentColor; display: block; }
         </div>
       </div>
       <div class="grid" id="grid"></div>
+      <div class="homesetup tap" data-say="Åpner Android-innstillingene: velg T'OS som startskjerm"><svg class="i" viewBox="0 0 24 24" width="24" height="24"><path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"/></svg><div style="flex:1"><b>Oppsett: velg startskjerm</b><small>Gjøres én gang: velg T'OS, så viser Hjem-knappen alltid T'OS. Åpner Android-innstillingene.</small></div></div>
       <div class="hiddennote">Eksempel-apper. På stereoen vises de som faktisk er installert. Kalkulator er skjult.</div>
     </section>
 
@@ -347,8 +364,8 @@ svg.i { fill: currentColor; display: block; }
           </div>
         </div>
         <div class="btgrid">
-          <div class="big tap" data-say="Åpner stereoens Bluetooth-telefon"><svg class="i" viewBox="0 0 24 24" width="40" height="40"><path d="M6.62 10.79c1.44 2.83 3.76 5.14 6.59 6.59l2.2-2.2c.27-.27.67-.36 1.02-.24 1.12.37 2.33.57 3.57.57.55 0 1 .45 1 1V20c0 .55-.45 1-1 1-9.39 0-17-7.61-17-17 0-.55.45-1 1-1h3.5c.55 0 1 .45 1 1 0 1.25.2 2.45.57 3.57.11.35.03.74-.25 1.02l-2.2 2.2z"/></svg>Telefon</div>
-          <div class="big tap" data-say="Åpner Bluetooth-musikk"><svg class="i" viewBox="0 0 24 24" width="40" height="40"><path d="M12 1c-4.97 0-9 4.03-9 9v7c0 1.66 1.34 3 3 3h3v-8H5v-2c0-3.87 3.13-7 7-7s7 3.13 7 7v2h-4v8h3c1.66 0 3-1.34 3-3v-7c0-4.97-4.03-9-9-9z"/></svg>Bluetooth-musikk</div>
+          <div class="big tap" data-say="Åpner T'OS sin Telefon-side"><svg class="i" viewBox="0 0 24 24" width="40" height="40"><path d="M6.62 10.79c1.44 2.83 3.76 5.14 6.59 6.59l2.2-2.2c.27-.27.67-.36 1.02-.24 1.12.37 2.33.57 3.57.57.55 0 1 .45 1 1V20c0 .55-.45 1-1 1-9.39 0-17-7.61-17-17 0-.55.45-1 1-1h3.5c.55 0 1 .45 1 1 0 1.25.2 2.45.57 3.57.11.35.03.74-.25 1.02l-2.2 2.2z"/></svg>Telefon</div>
+          <div class="big tap" data-go="music"><svg class="i" viewBox="0 0 24 24" width="40" height="40"><path d="M12 1c-4.97 0-9 4.03-9 9v7c0 1.66 1.34 3 3 3h3v-8H5v-2c0-3.87 3.13-7 7-7s7 3.13 7 7v2h-4v8h3c1.66 0 3-1.34 3-3v-7c0-4.97-4.03-9-9-9z"/></svg>Bluetooth-musikk</div>
           <div class="big tap" data-say="Åpner CarPlay (Zlink)"><svg class="i" viewBox="0 0 24 24" width="40" height="40"><path d="M15.5 1h-8C6.12 1 5 2.12 5 3.5v17C5 21.88 6.12 23 7.5 23h8c1.38 0 2.5-1.12 2.5-2.5v-17C18 2.12 16.88 1 15.5 1zm-4 21c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5zm4.5-4H7V4h9v14z"/></svg>CarPlay</div>
           <div class="big tap" data-say="Åpner Bluetooth-innstillinger"><svg class="i" viewBox="0 0 24 24" width="40" height="40"><path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/></svg>Innstillinger</div>
         </div>
@@ -440,7 +457,7 @@ svg.i { fill: currentColor; display: block; }
     </div></div>
 
     <div class="navipop tap" id="navipop" hidden><div class="appicon" style="width:38px;height:38px;font-size:16px">W</div><div><b>Åpne heller Waze</b><span>Trykk her</span></div></div>
-    <div class="toast" id="toast"></div>
+    <div class="toast" id="toast" role="status"><svg class="i" viewBox="0 0 24 24" width="20" height="20"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg><span id="toasttext"></span></div>
   </div>
   <div class="side">
     <button class="hw" type="button" data-key="RADIO">RADIO</button>
@@ -480,6 +497,7 @@ svg.i { fill: currentColor; display: block; }
     $('clock').textContent = d.toLocaleTimeString('nb-NO', { hour: '2-digit', minute: '2-digit' });
     const s = d.toLocaleDateString('nb-NO', { weekday: 'long', day: 'numeric', month: 'long' });
     $('date').textContent = s.charAt(0).toUpperCase() + s.slice(1);
+    $('tosclock').textContent = $('clock').textContent;
   }
   tick(); setInterval(tick, 1000);
 
@@ -634,9 +652,11 @@ svg.i { fill: currentColor; display: block; }
   /* ---------- Knapper ---------- */
   let tt;
   function toast(msg) {
-    const t = $('toast'); t.textContent = msg; t.classList.add('show');
-    clearTimeout(tt); tt = setTimeout(() => t.classList.remove('show'), 1800);
+    const t = $('toast'); $('toasttext').textContent = msg; t.classList.add('show');
+    clearTimeout(tt); tt = setTimeout(() => t.classList.remove('show'), 2800);
   }
+  $('toast').onclick = () => { clearTimeout(tt); $('toast').classList.remove('show'); };
+  $('tosbar').onclick = () => $('quick').classList.add('show');
   document.querySelectorAll('[data-say]').forEach(el => el.onclick = () => toast(el.dataset.say));
   /* ---------- Musikk (eksempel-sanger; i appen hentes tittel og cover fra Spotify) ---------- */
   const songs = [['Eksempel-sang', 'Artist (eksempel)', 214], ['Nattkjøring', 'Eksempelbandet', 187], ['Langs E18', 'Demo', 240]];
@@ -687,7 +707,14 @@ svg.i { fill: currentColor; display: block; }
   });
   document.querySelectorAll('#settings [data-go], #tuning [data-go], #car [data-go]').forEach(el => el.onclick = () => go(el.dataset.go));
   document.querySelectorAll('.acc').forEach(b => b.onclick = () => { $('acchint').textContent = 'Klar for ' + b.dataset.run + '. Målingen starter når du kjører.'; });
-  $('tripreset').onclick = () => { trip.m = 0; trip.s = 0; trip.max = 0; toast('Turen er nullstilt'); };
+  let resetAsk = null;
+  $('tripreset').onclick = () => {
+    const b = $('tripreset');
+    if (!resetAsk) { b.textContent = 'Trykk igjen for å nullstille'; b.style.background = 'var(--text)'; b.style.color = 'var(--bg)';
+      resetAsk = setTimeout(() => { resetAsk = null; b.textContent = 'Nullstill tur'; b.style.background = ''; b.style.color = ''; }, 4000); return; }
+    clearTimeout(resetAsk); resetAsk = null; b.textContent = 'Nullstill tur'; b.style.background = ''; b.style.color = '';
+    trip.m = 0; trip.s = 0; trip.max = 0; toast('Turen er nullstilt');
+  };
   document.querySelectorAll('.tgrow').forEach(r => r.onclick = () => r.querySelector('.tg').classList.toggle('on'));
   const modes = ['Auto lys', 'Natt', 'Dag'];
   $('qnight').onclick = () => { const i = (modes.indexOf($('qnight').textContent) + 1) % 3; $('qnight').textContent = modes[i]; screen.style.filter = i === 1 ? 'brightness(.7)' : ''; };
@@ -706,10 +733,10 @@ svg.i { fill: currentColor; display: block; }
   const apps = ['Bluetooth', 'CarPlay (Zlink)', 'Chrome', 'Filbehandler', 'Google Maps', 'Innstillinger',
     'Kalkulator', 'Musikk', 'Play Butikk', 'Spotify', 'Waze', 'YouTube', 'YouTube Music']
     .filter(a => !/kalkulator|calculator/i.test(a));
-  const own = [['Radio', 'radio'], ['Bluetooth', 'bt'], ['Bil og tur', 'car'], ['Musikk', 'music'], ['Innstillinger', 'settings'], ['Tuning', 'tuning']];
+  const own = [['Musikk', 'music'], ['Radio', 'radio'], ['Telefon', 'phone'], ['Bluetooth', 'bt'], ['Navigasjon', 'nav'], ['Kart', 'map'], ['Bil og tur', 'car'], ['Tuning', 'tuning'], ['Innstillinger', 'settings']];
   $('grid').innerHTML = own.map(([a, v]) => `<div class="appbox tap" data-go2="${v}"><div class="appicon" style="background:var(--line)">${a[0]}</div><span>${a}</span></div>`).join('') + apps.map(a =>
     `<div class="appbox tap" data-app="${a}"><div class="appicon">${a[0]}</div><span>${a}</span></div>`).join('');
-  $('grid').onclick = e => { const o = e.target.closest('[data-go2]'); if (o) { go(o.dataset.go2); return; } const b = e.target.closest('[data-app]'); if (b) toast('Åpner ' + b.dataset.app); };
+  $('grid').onclick = e => { const o = e.target.closest('[data-go2]'); if (o) { if (o.dataset.go2 === 'map') { toast('Kart i fullskjerm'); return; } if (o.dataset.go2 === 'phone') { toast('Åpner Telefon: favoritter og siste anrop'); return; } if (o.dataset.go2 === 'nav') { toast('Åpner Navigasjon: Hjem, Jobb og siste steder'); return; } if (o.dataset.go2 === 'music') { go('music'); return; } go(o.dataset.go2); return; } const b = e.target.closest('[data-app]'); if (b) toast('Åpner ' + b.dataset.app); };
   const go = v => { $('quick').classList.remove('show'); screen.dataset.view = v; if (v === 'dash') drawMap(); };
   $('openapps').onclick = () => go('apps');
   $('closeapps').onclick = () => go('dash');

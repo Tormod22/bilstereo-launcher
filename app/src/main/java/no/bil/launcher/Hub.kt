@@ -61,42 +61,97 @@ object Hub {
         CarBattery.start(app)
         HwRadio.start(app)
         Eq.restore()
+        Updater.announceIfUpdated(app)          // «Oppdatert til …» etter en oppdatering
+        scope.launch(Dispatchers.IO) { LocalBackup.autoSave(app) }   // daglig kopi av innstillingene i T'OS-mappa
         scope.launch { while (true) { Theme.update(gps?.lat ?: Prefs.float("park_lat").toDouble().takeIf { it != 0.0 }, gps?.lon ?: Prefs.float("park_lon").toDouble().takeIf { it != 0.0 }); NightBrightness.apply(app); delay(60_000) } }
         scope.launch { while (true) { readSystem(); delay(10_000) } }
         scope.launch {
+            var fails = 0
             while (true) {
                 val info = Updater.check()
                 if (info != null) update = if (info.versionCode > Updater.current(app)) info else null
-                // Fikk ikke svar (nettet fra iPhonen er sjelden klart når bilen starter): prøv igjen om 1 min
-                delay(if (info == null) 60_000 else TimeUnit.HOURS.toMillis(6))
+                // Fikk ikke svar (nettet fra iPhonen er sjelden klart når bilen starter): prøv igjen om 1 min,
+                // så sjeldnere (2, 4, 8 … maks 60 min) – ikke hvert minutt hele dagen når GitHub ikke har noen versjon
+                fails = if (info == null) fails + 1 else 0
+                delay(updateRetryMs(fails))
             }
         }
     }
 
+    /** Bare «omtrentlig posisjon» er tillatt (Android 12+): fart og fartsgrense virker dårlig – UI kan be om nøyaktig. */
+    var gpsCoarseOnly by mutableStateOf(false)
+    /** Ingen posisjonstillatelse i det hele tatt. */
+    var gpsNoPermission by mutableStateOf(false)
+    private var staleJob: Job? = null
+    private var lifecycleHooked = false
+
     /** Kalles på nytt når brukeren har gitt posisjonstillatelse. */
     fun startGps() {
-        if (!app.hasPermission(Manifest.permission.ACCESS_FINE_LOCATION)) return
+        val fine = app.hasPermission(Manifest.permission.ACCESS_FINE_LOCATION)
+        val coarse = app.hasPermission(Manifest.permission.ACCESS_COARSE_LOCATION)
+        gpsCoarseOnly = coarse && !fine
+        gpsNoPermission = !fine && !coarse
+        if (gpsNoPermission) return
+        hookLifecycle()
+        GpsService.startIfForeground(app)
         gpsJob?.cancel()
         gpsJob = scope.launch {
             gpsFlow(app).collect { g ->
                 val first = gps == null
                 gps = g
-                Trip.onFix(g)
-                Parking.onFix(g)
-                SpeedLimit.onFix(g)
-                Accel.onFix(g)
+                if (!g.stale) {
+                    Trip.onFix(g)
+                    Parking.onFix(g)
+                    SpeedLimit.onFix(g)
+                    Accel.onFix(g)
+                }
                 if (first) Theme.update(g.lat, g.lon)
+            }
+        }
+        // Fart blir «ukjent» når det ikke har kommet ny måling på 3 s (tunnel, GPS-en mistet satellittene)
+        if (staleJob?.isActive != true) staleJob = scope.launch {
+            while (true) {
+                delay(1000)
+                val g = gps ?: continue
+                if (!g.stale && gpsAgeNanos(g.fixNanos, SystemClock.elapsedRealtimeNanos()) > GPS_STALE_NANOS) {
+                    gps = g.copy(speedKmh = 0, stale = true)
+                    SpeedLimit.over = false
+                }
             }
         }
     }
 
+    /**
+     * Holder posisjonstjenesten (forgrunnstjeneste) i gang: den kan bare startes mens T'OS vises,
+     * så den startes hver gang en T'OS-skjerm kommer fram (f.eks. etter at stereoen har startet).
+     */
+    private fun hookLifecycle() {
+        if (lifecycleHooked) return
+        val a = app as? android.app.Application ?: return
+        lifecycleHooked = true
+        a.registerActivityLifecycleCallbacks(object : android.app.Application.ActivityLifecycleCallbacks {
+            override fun onActivityResumed(activity: android.app.Activity) {
+                if (!GpsService.running && !gpsNoPermission) GpsService.startIfForeground(app)
+            }
+            override fun onActivityCreated(activity: android.app.Activity, savedInstanceState: android.os.Bundle?) {}
+            override fun onActivityStarted(activity: android.app.Activity) {}
+            override fun onActivityPaused(activity: android.app.Activity) {}
+            override fun onActivityStopped(activity: android.app.Activity) {}
+            override fun onActivitySaveInstanceState(activity: android.app.Activity, outState: android.os.Bundle) {}
+            override fun onActivityDestroyed(activity: android.app.Activity) {}
+        })
+    }
+
     private fun watchNetwork() {
         val cm = app.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
-        fun check() = cm.getNetworkCapabilities(cm.activeNetwork)?.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) == true
+        // «På nett» = nettet har internett OG Android har sjekket at det virker (ikke bare Wi-Fi uten innlogging)
+        fun usable(caps: NetworkCapabilities?) = caps != null &&
+            caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) && caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
+        fun check() = runCatching { usable(cm.getNetworkCapabilities(cm.activeNetwork)) }.getOrDefault(false)
         online = check()
         runCatching {
             cm.registerDefaultNetworkCallback(object : ConnectivityManager.NetworkCallback() {
-                override fun onAvailable(n: Network) { scope.launch { online = true } }
+                override fun onCapabilitiesChanged(n: Network, caps: NetworkCapabilities) { val ok = usable(caps); scope.launch { online = ok } }
                 override fun onLost(n: Network) { scope.launch { online = check() } }
             })
         }
@@ -119,6 +174,10 @@ object Hub {
     /** Kompassretning på norsk. */
     fun compass(bearing: Float): String = compassName(bearing)
 }
+
+/** Ventetid til neste versjonssjekk etter [fails] mislykkede forsøk på rad (0 = siste gikk bra: 6 timer). */
+internal fun updateRetryMs(fails: Int): Long =
+    if (fails <= 0) TimeUnit.HOURS.toMillis(6) else 60_000L * (1L shl (fails - 1).coerceAtMost(6)).coerceAtMost(60)
 
 /** Kompassretning på norsk (egen funksjon så den kan testes uten Android). */
 fun compassName(bearing: Float): String =
@@ -156,12 +215,14 @@ object Trip {
 
     fun onFix(g: Gps) {
         val now = SystemClock.elapsedRealtime()
+        // Pause på mer enn 30 min (bilen sto, stereoen sov): ny tur, slik som ved oppstart
+        if (lastTime != 0L && now - lastTime > TimeUnit.MINUTES.toMillis(30)) reset()
         val prev = last
         if (prev != null && g.speedKmh >= 3) {
             val r = FloatArray(1)
             Location.distanceBetween(prev.lat, prev.lon, g.lat, g.lon, r)
             val dtMs = now - lastTime                      // millisekunder (GPS kommer ca. hvert sekund – 999 ms må telle)
-            if (r[0] < 250 && dtMs in 300..10_000) { meters += r[0]; movingMs += dtMs; movingSec = movingMs / 1000 }
+            if (tripCounts(r[0], dtMs)) { meters += r[0]; movingMs += dtMs; movingSec = movingMs / 1000 }
         }
         if (g.speedKmh > maxKmh && g.speedKmh < 250) maxKmh = g.speedKmh
         last = g; lastTime = now
@@ -175,6 +236,17 @@ object Trip {
     }
 }
 
+/**
+ * Skal strekningen mellom to målinger telles i turen? Vanlig: ca. hvert sekund, under 250 m.
+ * Hull (tunnel uten GPS, opptil 30 min): telles hvis snittfarten over hullet er troverdig (5–200 km/t).
+ */
+internal fun tripCounts(distM: Float, dtMs: Long): Boolean = when {
+    dtMs < 300 -> false
+    dtMs <= 10_000 -> distM < 250
+    dtMs <= 30 * 60_000L -> { val kmh = distM / (dtMs / 1000.0) * 3.6; kmh in 5.0..200.0 }
+    else -> false
+}
+
 /* ======================= Parkering ======================= */
 
 /** Husker siste posisjon der bilen sto stille. Vises med QR-kode så iPhonen kan ta den med seg. */
@@ -184,8 +256,13 @@ object Parking {
         val now = SystemClock.elapsedRealtime()
         if (g.speedKmh <= 2 && now - lastSave > 15_000) {
             lastSave = now
+            // Avstanden må regnes fra den GAMLE plassen før den overskrives (ellers er bilen aldri «flyttet»)
+            val r = FloatArray(1)
+            if (known) Location.distanceBetween(lat, lon, g.lat, g.lon, r)
+            val moved = !known || r[0] > 25
             Prefs.setQuiet("park_lat", g.lat.toFloat()); Prefs.setQuiet("park_lon", g.lon.toFloat())
-            Prefs.setQuiet("park_time", System.currentTimeMillis())
+            // Ny plass: lagres med Prefs.set så parkeringskortet tegnes på nytt (ikke hvert 15. sekund når bilen bare står)
+            if (moved) Prefs.set("park_time", System.currentTimeMillis()) else Prefs.setQuiet("park_time", System.currentTimeMillis())
         }
     }
     val lat get() = Prefs.float("park_lat").toDouble()
@@ -202,15 +279,28 @@ object SpeedLimit {
     var limit by mutableStateOf<Int?>(null)
     var over by mutableStateOf(false)
     private var lastQueryPos: Gps? = null
+    private var lastConfirmedPos: Gps? = null      // der vi sist fikk et sikkert svar (fartsgrense eller «ingen skiltet»)
     private var lastQuery = 0L
     private var busy = false
     private var beeped = false
+    /** Server → tidspunkt (elapsedRealtime) den kan spørres igjen etter «for mange forespørsler» (HTTP 429) o.l. */
+    private val pausedUntil = mutableMapOf<String, Long>()
 
     private val servers = listOf(
         "https://overpass-api.de/api/interpreter",
         "https://overpass.kumi.systems/api/interpreter",
         "https://maps.mail.ru/osm/tools/overpass/api/interpreter",
     )
+
+    /** Svaret fra OpenStreetMap: fant fartsgrense, veien har ingen, eller fikk ikke svar. */
+    internal sealed class Result {
+        data class Found(val kmh: Int) : Result()
+        object NoneTagged : Result()
+        object Failed : Result()
+    }
+
+    /** En vei fra Overpass: merkene (tags) og punktene langs veien. */
+    internal data class Way(val tags: Map<String, String>, val points: List<Pair<Double, Double>>)
 
     fun onFix(g: Gps) {
         val l = limit
@@ -221,31 +311,121 @@ object SpeedLimit {
         }
         if (!over) beeped = false
 
-        if (!Prefs.bool("speed_limit", true) || busy || g.speedKmh < 5) return
+        if (!Prefs.bool("speed_limit", true) || busy || g.speedKmh < 5 || !Hub.online) return
         val now = SystemClock.elapsedRealtime()
         val prev = lastQueryPos
-        val moved = prev?.let { FloatArray(1).also { r -> Location.distanceBetween(it.lat, it.lon, g.lat, g.lon, r) }[0] } ?: Float.MAX_VALUE
-        if (moved < 120 && now - lastQuery < 25_000) return
+        val moved = prev?.let { distM(it.lat, it.lon, g.lat, g.lon) } ?: Double.MAX_VALUE
+        if (!shouldQuery(moved, if (lastQuery == 0L) Long.MAX_VALUE else now - lastQuery)) return
         lastQueryPos = g; lastQuery = now; busy = true
+        val bearing = g.bearing.takeIf { g.speedKmh >= 10 }
         Hub.scope.launch {
-            limit = withContext(Dispatchers.IO) { query(g.lat, g.lon) } ?: limit.takeIf { moved < 400 }
+            when (val r = withContext(Dispatchers.IO) { query(g.lat, g.lon, bearing) }) {
+                is Result.Found -> { limit = r.kmh; lastConfirmedPos = g }
+                Result.NoneTagged -> { limit = null; lastConfirmedPos = g }
+                // Ingen svar: behold forrige grense bare så lenge vi er nær stedet der den sist ble bekreftet
+                Result.Failed -> if ((lastConfirmedPos?.let { distM(it.lat, it.lon, g.lat, g.lon) } ?: Double.MAX_VALUE) >= 400) limit = null
+            }
             busy = false
         }
     }
 
-    private fun query(lat: Double, lon: Double): Int? {
-        val q = "[out:json][timeout:8];way(around:20,$lat,$lon)[highway][maxspeed];out tags 3;"
+    // Bilveier (ikke gangveier/sykkelveier som ofte ligger rett ved siden av)
+    private const val ROADS = "^(motorway|trunk|primary|secondary|tertiary|unclassified|residential|living_street|service|road|motorway_link|trunk_link|primary_link|secondary_link|tertiary_link)$"
+
+    /**
+     * Spør på nytt? Når bilen har kjørt 120 m eller det er gått 25 s – men aldri oftere enn hvert 8. sekund
+     * (i 100 km/t ville det ellers blitt et spørsmål hvert 4. sekund, og de gratis serverne stenger oss ute).
+     */
+    internal fun shouldQuery(movedM: Double, sinceMs: Long): Boolean =
+        sinceMs >= 8_000 && (movedM >= 120 || sinceMs >= 25_000)
+
+    private fun query(lat: Double, lon: Double, bearing: Float?): Result {
+        val q = "[out:json][timeout:8];way(around:15,$lat,$lon)[highway~\"$ROADS\"];out tags geom 20;"
         for (s in servers) {
+            if (SystemClock.elapsedRealtime() < (synchronized(pausedUntil) { pausedUntil[s] } ?: 0L)) continue
             val res = runCatching {
                 val c = URL("$s?data=" + URLEncoder.encode(q, "UTF-8")).openConnection() as HttpURLConnection
                 c.connectTimeout = 6000; c.readTimeout = 9000
-                c.setRequestProperty("User-Agent", "TOS-BilstereoLauncher/1.0")
+                c.setRequestProperty("User-Agent", "TOS-BilstereoLauncher/1.0 (github.com/${Updater.OWNER}/${Updater.REPO})")
+                val code = c.responseCode
+                // For mange forespørsler / opptatt: la denne serveren være i fred i 2 min
+                if (code == 429 || code == 503 || code == 504) synchronized(pausedUntil) { pausedUntil[s] = SystemClock.elapsedRealtime() + 120_000 }
+                if (code != 200) { c.disconnect(); error("HTTP $code") }
                 val els = JSONObject(c.inputStream.bufferedReader().readText()).getJSONArray("elements")
-                (0 until els.length()).firstNotNullOfOrNull { parse(els.getJSONObject(it).getJSONObject("tags").optString("maxspeed")) }
+                val ways = (0 until els.length()).map { i ->
+                    val e = els.getJSONObject(i)
+                    val t = e.optJSONObject("tags")
+                    val tags = t?.keys()?.asSequence()?.associateWith { t.optString(it) }.orEmpty()
+                    val geom = e.optJSONArray("geometry")
+                    val pts = if (geom == null) emptyList() else (0 until geom.length()).map { geom.getJSONObject(it).let { p -> p.getDouble("lat") to p.getDouble("lon") } }
+                    Way(tags, pts)
+                }
+                pick(ways, lat, lon, bearing)
             }
-            if (res.isSuccess) return res.getOrNull()
+            if (res.isSuccess) return res.getOrThrow()
         }
-        return null
+        return Result.Failed
+    }
+
+    /**
+     * Velger veien bilen er på: den nærmeste, men en vei som går i samme retning som bilen (±45°)
+     * foretrekkes framfor en sidevei som er litt nærmere. Testes i DataLogicTest.
+     */
+    internal fun pick(ways: List<Way>, lat: Double, lon: Double, bearing: Float?): Result {
+        data class Cand(val way: Way, val dist: Double, val dir: Double?)
+        val cands = ways.mapNotNull { w ->
+            var best = Double.MAX_VALUE; var dir: Double? = null
+            if (w.points.size == 1) best = distM(lat, lon, w.points[0].first, w.points[0].second)
+            for (i in 0 until w.points.size - 1) {
+                val (aLat, aLon) = w.points[i]; val (bLat, bLon) = w.points[i + 1]
+                val d = segmentDistM(lat, lon, aLat, aLon, bLat, bLon)
+                if (d < best) { best = d; dir = bearingDeg(aLat, aLon, bLat, bLon) }
+            }
+            if (best == Double.MAX_VALUE) null else Cand(w, best, dir)
+        }
+        if (cands.isEmpty()) return Result.NoneTagged
+        // Retningsforskjell 0..90° (en vei kan kjøres begge veier)
+        fun misfit(c: Cand): Double {
+            if (bearing == null || c.dir == null) return 0.0
+            val diff = angleDiff(bearing.toDouble(), c.dir)
+            return minOf(diff, 180 - diff)
+        }
+        val chosen = cands.minByOrNull { it.dist + if (misfit(it) > 45) 25.0 else 0.0 }!!
+        val tags = chosen.way.tags
+        parse(tags["maxspeed"].orEmpty())?.let { return Result.Found(it) }
+        // Ulik grense i hver retning (maxspeed:forward / :backward): bruk den som passer kjøreretningen
+        if (bearing != null && chosen.dir != null) {
+            val forward = angleDiff(bearing.toDouble(), chosen.dir) <= 90
+            parse(tags[if (forward) "maxspeed:forward" else "maxspeed:backward"].orEmpty())?.let { return Result.Found(it) }
+        }
+        return Result.NoneTagged
+    }
+
+    private fun angleDiff(a: Double, b: Double): Double { val d = ((a - b) % 360 + 360) % 360; return if (d > 180) 360 - d else d }
+
+    /** Avstand i meter (flat jord – godt nok for noen hundre meter). */
+    internal fun distM(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Double {
+        val k = 111_320.0
+        val x = (lon2 - lon1) * k * kotlin.math.cos(Math.toRadians((lat1 + lat2) / 2)); val y = (lat2 - lat1) * k
+        return kotlin.math.sqrt(x * x + y * y)
+    }
+
+    /** Korteste avstand fra et punkt til en veibit (linjestykke a–b), i meter. */
+    internal fun segmentDistM(lat: Double, lon: Double, aLat: Double, aLon: Double, bLat: Double, bLon: Double): Double {
+        val k = 111_320.0; val c = kotlin.math.cos(Math.toRadians(lat))
+        val ax = (aLon - lon) * k * c; val ay = (aLat - lat) * k
+        val bx = (bLon - lon) * k * c; val by = (bLat - lat) * k
+        val dx = bx - ax; val dy = by - ay
+        val len2 = dx * dx + dy * dy
+        val t = if (len2 == 0.0) 0.0 else (-(ax * dx + ay * dy) / len2).coerceIn(0.0, 1.0)
+        val px = ax + t * dx; val py = ay + t * dy
+        return kotlin.math.sqrt(px * px + py * py)
+    }
+
+    /** Retning fra a til b i grader (0 = nord, 90 = øst). */
+    internal fun bearingDeg(aLat: Double, aLon: Double, bLat: Double, bLon: Double): Double {
+        val x = (bLon - aLon) * kotlin.math.cos(Math.toRadians((aLat + bLat) / 2)); val y = bLat - aLat
+        return (Math.toDegrees(kotlin.math.atan2(x, y)) + 360) % 360
     }
 
     /** Tolker OSM sin «maxspeed» (f.eks. «80», «NO:urban», «50 km/h»). Testes i LogicTest. */
@@ -337,14 +517,28 @@ object Reminders {
     /** «Ferdig»: EU-kontroll flyttes 2 år fram, service 1 år, dekk er gjort for sesongen. */
     fun done(key: String) {
         when {
-            key == "eu_date" || key == "service_date" -> {
+            key == "eu_date" -> Prefs.set(key, format(nextEu(parse(Prefs.str(key)), Date())))
+            key == "service_date" -> {
                 val c = Calendar.getInstance()
-                c.add(Calendar.YEAR, if (key == "eu_date") 2 else 1)
+                c.add(Calendar.YEAR, 1)
                 Prefs.set(key, format(c.time))
             }
             key.startsWith("tire_") -> Prefs.set("tire_done_" + key.removePrefix("tire_"), true)
         }
     }
+}
+
+/**
+ * Neste EU-kontroll. Tas den inntil 2 måneder før fristen, eller etter fristen, beholdes rytmen:
+ * gammel frist + 2 år. Tas den tidligere enn det (eller fristen er ukjent): i dag + 2 år.
+ */
+internal fun nextEu(oldDeadline: Date?, today: Date): Date {
+    val plus2 = { d: Date -> Calendar.getInstance().apply { time = d; add(Calendar.YEAR, 2) }.time }
+    if (oldDeadline == null) return plus2(today)
+    val windowStart = Calendar.getInstance().apply { time = oldDeadline; add(Calendar.MONTH, -2) }.time
+    if (today.before(windowStart)) return plus2(today)
+    val next = plus2(oldDeadline)
+    return if (next.after(today)) next else plus2(today)   // flere år på overtid: regn fra i dag
 }
 
 /* ======================= Ved oppstart: musikk og siste app ======================= */
@@ -405,6 +599,8 @@ object Navigate {
             if (AppRepository.isInstalled(c, "com.google.android.apps.maps")) setPackage("com.google.android.apps.maps")
         }
         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        // T'OS åpnet kartappen selv: knappestyringen skal ikke sende brukeren et annet sted
+        (intent.`package` ?: if (waze) "com.waze" else null)?.let { AppRepository.markLaunched(it) }
         if (runCatching { c.startActivity(intent) }.isFailure) {
             runCatching { c.startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse("geo:0,0?q=$q")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
         }

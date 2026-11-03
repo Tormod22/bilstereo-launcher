@@ -15,8 +15,8 @@ android {
         // På GitHub: byggnummeret (1000 + nr.) så hver nye versjon alltid får høyere tall enn den forrige.
         // Lokalt: tallet under. (versionName = «x.y» lokalt, «x.y.nr» på GitHub.)
         val ciRun = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull()
-        versionCode = if (ciRun != null) 1000 + ciRun else 15
-        versionName = if (ciRun != null) "4.3.$ciRun" else "4.3"
+        versionCode = if (ciRun != null) 1000 + ciRun else 20
+        versionName = if (ciRun != null) "4.8.$ciRun" else "4.8"
         // Bilstereoen har ARM-prosessor; dropper x86 for å holde appen mindre (kartmotoren har egne biblioteker)
         ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a") }
     }
@@ -25,17 +25,24 @@ android {
     // Lokale bygg uten hemmeligheten får vanlig utviklersignatur (kan ikke oppdatere en GitHub-installert T'OS).
     val keystore = System.getenv("TOS_KEYSTORE")
     val keystorePass = System.getenv("TOS_KEYSTORE_PASSWORD")
+    // Nøkkelens eget passord: eget hvis TOS_KEY_PASSWORD er satt, ellers det samme som for nøkkelfila
+    val keyPass = System.getenv("TOS_KEY_PASSWORD")?.takeIf { it.isNotBlank() } ?: keystorePass
     signingConfigs {
         if (keystore != null && keystorePass != null) create("tos") {
             storeFile = file(keystore)
             storePassword = keystorePass
             keyAlias = "tos"
-            keyPassword = keystorePass
+            keyPassword = keyPass
         }
     }
     buildTypes {
         debug { signingConfigs.findByName("tos")?.let { signingConfig = it } }
-        release { isMinifyEnabled = false; signingConfigs.findByName("tos")?.let { signingConfig = it } }
+        // GitHub publiserer release-bygget (raskere, ikke «debuggable»). Samme nøkkel og samme applicationId som før,
+        // så det installeres oppå tidligere T'OS. Lokalt uten nøkkel: vanlig utviklersignatur.
+        release {
+            isMinifyEnabled = false
+            signingConfig = signingConfigs.findByName("tos") ?: signingConfigs.getByName("debug")
+        }
     }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17

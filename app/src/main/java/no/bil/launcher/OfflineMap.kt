@@ -94,18 +94,41 @@ object OfflineMaps {
                     val conn = Updater.open("$BASE/$REGION.pmtiles",
                         headers = if (have > 0 && tag.isNotBlank()) mapOf("Range" to "bytes=$have-", "If-Range" to tag) else emptyMap())
                     val code = conn.responseCode
-                    if (code == 404) return@withContext "Kartet er ikke laget på GitHub ennå"
-                    if (code == 416) { part.delete(); return@withContext "Prøv igjen" }   // .part var allerede for stor/ugyldig
-                    if (code != 200 && code != 206) error("HTTP $code")
+                    // Wi-Fi med innloggingsside (hotell, ferje, kafé) svarer med en nettside i stedet for kartet.
+                    // Da må ingenting slettes – det som er lastet ned så langt beholdes.
+                    // 404 først: GitHub svarer «finnes ikke» med en nettside, som ellers ble tatt for en innloggingsside
+                    if (code == 404 && conn.url.host.orEmpty().lowercase().let { it == "github.com" || it.endsWith(".github.com") }) {
+                        conn.disconnect(); return@withContext "Kartet er ikke laget på GitHub ennå"
+                    }
+                    if (!fromGitHub(conn.url.host, conn.contentType)) { conn.disconnect(); fail("Wi-Fi krever innlogging – åpne nettleseren og logg inn, og trykk «Last ned» igjen") }
+                    if (code == 404) { conn.disconnect(); return@withContext "Kartet er ikke laget på GitHub ennå" }
+                    if (code == 416) {
+                        // «Utenfor fila»: er .part allerede hel, er den bare ikke byttet inn ennå
+                        val total = parseContentRange(conn.getHeaderField("Content-Range"))?.total
+                        conn.disconnect()
+                        if (total != null && total == have && have >= 10_000 && isPmtiles(part)) { swapIn(part, target); return@withContext null }
+                        part.delete(); return@withContext "Kartet på GitHub er endret – trykk «Last ned» for å starte på nytt"
+                    }
+                    if (code != 200 && code != 206) fail("GitHub svarte med feil (HTTP $code) – prøv igjen senere")
                     val resume = code == 206
-                    if (!resume) {
+                    val total: Long
+                    if (resume) {
+                        // Serveren må fortsette nøyaktig der vi slapp, og si hvor stor hele fila er
+                        val range = parseContentRange(conn.getHeaderField("Content-Range"))
+                        if (range == null || range.start != have || range.total == null) {
+                            conn.disconnect(); part.delete()
+                            fail("Nedlastingen kom i ulage – trykk «Last ned» for å starte på nytt")
+                        }
+                        total = range.total
+                    } else {
+                        total = conn.contentLengthLong
+                        if (total <= 0) { conn.disconnect(); fail("Vet ikke hvor stort kartet er – prøv igjen senere") }
                         part.delete()
                         (conn.getHeaderField("ETag") ?: conn.getHeaderField("Last-Modified"))?.let { Prefs.setQuiet("map_etag", it) }
                     }
                     val start = if (resume) have else 0L
-                    val total = if (conn.contentLengthLong > 0) start + conn.contentLengthLong else -1L
                     val dir = target.parentFile ?: c.filesDir
-                    if (total > 0 && dir.usableSpace < (total - start) + 50_000_000L)
+                    if (dir.usableSpace < (total - start) + 50_000_000L)
                         return@withContext "Ikke nok plass: trenger ${sizeMb(total - start + 50_000_000L)} MB ledig"
                     var done = start
                     conn.inputStream.use { input ->
@@ -113,28 +136,71 @@ object OfflineMaps {
                             val buf = ByteArray(256 * 1024); var read: Int; var lastPct = -1
                             while (input.read(buf).also { read = it } > 0) {
                                 out.write(buf, 0, read); done += read
-                                if (total > 0) {
-                                    val pct = (done * 100 / total).toInt()
-                                    if (pct != lastPct) { lastPct = pct; withContext(Dispatchers.Main) { progress = pct } }
-                                }
+                                if (done > total) { part.delete(); fail("Kartfila var større enn ventet – trykk «Last ned» for å starte på nytt") }
+                                val pct = (done * 100 / total).toInt()
+                                if (pct != lastPct) { lastPct = pct; withContext(Dispatchers.Main) { progress = pct } }
                             }
                         }
                     }
-                    if (total > 0 && part.length() != total) error("ufullstendig")
-                    if (part.length() < 10_000) { part.delete(); error("for liten fil") }
-                    // Bytt ut trygt: det gamle kartet slettes først når det nye er på plass
-                    val old = File(target.path + ".old")
-                    old.delete()
-                    if (target.exists() && !target.renameTo(old)) error("fikk ikke flyttet gammelt kart")
-                    if (!part.renameTo(target)) { old.renameTo(target); error("fikk ikke lagret kartet") }
-                    old.delete()
+                    // Strømmen stoppet før hele fila var kommet (nettet falt ut): behold .part og fortsett neste gang
+                    if (done != total || part.length() != total) fail("Nedlastingen ble avbrutt ved ${(done * 100 / total)} % – trykk «Last ned» igjen for å fortsette")
+                    if (part.length() < 10_000 || !isPmtiles(part)) { part.delete(); fail("Kartfila var ødelagt – prøv igjen") }
+                    swapIn(part, target)
                     null
-                }.getOrElse { if (Hub.online) "Nedlastingen stoppet – trykk «Last ned» igjen for å fortsette" else "Ingen internett – fortsetter når du prøver igjen" }
+                }.getOrElse { errorText(it) }
             }
             progress = null
             status = err   // ved suksess vises dato og størrelse i stedet
             version++
         }
+    }
+
+    /** Feil med ferdig tekst til brukeren. */
+    private class MapError(msg: String) : Exception(msg)
+    private fun fail(msg: String): Nothing = throw MapError(msg)
+
+    private fun errorText(e: Throwable): String = when {
+        e is MapError -> e.message.orEmpty()
+        !Hub.online || e is java.net.UnknownHostException || e is java.net.ConnectException -> "Ingen internett – fortsetter når du prøver igjen"
+        e is java.net.SocketTimeoutException -> "Nettet er for tregt eller falt ut – trykk «Last ned» igjen for å fortsette"
+        e is javax.net.ssl.SSLException -> "Sikker tilkobling feilet – sjekk at dato og klokke på stereoen stemmer"
+        e.message?.contains("ENOSPC") == true || e.message?.contains("No space", true) == true -> "Ikke nok plass på stereoen"
+        else -> "Nedlastingen stoppet – trykk «Last ned» igjen for å fortsette"
+    }
+
+    /** Er fila et PMTiles-kart? (Starter med «PMTiles» og versjon 3.) Ellers kan MapLibre krasje på den. */
+    private fun isPmtiles(f: File): Boolean = runCatching {
+        val head = ByteArray(8)
+        f.inputStream().use { var n = 0; while (n < 8) { val r = it.read(head, n, 8 - n); if (r < 0) break; n += r } }
+        pmtilesHeaderOk(head)
+    }.getOrDefault(false)
+
+    /** Ren logikk (testes i DataLogicTest2). */
+    internal fun pmtilesHeaderOk(head: ByteArray): Boolean =
+        head.size >= 8 && String(head, 0, 7, Charsets.US_ASCII) == "PMTiles" && head[7].toInt() == 3
+
+    /** Bytt ut trygt: det gamle kartet slettes først når det nye er på plass. */
+    private fun swapIn(part: File, target: File) {
+        val old = File(target.path + ".old")
+        old.delete()
+        if (target.exists() && !target.renameTo(old)) fail("Fikk ikke flyttet det gamle kartet")
+        if (!part.renameTo(target)) { old.renameTo(target); fail("Fikk ikke lagret kartet på stereoen") }
+        old.delete()
+    }
+
+    /** Svarte GitHub (og ikke en innloggingsside på Wi-Fi-en)? Testes i DataLogicTest. */
+    internal fun fromGitHub(host: String?, contentType: String?): Boolean {
+        val h = host?.lowercase().orEmpty()
+        val okHost = h == "github.com" || h.endsWith(".github.com") || h == "githubusercontent.com" || h.endsWith(".githubusercontent.com")
+        return okHost && contentType?.lowercase()?.startsWith("text/html") != true
+    }
+
+    data class ContentRange(val start: Long?, val end: Long?, val total: Long?)
+
+    /** Tolker «bytes 100-199/1000», «bytes 100-199/(stjerne)» og «bytes (stjerne)/1000» (svar på 416). Testes i DataLogicTest. */
+    internal fun parseContentRange(h: String?): ContentRange? {
+        val m = Regex("""^\s*bytes\s+(?:(\d+)-(\d+)|\*)/(\d+|\*)\s*$""", RegexOption.IGNORE_CASE).find(h ?: return null) ?: return null
+        return ContentRange(m.groupValues[1].toLongOrNull(), m.groupValues[2].toLongOrNull(), m.groupValues[3].toLongOrNull())
     }
 
     /** Hent nyeste kart på nytt (start fra begynnelsen). */
