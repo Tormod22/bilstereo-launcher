@@ -17,7 +17,7 @@ Snakk norsk med brukeren. Han er ikke utvikler – forklar enkelt, ikke bruk fag
 - Løsningen han godkjente: **tre ting** – (1) bilkort med klokke, stort bilbilde og fart som stort tall, (2) ekte kart, (3) én rad nederst: musikk/telefon/apper. Ingen kalender, ingen vær.
 - Kalkulator skal være skjult i app-skuffen (`HiddenApps` i `Apps.kt`).
 
-## Nåværende tilstand (v4.6)
+## Nåværende tilstand (v4.7)
 - `MainActivity.kt`: Compose-UI med de tre tingene + app-skuff + oppdateringsknapp. Skjermvalg via `Nav.screen` (DASH/APPS/BT/KEYS).
 - v3.0 «stor oppdatering» – alle 50 punktene i `docs/IDEER.md` (se Begrensninger der). Nye filer:
   `Prefs.kt` (TosApp, innstillinger m/ Compose-reaktivitet via Prefs.version, sikkerhetskopi JSON, CrashLog),
@@ -35,6 +35,14 @@ Snakk norsk med brukeren. Han er ikke utvikler – forklar enkelt, ikke bruk fag
   CI-status 3. nov: bygg #2 stoppet på «Sett opp fast signatur» = secrets mangler (brukeren må legge dem inn).
   Steget tåler nå mellomrom/linjeskift og sjekker nøkkel+passord med keytool (testet lokalt med ekte verdier).
   GitHub Pages er ikke slått på (testsiden gir 404) – valgfritt.
+  v4.7: runde 2 «finn 50 feil/mangler og rett» → 59 rettet (3 agenter/worktrees). UI: 48 dp trykkflater, contentDescription,
+  bekreftelse før sletting/nullstilling, kartskala fast per flis, skjermsparer ikke under navigasjon, NaviPopup følger palett.
+  Tjenester: lang-trykk/FLAG_CANCELED/ACTION_MULTIPLE, samtale-taster går til telefonen (passToCall), launchedByUs 8 s +
+  forgetLaunched, RadioGuard.mayClose, Prefs skriver på hovedtråd, CrashLog flere krasj, utvidet SetupReport.
+  Data: OBD tømmer buffer, NO DATA-logikk, PID 59 som reserve for rail, Engine.onConnect/read, usikker RFCOMM-reserve,
+  OBD hviler når skjermen er av, Overpass maks hvert 8. s + pause ved 429, oppdateringssjekk med økende ventetid,
+  PMTiles-header sjekkes, GpsService krasjer ikke, versjonsnavn fra APK i build.yml. Tester totalt 58.
+  ÅPENT: Buttons.inCall = alle lydmodus ≠ NORMAL – hvis CarPlay holder IN_COMMUNICATION slås omdirigering av (sjekk oppsettrapporten).
   v4.6: brukeren HAR en tuningboks: ChipPower CRS, kabel KCR18 (diesel common rail, sitter på rail-trykksensoren,
   ingen app/Bluetooth, styrke via skrue + grønn LED). Tuning-siden: «Min tuningboks» (TuneBox, trinn 0=av/1–10 føres for hånd),
   TuneLog (hver 0–100/80–120 lagres med trinn, beste per trinn), «Motordata» via samme OBD2-brikke som batteriet
