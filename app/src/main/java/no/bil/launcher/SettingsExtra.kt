@@ -499,6 +499,9 @@ private fun localIp(c: Context): String? = runCatching {
 fun SetupScreen(onClose: () -> Unit) {
     val context = LocalContext.current
     val askPerms = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { Hub.startGps(); Prefs.set("perm_v", System.currentTimeMillis()) }
+    val dialerRole = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {
+        Prefs.set("perm_v", System.currentTimeMillis())
+    }
     val resume = rememberResumeTick()
     var poll by remember { mutableIntStateOf(0) }
     // Sjekk igjen når du kommer tilbake fra Android, og hvert 1,5 s (så hakene kommer med en gang ved oppsett med PC)
@@ -552,6 +555,13 @@ fun SetupScreen(onClose: () -> Unit) {
             }
             if (btPerms.isNotEmpty()) Step(Icons.Default.Bluetooth, "Bluetooth", "Se tilkoblet telefon, pare enheter, batterispenning fra OBD-brikke.", remember(tick) { btPerms.all { context.hasPermission(it) } }) {
                 askPerms.launch(btPerms)
+            }
+            if (remember(tick) { Phone.dialerAvailable(context) }) Step(Icons.Default.Phone, "T'OS som telefon-app",
+                "Samtaler vises i T'OS i stedet for stereoens egen telefonskjerm. Ring, kontakter og siste anrop inne i T'OS.",
+                remember(tick) { Phone.isDialer(context) && Phone.missingPermissions(context).isEmpty() }, optional = true) {
+                val missing = Phone.missingPermissions(context)
+                if (!Phone.isDialer(context)) Phone.dialerRoleIntent(context)?.let { dialerRole.launch(it) }
+                else if (missing.isNotEmpty()) askPerms.launch(missing.toTypedArray())
             }
             Step(Icons.Default.SystemUpdate, "Installere oppdateringer", "Oppdateringsknappen i T'OS. Første oppdatering ber om ett «Installer»-trykk, senere går det av seg selv.",
                 remember(tick) { Updater.canInstall(context) }, optional = true) { Updater.openInstallPermission(context) }

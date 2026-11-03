@@ -312,10 +312,12 @@ fun Root() {
             Nav.pick?.let { (title, key) -> BackHandler { Nav.pick = null }; AppPicker(title, "Automatisk", { Prefs.set(key, it) }) { Nav.pick = null } }
             if (Ui.pickSlot) { BackHandler { Ui.pickSlot = false }; AppPicker("Velg app for midtflisa", "Telefon (standard)", { Prefs.set("slot_pkg", it) }) { Ui.pickSlot = false } }
             VolumeHost(Modifier.align(Alignment.Center))
-            Call.name?.let { CallBanner(it, Modifier.align(Alignment.TopCenter)) }
+            // T'OS som telefon-app: egen samtalelinje. Ellers (stereoens egen BT-app) varselet fra MediaListener.
+            if (Phone.calls.isNotEmpty()) PhoneCallBanner(Modifier.align(Alignment.TopCenter))
+            else Call.name?.let { CallBanner(it, Modifier.align(Alignment.TopCenter)) }
             // Meldinger: over bunnraden, eller øverst når tastaturet er oppe
             NoticeHost(
-                if (TosKeyboard.visible) Modifier.align(Alignment.TopCenter).padding(top = if (Call.name != null) 100.dp else 20.dp, start = 24.dp, end = 24.dp)
+                if (TosKeyboard.visible) Modifier.align(Alignment.TopCenter).padding(top = if (Call.name != null || Phone.calls.isNotEmpty()) 100.dp else 20.dp, start = 24.dp, end = 24.dp)
                 else Modifier.align(Alignment.BottomCenter).padding(bottom = 124.dp, start = 24.dp, end = 24.dp)
             )
             KeyboardHost(Modifier.align(Alignment.BottomCenter))
