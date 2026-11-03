@@ -97,4 +97,10 @@ class LogicTest {
         assertTrue(CarBattery.meaning(11.5f).startsWith("Lavt"))
         assertTrue(CarBattery.meaning(15.4f).startsWith("For høy"))
     }
+
+    @Test fun signatur_sammenlignes() {
+        assertTrue(Updater.sameSigner(setOf("a"), setOf("a")))
+        assertFalse(Updater.sameSigner(setOf("a"), setOf("b")))
+        assertTrue(Updater.sameSigner(emptySet(), setOf("b")))   // ukjent → la Android avgjøre
+    }
 }

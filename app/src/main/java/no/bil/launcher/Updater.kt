@@ -91,6 +91,8 @@ object Updater {
                 // Hel fil? (Avbrudd eller innloggingsside på Wi-Fi gir halv/feil fil)
                 if (total > 0 && done != total) error("ufullstendig")
                 if (done < 1_000_000) error("for liten")
+                // Samme app og samme signatur? Ellers sier Android bare «App ikke installert».
+                apkProblem(context, file)?.let { msg -> file.delete(); return@withContext msg }
                 val uri = FileProvider.getUriForFile(context, "${context.packageName}.files", file)
                 val intent = Intent(Intent.ACTION_VIEW)
                     .setDataAndType(uri, "application/vnd.android.package-archive")
@@ -101,6 +103,33 @@ object Updater {
                 if (Hub.online) "Nedlastingen ble avbrutt – prøv igjen" else "Ingen internett"
             })
         }
+
+    /**
+     * Sjekker den nedlastede fila før installasjon: riktig pakke, nyere versjon og samme nøkkel
+     * som T'OS på stereoen. Returnerer en forklaring hvis den ikke kan installeres, ellers null.
+     */
+    private fun apkProblem(context: Context, file: File): String? = runCatching {
+        val pm = context.packageManager
+        val flags = if (Build.VERSION.SDK_INT >= 28) android.content.pm.PackageManager.GET_SIGNING_CERTIFICATES
+                    else @Suppress("DEPRECATION") android.content.pm.PackageManager.GET_SIGNATURES
+        val apk = pm.getPackageArchiveInfo(file.path, flags) ?: return "Fila er ødelagt – prøv igjen"
+        if (apk.packageName != context.packageName) return "Feil app i nedlastingen"
+        val apkCode = if (Build.VERSION.SDK_INT >= 28) apk.longVersionCode.toInt() else @Suppress("DEPRECATION") apk.versionCode
+        if (apkCode <= current(context)) return "Du har allerede nyeste versjon"
+        val mine = pm.getPackageInfo(context.packageName, flags)
+        if (!sameSigner(signers(mine), signers(apk)))
+            return "Ny versjon har en annen nøkkel – installer den én gang via Drive (avinstaller T'OS først)"
+        null
+    }.getOrNull()   // klarer vi ikke å sjekke, lar vi Android avgjøre
+
+    @Suppress("DEPRECATION")
+    private fun signers(pi: android.content.pm.PackageInfo): Set<String> {
+        val sigs = if (Build.VERSION.SDK_INT >= 28) pi.signingInfo?.apkContentsSigners else pi.signatures
+        return sigs.orEmpty().map { it.toCharsString() }.toSet()
+    }
+
+    /** Ren logikk (testbar): tomme lister = ukjent, da godtar vi. */
+    internal fun sameSigner(a: Set<String>, b: Set<String>): Boolean = a.isEmpty() || b.isEmpty() || a == b
 
     /**
      * Åpner en adresse og følger videresendinger selv (github.com → objects.githubusercontent.com).

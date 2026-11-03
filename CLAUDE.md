@@ -17,7 +17,7 @@ Snakk norsk med brukeren. Han er ikke utvikler – forklar enkelt, ikke bruk fag
 - Løsningen han godkjente: **tre ting** – (1) bilkort med klokke, stort bilbilde og fart som stort tall, (2) ekte kart, (3) én rad nederst: musikk/telefon/apper. Ingen kalender, ingen vær.
 - Kalkulator skal være skjult i app-skuffen (`HiddenApps` i `Apps.kt`).
 
-## Nåværende tilstand (v4.3)
+## Nåværende tilstand (v4.4)
 - `MainActivity.kt`: Compose-UI med de tre tingene + app-skuff + oppdateringsknapp. Skjermvalg via `Nav.screen` (DASH/APPS/BT/KEYS).
 - v3.0 «stor oppdatering» – alle 50 punktene i `docs/IDEER.md` (se Begrensninger der). Nye filer:
   `Prefs.kt` (TosApp, innstillinger m/ Compose-reaktivitet via Prefs.version, sikkerhetskopi JSON, CrashLog),
@@ -30,11 +30,13 @@ Snakk norsk med brukeren. Han er ikke utvikler – forklar enkelt, ikke bruk fag
   Wi-Fi/Bluetooth-paring/equalizer inne i T'OS (`SettingsExtra.kt`), førstegangsoppsett (Screen.SETUP), fartsjustering.
   Play Protect blokkerer installasjon fra Drive pga. tilgjengelighet + varseltilgang – brukeren må skru av Play Protect midlertidig
   eller bruke ADB. Lokale bygg i denne sesjonen ble signert med den faste nøkkelen (fra scratchpad, ikke repo).
-  Tester: `app/src/test/.../LogicTest.kt` (10 JUnit-tester: sol/nattmodus, fartsgrense, radiofrekvens, datoer, kompass,
+  Tester: `app/src/test/.../LogicTest.kt` (11 JUnit-tester: sol/nattmodus, fartsgrense, radiofrekvens, datoer, kompass,
   batteri) kjøres i build.yml før bygging. Hold dem grønne; legg til test når ren logikk endres.
   CI-status 3. nov: bygg #2 stoppet på «Sett opp fast signatur» = secrets mangler (brukeren må legge dem inn).
   Steget tåler nå mellomrom/linjeskift og sjekker nøkkel+passord med keytool (testet lokalt med ekte verdier).
   GitHub Pages er ikke slått på (testsiden gir 404) – valgfritt.
+  v4.4: Updater sjekker nedlastet APK før installasjon (pakkenavn, nyere versionCode, samme signatur som installert T'OS)
+  og gir en forståelig melding i stedet for Androids «App ikke installert». Test: signatur_sammenlignes (11 tester).
   v4.3: SafeMode (3 krasj på 3 min → uten MapLibre/bilbilde/oppstartsmusikk), SetupReport («Send oppsettrapport»
   i Innstillinger → Sikkerhetskopi og hjelp: pakker, knappekoder, tillatelser – be brukeren sende denne!), build.yml uten
   setup-android (feilet på «tools»), kartstørrelse via Range 0-0 (GitHub-CDN gir 401 på HEAD). PR #1 er flettet 3. nov;
