@@ -191,8 +191,11 @@ object AppRepository {
     fun launchedByUs(pkg: String, withinMs: Long = 3000): Boolean =
         selfLaunched[pkg]?.let { android.os.SystemClock.elapsedRealtime() - it < withinMs } == true
 
+    /** Merk at T'OS selv åpner [pkg] (så KeyService ikke sender brukeren tilbake). */
+    fun markLaunched(pkg: String) { selfLaunched[pkg] = android.os.SystemClock.elapsedRealtime() }
+
     fun launch(context: Context, packageName: String) {
-        selfLaunched[packageName] = android.os.SystemClock.elapsedRealtime()
+        markLaunched(packageName)
         val intent = launchIntent(context, packageName)
         if (intent != null) {
             intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
