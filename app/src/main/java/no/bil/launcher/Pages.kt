@@ -10,6 +10,7 @@ import android.net.Uri
 import android.os.Build
 import android.provider.CallLog
 import android.provider.Settings
+import android.telephony.TelephonyManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
@@ -63,6 +64,7 @@ import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import kotlin.math.roundToInt
 
 /* ======================= Felles byggeklosser ======================= */
 
@@ -182,7 +184,7 @@ fun Context.toast(msg: String) = android.widget.Toast.makeText(this, msg, androi
 fun Cover(size: androidx.compose.ui.unit.Dp, radius: androidx.compose.ui.unit.Dp = 14.dp) {
     val context = LocalContext.current
     val art = NowPlaying.art
-    val icon = remember(NowPlaying.pkg) {
+    val icon = remember(NowPlaying.pkg, Prefs.str("music_pkg")) {
         (NowPlaying.pkg ?: Prefs.str("music_pkg").ifBlank { null })
             ?.let { runCatching { context.packageManager.getApplicationIcon(it) }.getOrNull() }
             ?: AppRepository.tileIcon(context, Tiles.byPrefix("Mus"))
@@ -394,19 +396,47 @@ fun LimitSign(sizeDp: Int) {
 
 data class Contact(val name: String, val number: String)
 
+/** Favoritter lagres som «navn|nummer», én per linje – derfor fjernes | og linjeskift fra det som skrives inn. */
+internal fun favText(s: String): String = s.replace(Regex("[|\\r\\n]+"), " ").replace(Regex("\\s+"), " ").trim()
+
 object Favorites {
     fun all(): List<Contact> = Prefs.str("favorites").split("\n").mapNotNull {
         val p = it.split("|"); if (p.size == 2 && p[1].isNotBlank()) Contact(p[0], p[1]) else null
     }
-    fun add(c: Contact) = Prefs.set("favorites", (all() + c).joinToString("\n") { "${it.name}|${it.number}" })
+    fun add(c: Contact) {
+        val number = favText(c.number)
+        if (number.isBlank()) return
+        val clean = Contact(favText(c.name).ifBlank { number }, number)
+        Prefs.set("favorites", (all() + clean).joinToString("\n") { "${it.name}|${it.number}" })
+    }
     fun remove(c: Contact) = Prefs.set("favorites", (all() - c).joinToString("\n") { "${it.name}|${it.number}" })
 
-    /** Ring: direkte hvis lov, ellers åpnes nummeret i telefonappen. */
+    /**
+     * Ring: direkte hvis lov, ellers åpnes nummeret i telefonappen.
+     * Stereoen har ikke eget SIM – da ringer den via telefonen over Bluetooth, og et vanlig
+     * «ring»-kall forsvinner uten at noe skjer. Da åpnes stereoens telefon-app med nummeret.
+     */
     fun call(ctx: Context, number: String) {
         val uri = Uri.parse("tel:" + number.filter { it.isDigit() || it == '+' })
+        val pm = ctx.packageManager
+        val tm = ctx.getSystemService(Context.TELEPHONY_SERVICE) as? TelephonyManager
+        val voice = pm.hasSystemFeature(PackageManager.FEATURE_TELEPHONY) && tm?.isVoiceCapable == true
+        val tile = Tiles.byPrefix("Tel")
+        if (!voice) {
+            val pkg = AppRepository.tilePackage(ctx, tile)
+            if (pkg != null) {
+                AppRepository.markLaunched(pkg)
+                val dial = Intent(Intent.ACTION_DIAL, uri).setPackage(pkg).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                if (runCatching { ctx.startActivity(dial) }.isSuccess) return
+            }
+            AppRepository.launchTile(ctx, tile)
+            if (pkg != null) ctx.toast("Ring $number fra telefon-appen")
+            return
+        }
         val direct = ContextCompat.checkSelfPermission(ctx, Manifest.permission.CALL_PHONE) == PackageManager.PERMISSION_GRANTED
         val i = Intent(if (direct) Intent.ACTION_CALL else Intent.ACTION_DIAL, uri).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        if (runCatching { ctx.startActivity(i) }.isFailure) AppRepository.launchTile(ctx, Tiles.byPrefix("Tel"))
+        runCatching { i.resolveActivity(pm)?.packageName }.getOrNull()?.let { AppRepository.markLaunched(it) }
+        if (runCatching { ctx.startActivity(i) }.isFailure) AppRepository.launchTile(ctx, tile)
     }
 }
 
@@ -514,6 +544,10 @@ fun CarScreen(onClose: () -> Unit) {
         Pill("Nullstill tur", Icons.Default.RestartAlt) { Trip.reset() }
         Spacer(Modifier.width(12.dp))
     }) {
+        // Parkeringen lagres i bakgrunnen uten å tegne skjermen på nytt – sjekk den hvert 5. sekund
+        var parkTick by remember { mutableIntStateOf(0) }
+        LaunchedEffect(Unit) { while (true) { delay(5000); parkTick++ } }
+        val park = remember(parkTick, Prefs.version) { Triple(Parking.lat, Parking.lon, Parking.time) }
         Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
             Column(Modifier.weight(0.62f).verticalScroll(rememberScrollState())) {
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -553,11 +587,11 @@ fun CarScreen(onClose: () -> Unit) {
             Column(Modifier.weight(0.38f).fillMaxHeight().clip(Small).background(Card).padding(18.dp),
                 horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text("Hvor står bilen?", color = TextPrimary, fontSize = 18.sp, fontWeight = FontWeight.Medium)
-                if (Parking.known) {
-                    val bmp = remember(Parking.lat, Parking.lon) { qr(Parking.appleMapsUrl()) }
+                if (park.first != 0.0 || park.second != 0.0) {
+                    val bmp = remember(park.first, park.second) { qr(Parking.appleMapsUrl()) }
                     Image(bmp.asImageBitmap(), null, Modifier.size(200.dp).clip(RoundedCornerShape(12.dp)))
                     Text("Skann med iPhone-kameraet før du går, så får du posisjonen i Kart.", color = TextMuted, fontSize = 13.sp)
-                    Text("Sist stilt: " + SimpleDateFormat("d. MMM HH:mm", Locale("nb", "NO")).format(Date(Parking.time)), color = TextMuted, fontSize = 13.sp)
+                    Text("Sist stilt: " + SimpleDateFormat("d. MMM HH:mm", Locale("nb", "NO")).format(Date(park.third)), color = TextMuted, fontSize = 13.sp)
                 } else Text("Ingen posisjon ennå. Den lagres når bilen står stille.", color = TextMuted, fontSize = 14.sp)
             }
         }
@@ -586,7 +620,8 @@ fun QuickPanel(onClose: () -> Unit) {
     val context = LocalContext.current
     val am = remember { context.getSystemService(Context.AUDIO_SERVICE) as AudioManager }
     val maxVol = remember { am.getStreamMaxVolume(AudioManager.STREAM_MUSIC) }
-    var vol by remember { mutableFloatStateOf(am.getStreamVolume(AudioManager.STREAM_MUSIC).toFloat()) }
+    // Volumet ligger i Ui.volume, som følger volumhjulet (oppdateres i Root)
+    LaunchedEffect(Unit) { Ui.volume = am.getStreamVolume(AudioManager.STREAM_MUSIC) }
     // Har T'OS lov, styrer glideren hele stereoen; ellers bare T'OS-vinduet
     val canWrite = remember { Settings.System.canWrite(context) }
     var bright by remember {
@@ -616,7 +651,10 @@ fun QuickPanel(onClose: () -> Unit) {
                     } else Prefs.set("app_brightness", it)
                 }, valueRange = 0.05f..1f, colors = sliderColors, modifier = Modifier.weight(1f))
                 Icon(Icons.Default.VolumeUp, null, tint = TextMuted)
-                Slider(vol, { vol = it; am.setStreamVolume(AudioManager.STREAM_MUSIC, it.toInt(), 0) }, valueRange = 0f..maxVol.toFloat(), colors = sliderColors, modifier = Modifier.weight(1f))
+                Slider(Ui.volume.coerceAtLeast(0).toFloat(), {
+                    val v = it.roundToInt()
+                    if (v != Ui.volume) { Ui.volume = v; am.setStreamVolume(AudioManager.STREAM_MUSIC, v, 0) }
+                }, valueRange = 0f..maxVol.toFloat(), colors = sliderColors, modifier = Modifier.weight(1f))
             }
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 Pill("Wi-Fi", Icons.Default.Wifi) { onClose(); Prefs.set("settings_cat", "NET"); Nav.screen = Screen.SETTINGS }

@@ -187,6 +187,8 @@ fun KeysScreen(onClose: () -> Unit) {
     val serviceOn by produceState(initialValue = Buttons.serviceEnabled(context)) {
         while (true) { value = Buttons.serviceEnabled(context); delay(1500) }
     }
+    // Forlates siden (Hjem, en annen side …), stopper læringen – ellers ville neste app som åpnes bli «lært»
+    DisposableEffect(Unit) { onDispose { if (Learn.target != null) Learn.cancel() } }
     // Gi opp læring etter 10 sekunder
     val target = Learn.target
     LaunchedEffect(target) {
