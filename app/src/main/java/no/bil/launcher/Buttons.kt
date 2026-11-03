@@ -85,6 +85,8 @@ object Buttons {
     var version by androidx.compose.runtime.mutableIntStateOf(0)
         private set
     private fun changed() { version++ }
+    /** Tegn Knapper-siden på nytt etter at innstillingene er byttet ut (f.eks. hentet fra sikkerhetskopi). */
+    fun reload() = changed()
 
     fun action(c: Context, k: PanelKey): Action =
         version.let { _ -> prefs(c) }.getString("action_${k.name}", null)?.let { n -> Action.entries.firstOrNull { it.name == n } } ?: k.default
@@ -96,11 +98,16 @@ object Buttons {
     /** Tastekoden knappen er lært med (-1 = ikke lært). */
     fun code(c: Context, k: PanelKey): Int = version.let { _ -> prefs(c) }.getInt("code_${k.name}", -1)
     fun pkg(c: Context, k: PanelKey): String? = version.let { _ -> prefs(c) }.getString("pkg_${k.name}", null)
+    /** Lær tastekoden. Hadde en annen knapp samme kode, glemmes den der (ellers ville bare den første virket). */
     fun learnCode(c: Context, k: PanelKey, code: Int) {
-        prefs(c).edit().putInt("code_${k.name}", code).remove("pkg_${k.name}").apply(); changed()
+        val e = prefs(c).edit().putInt("code_${k.name}", code).remove("pkg_${k.name}")
+        learnedConflicts(prefs(c).all, "code_", code, k).forEach { e.remove(it) }
+        e.apply(); changed()
     }
     fun learnPkg(c: Context, k: PanelKey, pkg: String) {
-        prefs(c).edit().putString("pkg_${k.name}", pkg).remove("code_${k.name}").apply(); changed()
+        val e = prefs(c).edit().putString("pkg_${k.name}", pkg).remove("code_${k.name}")
+        learnedConflicts(prefs(c).all, "pkg_", pkg, k).forEach { e.remove(it) }
+        e.apply(); changed()
     }
 
     /** Kode 0 (ukjent tast) og lavere teller ikke – ellers ville alle ukjente taster blitt tolket som en lært knapp. */
@@ -203,16 +210,35 @@ object Buttons {
 
 /* ======================= «Lær knapp» ======================= */
 
+/** Andre knappers lagrede verdier ([prefix] + knappnavn) som er lik [value] – de skal glemmes når [keep] lærer den. */
+internal fun learnedConflicts(all: Map<String, *>, prefix: String, value: Any, keep: PanelKey): List<String> =
+    PanelKey.entries.filter { it != keep }.map { prefix + it.name }.filter { all[it] == value }
+
 object Learn {
     var target by mutableStateOf<PanelKey?>(null)
     var message by mutableStateOf<String?>(null)
+    private var startedAt = 0L
+    /** Etter så lang tid regnes læringen som glemt (Knapper-siden gir også opp av seg selv). */
+    internal const val TIMEOUT_MS = 15_000L
 
-    fun start(k: PanelKey) { target = k; message = null }
+    fun start(k: PanelKey) { target = k; message = null; startedAt = android.os.SystemClock.elapsedRealtime() }
     fun cancel(msg: String? = null) { target = null; message = msg }
 
-    /** Knappen sendte en tastekode. */
+    internal fun expired(now: Long, started: Long) = now - started > TIMEOUT_MS
+
+    /** Læringen har stått for lenge (f.eks. Knapper-siden ble lukket): avbryt. Gir true hvis den ble avbrutt. */
+    private fun timedOut(): Boolean {
+        if (!expired(android.os.SystemClock.elapsedRealtime(), startedAt)) return false
+        cancel("Fikk ikke noe signal i tide. Trykk «Lær» og prøv igjen.")
+        return true
+    }
+
+    /** Knappen sendte en tastekode. Gir false hvis tasten ikke ble brukt til læring (da behandles den vanlig). */
     fun offerKey(c: Context, code: Int): Boolean {
         val k = target ?: return false
+        if (timedOut()) return false
+        // Tilbake avbryter læringen (BACK-knappen virker som tilbake uten å læres)
+        if (code == KeyEvent.KEYCODE_BACK) { cancel("Læring avbrutt."); return true }
         if (code <= 0) { message = "${k.label} sender ingen brukbar tastekode. Prøv knappen igjen, eller la stereoen bestemme."; return true }
         Buttons.learnCode(c, k, code)
         cancel("${k.label} er lært (sender tastekode $code).")
@@ -222,6 +248,7 @@ object Learn {
     /** Knappen åpnet en app i stedet. Vi husker appen og går tilbake til Knapper-siden. */
     fun offerPackage(c: Context, pkg: String): Boolean {
         val k = target ?: return false
+        if (timedOut()) return false
         Buttons.learnPkg(c, k, pkg)
         cancel("${k.label} er lært (stereoen åpner $pkg).")
         Buttons.show(c, Screen.KEYS)

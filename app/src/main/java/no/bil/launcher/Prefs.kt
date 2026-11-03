@@ -36,11 +36,13 @@ object Prefs {
 
     fun init(c: Context) { sp = c.applicationContext.getSharedPreferences("tos", Context.MODE_PRIVATE) }
 
-    fun str(k: String, d: String = ""): String { version; return sp.getString(k, d) ?: d }
-    fun bool(k: String, d: Boolean = false): Boolean { version; return sp.getBoolean(k, d) }
-    fun int(k: String, d: Int = 0): Int { version; return sp.getInt(k, d) }
-    fun float(k: String, d: Float = 0f): Float { version; return sp.getFloat(k, d) }
-    fun long(k: String, d: Long = 0L): Long { version; return sp.getLong(k, d) }
+    // Har en verdi feil type (f.eks. fra en gammel sikkerhetskopi), brukes standardverdien i stedet for å krasje
+    private inline fun <T> safe(d: T, get: () -> T): T = try { get() } catch (_: ClassCastException) { d }
+    fun str(k: String, d: String = ""): String { version; return safe(d) { sp.getString(k, d) ?: d } }
+    fun bool(k: String, d: Boolean = false): Boolean { version; return safe(d) { sp.getBoolean(k, d) } }
+    fun int(k: String, d: Int = 0): Int { version; return safe(d) { sp.getInt(k, d) } }
+    fun float(k: String, d: Float = 0f): Float { version; return safe(d) { sp.getFloat(k, d) } }
+    fun long(k: String, d: Long = 0L): Long { version; return safe(d) { sp.getLong(k, d) } }
 
     fun set(k: String, v: Any?) {
         sp.edit().apply {
@@ -58,6 +60,17 @@ object Prefs {
 
     /** Lagre uten å tegne skjermen på nytt (brukes for ting som skrives ofte, som posisjon). */
     fun setQuiet(k: String, v: Any) {
+        // Ikke skriv til disken når verdien er den samme (kalles ofte)
+        val same = safe(false) {
+            when (v) {
+                is String -> sp.getString(k, null) == v
+                is Float -> sp.contains(k) && sp.getFloat(k, 0f) == v
+                is Long -> sp.contains(k) && sp.getLong(k, 0L) == v
+                is Int -> sp.contains(k) && sp.getInt(k, 0) == v
+                else -> false
+            }
+        }
+        if (same) return
         sp.edit().apply {
             when (v) { is String -> putString(k, v); is Float -> putFloat(k, v); is Long -> putLong(k, v); is Int -> putInt(k, v) }
         }.apply()
@@ -78,27 +91,68 @@ object Prefs {
         return root.toString(2)
     }
 
-    fun importJson(c: Context, text: String): Boolean = runCatching {
-        val root = JSONObject(text)
-        for (name in listOf("tos", "knapper")) {
-            val o = root.optJSONObject(name) ?: continue
-            val e = c.getSharedPreferences(name, Context.MODE_PRIVATE).edit()
-            o.keys().forEach { k ->
-                val item = o.getJSONObject(k)
-                when (item.getString("t")) {
-                    "String" -> e.putString(k, item.getString("v"))
-                    "Boolean" -> e.putBoolean(k, item.getBoolean("v"))
-                    "Integer" -> e.putInt(k, item.getInt("v"))
-                    "Float" -> e.putFloat(k, item.getDouble("v").toFloat())
-                    "Long" -> e.putLong(k, item.getLong("v"))
+    /**
+     * Hent innstillinger fra sikkerhetskopi. Hele fila sjekkes først – er noe ødelagt, endres ingenting.
+     * Verdier som har en annen type enn det som er lagret nå (fra en eldre T'OS), hoppes over.
+     */
+    fun importJson(c: Context, text: String): Boolean {
+        val parsed = runCatching {
+            val root = JSONObject(text)
+            val out = mutableMapOf<String, Map<String, Any>>()
+            for (name in listOf("tos", "knapper")) {
+                val o = root.optJSONObject(name) ?: continue
+                val m = mutableMapOf<String, Any>()
+                for (k in o.keys()) {
+                    val item = o.getJSONObject(k)
+                    val t = item.getString("t")
+                    if (t !in backupTypes) continue                  // ukjent type (f.eks. tom verdi): hopp over
+                    m[k] = backupValue(t, item.opt("v")) ?: return false
                 }
+                out[name] = m
             }
-            e.apply()
-        }
+            out
+        }.getOrNull() ?: return false
+        if (parsed.isEmpty()) return false
+        val ok = runCatching {
+            for ((name, values) in parsed) {
+                val p = c.getSharedPreferences(name, Context.MODE_PRIVATE)
+                val existing = p.all
+                val e = p.edit()
+                for ((k, v) in values) {
+                    if (!backupTypeFits(existing[k], v)) continue
+                    when (v) {
+                        is String -> e.putString(k, v)
+                        is Boolean -> e.putBoolean(k, v)
+                        is Int -> e.putInt(k, v)
+                        is Float -> e.putFloat(k, v)
+                        is Long -> e.putLong(k, v)
+                    }
+                }
+                e.apply()
+            }
+        }.isSuccess
         version++
-        true
-    }.getOrDefault(false)
+        Buttons.reload()
+        return ok
+    }
 }
+
+/** Typene sikkerhetskopien kan inneholde (navnet Java gir dem i [Prefs.exportJson]). */
+internal val backupTypes = setOf("String", "Boolean", "Integer", "Float", "Long")
+
+/** Gjør en verdi fra sikkerhetskopien om til riktig type. null = ugyldig verdi. Testes i ServiceLogicTest. */
+internal fun backupValue(t: String, v: Any?): Any? = when (t) {
+    "String" -> v as? String
+    "Boolean" -> v as? Boolean
+    "Integer" -> (v as? Number)?.takeIf { it !is Double && it !is Float || it.toDouble() % 1.0 == 0.0 }?.toLong()
+        ?.takeIf { it in Int.MIN_VALUE..Int.MAX_VALUE }?.toInt()
+    "Long" -> (v as? Number)?.takeIf { it !is Double && it !is Float || it.toDouble() % 1.0 == 0.0 }?.toLong()
+    "Float" -> (v as? Number)?.toFloat()?.takeIf { !it.isNaN() }
+    else -> null
+}
+
+/** Ny verdi kan bare erstatte en lagret verdi av samme type (eller lagres der ingenting finnes). */
+internal fun backupTypeFits(existing: Any?, new: Any): Boolean = existing == null || existing.javaClass == new.javaClass
 
 /* ---------- Feillogg: krasj lagres, og kan deles fra Innstillinger ---------- */
 

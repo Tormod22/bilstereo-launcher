@@ -28,6 +28,8 @@ class KeyService : AccessibilityService() {
     private val downAt = mutableMapOf<Int, Long>()
     private val longDone = mutableSetOf<Int>()
     private var screenOffAt = 0L
+    /** Hvilken app som er framme, og om T'OS selv åpnet den (da sender vi deg ikke tilbake før du har gått ut av den). */
+    private val front = FrontTracker()
     // Ikke ekte startskjermer (Android-innstillinger brukes kort ved oppstart, oppsettsveivisere)
     private val notHome = setOf("com.android.settings", "com.android.provision", "com.google.android.setupwizard", "com.android.car.settings")
     private val homeInfos by lazy {
@@ -60,6 +62,11 @@ class KeyService : AccessibilityService() {
         }
     }
 
+    /** En app ble installert, oppdatert eller fjernet: navnesøket (f.eks. «Car link 2.0») må leses på nytt. */
+    private val pkgReceiver = object : BroadcastReceiver() {
+        override fun onReceive(c: Context, i: Intent) = AppRepository.invalidate(c)
+    }
+
     override fun onServiceConnected() {
         instance = this
         val f = IntentFilter().apply {
@@ -67,12 +74,20 @@ class KeyService : AccessibilityService() {
             addAction(UsbManager.ACTION_USB_DEVICE_ATTACHED); addAction(BluetoothDevice.ACTION_ACL_CONNECTED)
         }
         if (Build.VERSION.SDK_INT >= 33) registerReceiver(receiver, f, Context.RECEIVER_EXPORTED) else registerReceiver(receiver, f)
+        val pf = IntentFilter().apply {
+            addAction(Intent.ACTION_PACKAGE_ADDED); addAction(Intent.ACTION_PACKAGE_REMOVED); addAction(Intent.ACTION_PACKAGE_CHANGED)
+            addDataScheme("package")
+        }
+        runCatching { if (Build.VERSION.SDK_INT >= 33) registerReceiver(pkgReceiver, pf, Context.RECEIVER_EXPORTED) else registerReceiver(pkgReceiver, pf) }
+        // Les app-navnene i bakgrunnen nå, så knappetrykk ikke må vente på det
+        AppRepository.warm(this)
     }
 
     override fun onDestroy() {
         if (instance === this) instance = null
         NaviPopup.hide()
         runCatching { unregisterReceiver(receiver) }
+        runCatching { unregisterReceiver(pkgReceiver) }
         super.onDestroy()
     }
 
@@ -80,8 +95,7 @@ class KeyService : AccessibilityService() {
         val code = event.keyCode
         if (event.action == KeyEvent.ACTION_UP && code == swallowUp) { swallowUp = -1; return true }
 
-        if (Learn.target != null && event.action == KeyEvent.ACTION_DOWN && !isVolume(code)) {
-            Learn.offerKey(this, code)
+        if (Learn.target != null && event.action == KeyEvent.ACTION_DOWN && !isVolume(code) && Learn.offerKey(this, code)) {
             swallowUp = code
             return true
         }
@@ -94,26 +108,35 @@ class KeyService : AccessibilityService() {
     override fun onAccessibilityEvent(event: AccessibilityEvent) {
         if (event.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) return
         val pkg = event.packageName?.toString() ?: return
-        if (pkg == packageName || pkg in ignored || "inputmethod" in pkg || "keyboard" in pkg) return
+        // Systemvinduer og tastatur legger seg bare over appen som er framme – de bytter ikke app
+        if (pkg in ignored || "inputmethod" in pkg || "keyboard" in pkg) return
+        val cls = event.className?.toString()
+        if (pkg == packageName) {
+            // Bare T'OS sine egne skjermer teller (ikke Waze-popupen o.l. som legges over andre apper)
+            if (cls == null || cls.startsWith("$packageName.")) front.update(pkg, launchedByUs = false)
+            return
+        }
+        val state = front.update(pkg, AppRepository.launchedByUs(pkg))
 
-        if (Learn.target != null) { Learn.offerPackage(this, pkg); return }
+        if (Learn.target != null && Learn.offerPackage(this, pkg)) return
 
-        // Husk siste vanlige app (for «Åpne siste app ved oppstart»)
-        if (pkg !in homePkgs && packageManager.getLaunchIntentForPackage(pkg) != null) Prefs.setQuiet("last_app", pkg)
+        // Appen ble åpnet av T'OS selv (f.eks. «Start radio», «Telefon», stereoens egen startskjerm fra app-lista):
+        // ikke send tilbake så lenge du er i den
+        if (state.owned) { rememberLastApp(pkg); return }
 
         val now = SystemClock.elapsedRealtime()
 
         // Hold T'OS som startskjerm: dukker stereoens originale startskjerm opp (f.eks. etter «fjern alle faner»),
         // vises T'OS i stedet. Trengs fordi stereoen ikke lar T'OS bli fast startskjerm.
-        val cls = event.className?.toString()
         if (pkg in homePkgs && cls != null && cls in homeClasses && Prefs.bool("keep_home", true) && Buttons.keyForPkg(this, pkg) == null) {
             if (now - lastRedirect > 1500 && !Buttons.inCall(this)) { lastRedirect = now; Buttons.show(this, Screen.DASH) }
             return
         }
-        // Appen ble åpnet av T'OS selv (f.eks. «Start radio», «Telefon», siste app ved oppstart) – ikke send tilbake
-        if (AppRepository.launchedByUs(pkg)) return
 
-        val key = Buttons.keyForPkg(this, pkg) ?: return
+        val key = Buttons.keyForPkg(this, pkg)
+        if (key == null) { rememberLastApp(pkg); return }
+        // Bare når appen nettopp kom fram (ikke for hver ny skjerm inne i den)
+        if (!state.newlyFront) return
         val action = Buttons.action(this, key)
         if (action == Action.NONE || action == Action.BACK) return
         if (pkg in Buttons.targets(this, action)) return          // ville gått i ring
@@ -125,6 +148,16 @@ class KeyService : AccessibilityService() {
         Buttons.perform(this, action)
         // Stereoens radio-app rakk å starte radioen: skru den av igjen, så det ikke blir skurr
         if ((key == PanelKey.RADIO || RadioGuard.looksLikeRadio(pkg)) && action != Action.RADIO) RadioGuard.silence(this, pkg, resume)
+    }
+
+    /**
+     * Husk siste vanlige app (for «Åpne siste app ved oppstart»). Ikke startskjermer, ikke apper en knapp er lært med
+     * (da ville T'OS åpnet stereoens radio o.l. ved oppstart), ikke FM-radioen. Skrives bare når den er en annen.
+     */
+    private fun rememberLastApp(pkg: String) {
+        if (pkg in homePkgs || pkg == Prefs.str("last_app")) return
+        if (Buttons.keyForPkg(this, pkg) != null || RadioGuard.looksLikeRadio(pkg)) return
+        if (packageManager.getLaunchIntentForPackage(pkg) != null) Prefs.setQuiet("last_app", pkg)
     }
 
     override fun onInterrupt() {}
@@ -158,5 +191,22 @@ class KeyService : AccessibilityService() {
                 }
             }
         }
+    }
+}
+
+/** Om en app nettopp kom fram, og om den er «T'OS sin» (åpnet av T'OS, og brukeren har ikke gått ut av den ennå). */
+internal data class FrontState(val newlyFront: Boolean, val owned: Boolean)
+
+/** Følger med på hvilken app som er framme. Ren logikk – testes i ServiceLogicTest. */
+internal class FrontTracker {
+    var current: String? = null
+        private set
+    private var owned: String? = null
+
+    fun update(pkg: String, launchedByUs: Boolean): FrontState {
+        val newly = pkg != current
+        if (newly) { current = pkg; owned = if (launchedByUs) pkg else null }
+        else if (launchedByUs) owned = pkg
+        return FrontState(newly, owned == pkg)
     }
 }

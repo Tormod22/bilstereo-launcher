@@ -80,7 +80,22 @@ object NavInfo {
 object Call {
     var name by mutableStateOf<String?>(null)
     internal var open: PendingIntent? = null
+    /** Varselet samtalen kom fra (så den fjernes når samme varsel blir «pågående» eller forsvinner). */
+    internal var key: String? = null
     fun openCall() { runCatching { open?.send() } }
+    internal fun clear() { name = null; open = null; key = null }
+}
+
+/**
+ * Er samtalevarselet en innkommende samtale som ikke er besvart ennå?
+ * Android 12+: samtaletypen i varselet. Ellers: et pågående varsel uten fullskjerm-visning er en besvart/utgående
+ * samtale, og et varsel med tidtaker er en samtale som er i gang. Innkommende samtaler har fullskjerm-visning
+ * (telefonappene merker dem ofte også som «pågående», så det alene avgjør ikke). Testes i ServiceLogicTest.
+ */
+internal fun isIncomingCall(callType: Int, hasFullScreen: Boolean, ongoing: Boolean, chronometer: Boolean): Boolean {
+    if (callType != 0) return callType == 1   // Notification.CallStyle.CALL_TYPE_INCOMING
+    if (ongoing && !hasFullScreen) return false
+    return hasFullScreen && !chronometer
 }
 
 /* ======================= Musikkontroll ======================= */
@@ -120,9 +135,13 @@ object Media {
 class MediaListener : NotificationListenerService() {
     private var msm: MediaSessionManager? = null
     private val callbacks = mutableMapOf<MediaController, MediaController.Callback>()
+    /** Appene som har mediaøkt nå. Tilbakekallene leser denne, så de aldri bruker en gammel liste. */
+    private var controllers: List<MediaController> = emptyList()
     private val sessionsListener = MediaSessionManager.OnActiveSessionsChangedListener { list -> pick(list.orEmpty()) }
 
     override fun onListenerConnected() {
+        // Det som var vist før en frakobling kan være utdatert – leses på nytt fra varslene under
+        NavInfo.title = null; NavInfo.text = null; Call.clear()
         msm = getSystemService(Context.MEDIA_SESSION_SERVICE) as MediaSessionManager
         val cn = ComponentName(this, MediaListener::class.java)
         runCatching {
@@ -134,26 +153,35 @@ class MediaListener : NotificationListenerService() {
 
     override fun onListenerDisconnected() {
         runCatching { msm?.removeOnActiveSessionsChangedListener(sessionsListener) }
-        callbacks.forEach { (c, cb) -> c.unregisterCallback(cb) }
+        callbacks.forEach { (c, cb) -> runCatching { c.unregisterCallback(cb) } }
         callbacks.clear()
+        controllers = emptyList()
+        // Uten varseltilgang får vi ikke vite når sving/samtale er over – ikke vis gamle ting
+        NavInfo.title = null; NavInfo.text = null; Call.clear()
     }
 
     /** Velg appen som spiller; ellers den første som har en økt. */
     private fun pick(list: List<MediaController>) {
-        callbacks.forEach { (c, cb) -> c.unregisterCallback(cb) }
+        callbacks.forEach { (c, cb) -> runCatching { c.unregisterCallback(cb) } }
         callbacks.clear()
+        controllers = list
         list.forEach { c ->
             val cb = object : MediaController.Callback() {
-                override fun onPlaybackStateChanged(state: PlaybackState?) { choose(list) }
-                override fun onMetadataChanged(metadata: MediaMetadata?) { choose(list) }
-                override fun onSessionDestroyed() { choose(list - c) }
+                override fun onPlaybackStateChanged(state: PlaybackState?) { choose() }
+                override fun onMetadataChanged(metadata: MediaMetadata?) { choose() }
+                override fun onSessionDestroyed() {
+                    controllers = controllers.filter { it !== c }
+                    callbacks.remove(c)?.let { runCatching { c.unregisterCallback(it) } }
+                    choose()
+                }
             }
             c.registerCallback(cb); callbacks[c] = cb
         }
-        choose(list)
+        choose()
     }
 
-    private fun choose(list: List<MediaController>) {
+    private fun choose() {
+        val list = controllers
         val c = list.firstOrNull { it.playbackState?.state == PlaybackState.STATE_PLAYING } ?: list.firstOrNull()
         NowPlaying.read(c)
     }
@@ -165,13 +193,21 @@ class MediaListener : NotificationListenerService() {
         val text = ex.getCharSequence(Notification.EXTRA_TEXT)?.toString()
         when {
             sbn.packageName in navApps && sbn.isOngoing -> { NavInfo.title = title; NavInfo.text = text }
-            n.category == Notification.CATEGORY_CALL -> { Call.name = title ?: "Ukjent"; Call.open = n.contentIntent }
+            n.category == Notification.CATEGORY_CALL -> {
+                val type = if (android.os.Build.VERSION.SDK_INT >= 31) ex.getInt("android.callType", 0) else 0   // Notification.EXTRA_CALL_TYPE (CallStyle, Android 12+)
+                val chrono = ex.getBoolean(Notification.EXTRA_SHOW_CHRONOMETER, false)
+                if (isIncomingCall(type, n.fullScreenIntent != null, (n.flags and Notification.FLAG_ONGOING_EVENT) != 0, chrono)) {
+                    Call.name = title ?: "Ukjent"; Call.open = n.contentIntent; Call.key = sbn.key
+                } else if (Call.key == null || Call.key == sbn.key) {
+                    Call.clear()   // samtalen er besvart (pågående) eller er en utgående samtale
+                }
+            }
         }
     }
 
     override fun onNotificationRemoved(sbn: StatusBarNotification) {
         if (sbn.packageName in navApps && sbn.isOngoing) { NavInfo.title = null; NavInfo.text = null }
-        if (sbn.notification?.category == Notification.CATEGORY_CALL) { Call.name = null; Call.open = null }
+        if (sbn.key == Call.key || (Call.key == null && sbn.notification?.category == Notification.CATEGORY_CALL)) Call.clear()
     }
 
     companion object {
