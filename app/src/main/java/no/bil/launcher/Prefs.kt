@@ -281,6 +281,11 @@ object SetupReport {
         appendLine("Startskjerm nå: ${home?.packageName}/${home?.name}")
         appendLine("Alle startskjermer: " + pm.queryIntentActivities(android.content.Intent(android.content.Intent.ACTION_MAIN).addCategory(android.content.Intent.CATEGORY_HOME), 0)
             .joinToString { it.activityInfo.packageName + "/" + it.activityInfo.name })
+        // Skjermene i stereoens startskjerm-app(er): brukes til å kjenne igjen app-liste/hovedmeny som T'OS skal erstatte
+        AppRepository.homePackages(c).forEach { hp ->
+            val acts = runCatching { pm.getPackageInfo(hp, android.content.pm.PackageManager.GET_ACTIVITIES).activities }.getOrNull()
+            appendLine("  $hp: " + (acts?.joinToString { it.name.removePrefix(hp) } ?: "?"))
+        }
         appendLine()
         appendLine("--- Knapper ---")
         PanelKey.entries.forEach { k ->
@@ -293,6 +298,18 @@ object SetupReport {
         }
         appendLine("Musikk som spiller nå: ${NowPlaying.pkg} (${NowPlaying.title})")
         appendLine("Radio-MCU (szchoiceway): ${HwRadio.hasMcu(c)}")
+        appendLine("FM-radio: app=${HwRadio.radioPackage(c)} på=${HwRadio.wanted} motor=${HwRadio.enginePkg} (motor brukt: ${HwRadio.engineAt != 0L})")
+        val rp = HwRadio.radioPackage(c)
+        if (rp != null) {
+            appendLine("Radio-appens mediatjeneste: ${MediaConnect.browserService(c, rp)}, medieknapp: ${MediaConnect.buttonReceivers(c, rp)}")
+            appendLine("Radio-appens tjenester: " + runCatching { pm.queryIntentServices(android.content.Intent().setPackage(rp), 0) }
+                .getOrDefault(emptyList()).joinToString { "${it.serviceInfo.name}${if (it.serviceInfo.exported) "" else " (lukket)"}" })
+        }
+        appendLine("Bluetooth-musikk: ${runCatching { Media.bluetoothPackage(c) }.getOrNull()}")
+        appendLine("Lydkilder: " + runCatching { Media.sources(c).joinToString { "${it.label}=${it.pkg}${if (it.playing) " (spiller)" else ""}" } }.getOrDefault("?"))
+        val am = c.getSystemService(Context.AUDIO_SERVICE) as android.media.AudioManager
+        appendLine("Volum: musikk ${runCatching { am.getStreamVolume(android.media.AudioManager.STREAM_MUSIC) }.getOrNull()}/" +
+            "${runCatching { am.getStreamMaxVolume(android.media.AudioManager.STREAM_MUSIC) }.getOrNull()}, fast volum=${runCatching { am.isVolumeFixed }.getOrNull()}")
         // Alle mediaøkter (hvilken app T'OS styrer når flere spillere er åpne)
         appendLine("Mediaøkter: " + runCatching {
             (c.getSystemService(Context.MEDIA_SESSION_SERVICE) as android.media.session.MediaSessionManager)
@@ -314,7 +331,10 @@ object SetupReport {
         appendLine("Batteri: ${CarBattery.volt?.let { "%.1f V".format(Locale.US, it) } ?: "ukjent"} fra ${CarBattery.source}")
         appendLine()
         appendLine("--- Valg ---")
-        listOf("keep_home", "carplay_auto").forEach { appendLine("$it: ${Prefs.bool(it, it == "keep_home")}") }
+        // Standardverdi true for de som er på fra start
+        val onByDefault = setOf("keep_home", "tos_volume", "radio_engine", "hide_stock_radio")
+        listOf("keep_home", "carplay_auto", "tos_volume", "radio_engine", "hide_stock_radio", "show_system_apps")
+            .forEach { appendLine("$it: ${Prefs.bool(it, it in onByDefault)}") }
         listOf("music_pkg", "carplay_pkg", "radio_pkg", "phone_pkg", "camera_pkg", "btmusic_pkg", "nav_app", "last_app", "last_player")
             .forEach { appendLine("$it: ${Prefs.str(it)}") }
         val pw = c.getSystemService(Context.POWER_SERVICE) as? android.os.PowerManager
@@ -330,7 +350,9 @@ object SetupReport {
                 val start = if (AppRepository.launchIntent(c, ai.packageName) != null) " [kan åpnes]" else ""
                 // Versjonen hjelper med å finne riktige kommandoer for stereoens egne apper (radio, CarPlay …)
                 val ver = runCatching { pm.getPackageInfo(ai.packageName, 0).versionName }.getOrNull()?.let { " v$it" } ?: ""
-                appendLine("${ai.packageName} – $label$ver$sys$start")
+                // [skjult]: regnes som stereoens egen app og vises ikke i app-lista (med mindre «Vis systemapper» er på)
+                val shell = if (isStockShellApp(ai.packageName, label, AppRepository.isSystemApp(ai), false, c.packageName)) " [skall]" else ""
+                appendLine("${ai.packageName} – $label$ver$sys$start$shell")
             }
     }
 }
