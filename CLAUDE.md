@@ -30,6 +30,11 @@ Snakk norsk med brukeren. Han er ikke utvikler – forklar enkelt, ikke bruk fag
   Wi-Fi/Bluetooth-paring/equalizer inne i T'OS (`SettingsExtra.kt`), førstegangsoppsett (Screen.SETUP), fartsjustering.
   Play Protect blokkerer installasjon fra Drive pga. tilgjengelighet + varseltilgang – brukeren må skru av Play Protect midlertidig
   eller bruke ADB. Lokale bygg i denne sesjonen ble signert med den faste nøkkelen (fra scratchpad, ikke repo).
+  Tester: `app/src/test/.../LogicTest.kt` (10 JUnit-tester: sol/nattmodus, fartsgrense, radiofrekvens, datoer, kompass,
+  batteri) kjøres i build.yml før bygging. Hold dem grønne; legg til test når ren logikk endres.
+  CI-status 3. nov: bygg #2 stoppet på «Sett opp fast signatur» = secrets mangler (brukeren må legge dem inn).
+  Steget tåler nå mellomrom/linjeskift og sjekker nøkkel+passord med keytool (testet lokalt med ekte verdier).
+  GitHub Pages er ikke slått på (testsiden gir 404) – valgfritt.
   v4.3: SafeMode (3 krasj på 3 min → uten MapLibre/bilbilde/oppstartsmusikk), SetupReport («Send oppsettrapport»
   i Innstillinger → Sikkerhetskopi og hjelp: pakker, knappekoder, tillatelser – be brukeren sende denne!), build.yml uten
   setup-android (feilet på «tools»), kartstørrelse via Range 0-0 (GitHub-CDN gir 401 på HEAD). PR #1 er flettet 3. nov;

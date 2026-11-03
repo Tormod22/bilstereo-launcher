@@ -166,6 +166,11 @@ object HwRadio {
         val pkg = NowPlaying.pkg ?: return null
         if (!isRadioPkg(pkg)) return null
         val text = listOfNotNull(NowPlaying.title, NowPlaying.artist).filter { it.isNotBlank() }.joinToString("  ")
+        return parseText(text)
+    }
+
+    /** Tolker radio-appens tekst («FM1 90.10», «NRK P1 101.7 MHz», «1040 kHz»). Testes i LogicTest. */
+    internal fun parseText(text: String): State {
         val m = freqPattern.find(text)
         val raw = m?.groupValues?.get(2)?.replace(',', '.')?.takeIf { it.isNotEmpty() }
         val f = raw?.toFloatOrNull()

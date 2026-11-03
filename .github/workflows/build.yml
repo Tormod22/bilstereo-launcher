@@ -39,12 +39,21 @@ jobs:
           KEYSTORE_PASSWORD: ${{ secrets.TOS_KEYSTORE_PASSWORD }}
         run: |
           if [ -z "$KEYSTORE_BASE64" ] || [ -z "$KEYSTORE_PASSWORD" ]; then
-            echo "::error::Mangler signeringsnøkkelen. Legg inn TOS_KEYSTORE_BASE64 og TOS_KEYSTORE_PASSWORD under Settings → Secrets and variables → Actions (se README)."
+            echo "::error title=Mangler signeringsnøkkel::Legg inn TOS_KEYSTORE_BASE64 og TOS_KEYSTORE_PASSWORD under Settings → Secrets and variables → Actions → New repository secret. Verdiene står i tos-hemmeligheter.txt."
             exit 1
           fi
-          echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/tos.jks"
+          # Tåler mellomrom/linjeskift fra innliming
+          printf '%s' "$KEYSTORE_BASE64" | tr -d ' \r\n\t' | base64 -d > "$RUNNER_TEMP/tos.jks" || {
+            echo "::error title=Ødelagt nøkkel::TOS_KEYSTORE_BASE64 er ikke gyldig. Kopier hele den lange teksten fra tos-hemmeligheter.txt på nytt."; exit 1; }
+          PW="$(printf '%s' "$KEYSTORE_PASSWORD" | tr -d ' \r\n\t')"
+          keytool -list -keystore "$RUNNER_TEMP/tos.jks" -storepass "$PW" -alias tos > /dev/null 2>&1 || {
+            echo "::error title=Nøkkel og passord passer ikke::Sjekk at TOS_KEYSTORE_PASSWORD og TOS_KEYSTORE_BASE64 er kopiert riktig fra tos-hemmeligheter.txt."; exit 1; }
+          echo "::add-mask::$PW"
           echo "TOS_KEYSTORE=$RUNNER_TEMP/tos.jks" >> "$GITHUB_ENV"
-          echo "TOS_KEYSTORE_PASSWORD=$KEYSTORE_PASSWORD" >> "$GITHUB_ENV"
+          echo "TOS_KEYSTORE_PASSWORD=$PW" >> "$GITHUB_ENV"
+
+      - name: Kjør tester
+        run: gradle testDebugUnitTest --no-daemon
 
       - name: Bygg APK
         # versionCode = 1000 + byggnummer (settes i app/build.gradle.kts fra GITHUB_RUN_NUMBER)
