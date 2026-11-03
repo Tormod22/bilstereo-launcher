@@ -36,6 +36,9 @@
     <!-- Favoritter: ringe direkte, og vise siste anrop (hvis stereoen deler dem) -->
     <uses-permission android:name="android.permission.CALL_PHONE" />
     <uses-permission android:name="android.permission.READ_CALL_LOG" />
+    <!-- Telefon i T'OS: kontaktlista, navn på den som ringer, og finne Bluetooth-telefonen å ringe med -->
+    <uses-permission android:name="android.permission.READ_CONTACTS" />
+    <uses-permission android:name="android.permission.READ_PHONE_STATE" />
     <!-- Demp hele stereoen om natten (brukeren må gi lov i Innstillinger) -->
     <uses-permission android:name="android.permission.WRITE_SETTINGS" tools:ignore="ProtectedPermissions" />
     <!-- Reserve for «Åpne heller Waze»-popupen hvis knappestyringen ikke er på -->
@@ -94,6 +97,48 @@
             android:name=".GpsService"
             android:exported="false"
             android:foregroundServiceType="location" />
+
+        <!-- T'OS som telefon-app: Android sender samtalene (også Bluetooth-samtaler) hit i stedet for til stereoens telefonapp -->
+        <service
+            android:name=".TosInCallService"
+            android:exported="true"
+            android:permission="android.permission.BIND_INCALL_SERVICE">
+            <meta-data android:name="android.telecom.IN_CALL_SERVICE_UI" android:value="true" />
+            <meta-data android:name="android.telecom.IN_CALL_SERVICE_CAR_MODE_UI" android:value="true" />
+            <intent-filter>
+                <action android:name="android.telecom.InCallService" />
+            </intent-filter>
+        </service>
+
+        <!-- T'OS sin samtaleskjerm (egen oppgave, så appen man var i kommer tilbake etter samtalen) -->
+        <activity
+            android:name=".CallActivity"
+            android:exported="false"
+            android:launchMode="singleTask"
+            android:taskAffinity="no.bil.launcher.call"
+            android:excludeFromRecents="true"
+            android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboard|keyboardHidden|navigation|locale|layoutDirection|uiMode|fontScale|density" />
+
+        <!-- Krav til en telefon-app: «slå nummer» (med og uten tel:) åpner T'OS sin Telefon-side -->
+        <activity
+            android:name=".DialerActivity"
+            android:exported="true"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:taskAffinity=""
+            android:theme="@android:style/Theme.Translucent.NoTitleBar">
+            <intent-filter>
+                <action android:name="android.intent.action.DIAL" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.DIAL" />
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="tel" />
+            </intent-filter>
+        </activity>
 
         <provider
             android:name="androidx.core.content.FileProvider"

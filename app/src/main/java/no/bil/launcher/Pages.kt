@@ -404,18 +404,15 @@ fun LimitSign(sizeDp: Int) {
     ) { Text("$l", color = if (over) Bg else TextPrimary, fontSize = (sizeDp * 0.38f).sp, fontWeight = FontWeight.Bold) }
 }
 
-/* ======================= Telefon: favoritter og siste (punkt 24, 26) ======================= */
+/* ======================= Telefon: tastatur, kontakter, siste og favoritter (punkt 24, 26) ======================= */
 
 data class Contact(val name: String, val number: String)
 
 /** Favoritter lagres som «navn|nummer», én per linje – derfor fjernes | og linjeskift fra det som skrives inn. */
 internal fun favText(s: String): String = s.replace(Regex("[|\\r\\n]+"), " ").replace(Regex("\\s+"), " ").trim()
 
-/** Samme nummer (uansett mellomrom og bindestrek) regnes som samme person. */
-internal fun sameNumber(a: String, b: String): Boolean {
-    fun d(s: String) = s.filter { it.isDigit() || it == '+' }
-    return d(a).isNotEmpty() && d(a) == d(b)
-}
+/** Samme nummer (uansett mellomrom, bindestrek og +47/0047 foran) regnes som samme person. */
+internal fun sameNumber(a: String, b: String): Boolean = numbersMatch(a, b)
 
 /** Lista etter at [c] er lagt til: et nummer som finnes fra før, byttes ut (nytt navn) i stedet for å dukke opp to ganger. */
 internal fun withFavorite(all: List<Contact>, c: Contact): List<Contact> {
@@ -435,130 +432,305 @@ object Favorites {
     }
     fun remove(c: Contact) = Prefs.set("favorites", (all() - c).joinToString("\n") { "${it.name}|${it.number}" })
 
-    /**
-     * Ring: direkte hvis lov, ellers åpnes nummeret i telefonappen.
-     * Stereoen har ikke eget SIM – da ringer den via telefonen over Bluetooth, og et vanlig
-     * «ring»-kall forsvinner uten at noe skjer. Da åpnes stereoens telefon-app med nummeret.
-     */
-    fun call(ctx: Context, number: String) {
-        val uri = Uri.parse("tel:" + number.filter { it.isDigit() || it == '+' })
-        val pm = ctx.packageManager
-        val tm = ctx.getSystemService(Context.TELEPHONY_SERVICE) as? TelephonyManager
-        val voice = pm.hasSystemFeature(PackageManager.FEATURE_TELEPHONY) && tm?.isVoiceCapable == true
-        val tile = Tiles.byPrefix("Tel")
-        if (!voice) {
-            val pkg = AppRepository.tilePackage(ctx, tile)
-            if (pkg != null) {
-                AppRepository.markLaunched(pkg)
-                val dial = Intent(Intent.ACTION_DIAL, uri).setPackage(pkg).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                if (runCatching { ctx.startActivity(dial) }.isSuccess) return
-            }
-            AppRepository.launchTile(ctx, tile)
-            if (pkg != null) ctx.toast("Ring $number fra telefon-appen")
-            return
-        }
-        val direct = ContextCompat.checkSelfPermission(ctx, Manifest.permission.CALL_PHONE) == PackageManager.PERMISSION_GRANTED
-        val i = Intent(if (direct) Intent.ACTION_CALL else Intent.ACTION_DIAL, uri).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        runCatching { i.resolveActivity(pm)?.packageName }.getOrNull()?.let { AppRepository.markLaunched(it) }
-        if (runCatching { ctx.startActivity(i) }.isFailure) AppRepository.launchTile(ctx, tile)
-    }
+    /** Ring – T'OS ringer selv via Bluetooth-telefonen når det går (se [Phone.call]). */
+    fun call(ctx: Context, number: String) = Phone.call(ctx, number)
 }
 
-fun recentCalls(c: Context): List<Contact> {
-    if (ContextCompat.checkSelfPermission(c, Manifest.permission.READ_CALL_LOG) != PackageManager.PERMISSION_GRANTED) return emptyList()
-    return runCatching {
-        c.contentResolver.query(CallLog.Calls.CONTENT_URI, arrayOf(CallLog.Calls.CACHED_NAME, CallLog.Calls.NUMBER), null, null, CallLog.Calls.DATE + " DESC")
-            ?.use { cur ->
-                val out = mutableListOf<Contact>()
-                while (cur.moveToNext() && out.size < 12) {
-                    val num = cur.getString(1) ?: continue
-                    out += Contact(cur.getString(0)?.takeIf { it.isNotBlank() } ?: num, num)
-                }
-                out.distinctBy { it.number }
-            }.orEmpty()
-    }.getOrDefault(emptyList())
+/** CallLog.Calls.*_TYPE → kort tekst i «Siste anrop». */
+internal fun recentLabel(type: Int): String = when (type) {
+    CallLog.Calls.INCOMING_TYPE -> "Inn"
+    CallLog.Calls.OUTGOING_TYPE -> "Ut"
+    CallLog.Calls.MISSED_TYPE -> "Tapt"
+    CallLog.Calls.REJECTED_TYPE -> "Avvist"
+    CallLog.Calls.BLOCKED_TYPE -> "Blokkert"
+    else -> ""
+}
+
+private enum class PhoneTab(val label: String, val icon: androidx.compose.ui.graphics.vector.ImageVector) {
+    FAV("Favoritter", Icons.Default.Star),
+    KEYS("Tastatur", Icons.Default.Dialpad),
+    CONTACTS("Kontakter", Icons.Default.Contacts),
+    RECENT("Siste", Icons.Default.History),
 }
 
 @Composable
 fun PhoneScreen(onClose: () -> Unit) {
     val context = LocalContext.current
-    var permTick by remember { mutableIntStateOf(0) }
-    val ask = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { permTick++ }
-    val canLog = remember(permTick) { ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CALL_LOG) == PackageManager.PERMISSION_GRANTED }
-    LaunchedEffect(Unit) {
-        val need = arrayOf(Manifest.permission.CALL_PHONE, Manifest.permission.READ_CALL_LOG)
-            .filter { ContextCompat.checkSelfPermission(context, it) != PackageManager.PERMISSION_GRANTED }
-        if (need.isNotEmpty()) ask.launch(need.toTypedArray())   // spør bare om det som mangler
+    var tick by remember { mutableIntStateOf(0) }
+    var askedOnce by remember { mutableStateOf(false) }
+    val askPerms = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { res ->
+        tick++
+        // Android viser ikke spørsmålet igjen etter to «Nei»: forklar hvor det kan slås på
+        if (askedOnce && res.values.none { it }) Notify.show("Gi tilgang under Innstillinger → Apper → T'OS → Tillatelser.", long = true)
+        askedOnce = true
     }
+    val askRole = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { tick++ }
+    // Tilbake fra Android (tillatelser, telefon-app, Bluetooth): sjekk alt på nytt
+    androidx.lifecycle.compose.LifecycleResumeEffect(Unit) { tick++; onPauseOrDispose { } }
+
+    val missing = remember(tick) { Phone.missingPermissions(context) }
+    val isDialer = remember(tick) { Phone.isDialer(context) }
+    val roleOk = remember(tick) { Phone.dialerAvailable(context) }
+    var canPlace by remember { mutableStateOf(true) }
+    LaunchedEffect(tick) { while (true) { canPlace = withContext(Dispatchers.IO) { Phone.canPlaceCalls(context) }; delay(5000) } }
+    val contacts by produceState<List<Contact>?>(null, tick) { value = withContext(Dispatchers.IO) { Phone.contacts(context) } }
+    val recents by produceState<List<RecentCall>?>(null, tick, Phone.inCall) { value = withContext(Dispatchers.IO) { Phone.recents(context) } }
+
+    var tab by remember { mutableStateOf(if (Favorites.all().isEmpty()) PhoneTab.KEYS else PhoneTab.FAV) }
+    var number by remember { mutableStateOf("") }
+    LaunchedEffect(Phone.pendingDial) { Phone.pendingDial?.let { number = it; tab = PhoneTab.KEYS; Phone.pendingDial = null } }
+
+    Page("Telefon", onClose, extra = {
+        if (Phone.inCall) { Pill("Til samtalen", Icons.Default.Call, strong = true) { Phone.openCallScreen(context) }; Spacer(Modifier.width(12.dp)) }
+        else if (missing.isEmpty() && !canPlace) {
+            // Ingen telefon T'OS kan ringe med: reserve til stereoens egen app
+            Pill("Stereoens telefon-app", Icons.Default.Dialpad) { Phone.openStereoApp(context) }; Spacer(Modifier.width(12.dp))
+        }
+    }) {
+        val needRole = !isDialer && roleOk
+        if (missing.isNotEmpty() || needRole) {
+            Row(Modifier.fillMaxWidth().padding(bottom = 12.dp).clip(Small).background(Card).padding(horizontal = 18.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Column(Modifier.weight(1f)) {
+                    Text(if (missing.isNotEmpty()) "T'OS trenger lov til telefonen" else "Vis samtalene i T'OS", color = TextPrimary, fontSize = 16.sp)
+                    Text(when {
+                        missing.isNotEmpty() && needRole -> "Gi lov til kontakter, anrop og ringing, og gjør T'OS til telefon-app så samtalene vises her."
+                        missing.isNotEmpty() -> "Kontakter, siste anrop og ringing. Android spør om hver av dem."
+                        else -> "Gjør T'OS til telefon-app, så slipper du stereoens egen samtaleskjerm."
+                    }, color = TextMuted, fontSize = 13.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                }
+                if (missing.isNotEmpty()) Pill("Gi tilgang", strong = true) { askPerms.launch(missing.toTypedArray()) }
+                if (needRole) Pill("Gjør T'OS til telefon-app", strong = missing.isEmpty()) {
+                    val i = Phone.dialerRoleIntent(context)
+                    if (i == null || runCatching { askRole.launch(i) }.isFailure) context.toast("Stereoen lar ikke T'OS bli telefon-app")
+                }
+            }
+        }
+        Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+            Column(Modifier.width(176.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                PhoneTab.entries.forEach { t ->
+                    val sel = t == tab
+                    Row(Modifier.fillMaxWidth().height(64.dp).clip(Small).background(if (sel) TextPrimary else Card).clickable { tab = t }.padding(horizontal = 16.dp),
+                        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Icon(t.icon, null, tint = if (sel) Bg else TextPrimary, modifier = Modifier.size(24.dp))
+                        Text(t.label, color = if (sel) Bg else TextPrimary, fontSize = 17.sp, maxLines = 1)
+                    }
+                }
+            }
+            Box(Modifier.weight(1f).fillMaxHeight()) {
+                when (tab) {
+                    PhoneTab.KEYS -> Keypad(number, { number = it }, contacts.orEmpty()) { Phone.call(context, it) }
+                    PhoneTab.CONTACTS -> ContactList(contacts, Manifest.permission.READ_CONTACTS in missing) { Phone.call(context, it) }
+                    PhoneTab.RECENT -> RecentList(recents, contacts.orEmpty(), Manifest.permission.READ_CALL_LOG in missing, isDialer) { Phone.call(context, it) }
+                    PhoneTab.FAV -> FavoriteGrid { Phone.call(context, it) }
+                }
+            }
+        }
+    }
+}
+
+private val KEY_LETTERS = mapOf("2" to "ABC", "3" to "DEF", "4" to "GHI", "5" to "JKL", "6" to "MNO", "7" to "PQRS", "8" to "TUV", "9" to "WXYZ", "0" to "+")
+
+/** T'OS sitt eget tastatur (ikke Androids skjermtastatur). Langt trykk på 0 gir +, langt trykk på ⌫ tømmer. */
+@Composable
+private fun Keypad(number: String, onChange: (String) -> Unit, contacts: List<Contact>, onCall: (String) -> Unit) {
+    Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+        Column(Modifier.weight(1f).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Row(Modifier.fillMaxWidth().height(76.dp).clip(Small).background(Card).padding(start = 18.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text(if (number.length > 20) "…" + number.takeLast(19) else number.ifEmpty { "Skriv et nummer" }, color = if (number.isEmpty()) TextMuted else TextPrimary,
+                    fontSize = if (number.length > 13) 24.sp else 32.sp, maxLines = 1, modifier = Modifier.weight(1f))
+                if (number.isNotEmpty()) Box(
+                    Modifier.size(76.dp).tapOrHold("Slett", onLongClick = { onChange("") }) { onChange(appendKey(number, "⌫")) },
+                    contentAlignment = Alignment.Center,
+                ) { Icon(PhoneIcons.Backspace, "Slett siste", tint = TextPrimary, modifier = Modifier.size(30.dp)) }
+            }
+            // Forslag fra telefonboka mens man skriver
+            val hits = remember(number, contacts) { if (dialable(number).length >= 3) filterContacts(contacts, number).take(3) else emptyList() }
+            hits.forEach { c ->
+                Row(Modifier.fillMaxWidth().heightIn(min = 56.dp).clip(RoundedCornerShape(14.dp)).clickable { onCall(c.number) }.padding(horizontal = 14.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text(c.name, color = TextPrimary, fontSize = 16.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(c.number, color = TextMuted, fontSize = 13.sp, maxLines = 1)
+                    }
+                    Icon(Icons.Default.Call, "Ring ${c.name}", tint = TextPrimary, modifier = Modifier.size(22.dp))
+                }
+            }
+            Spacer(Modifier.weight(1f))
+            Row(Modifier.fillMaxWidth().height(72.dp).clip(Small).background(if (number.isEmpty()) Line else TextPrimary)
+                .clickable { if (number.isEmpty()) Unit else onCall(number) },
+                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center) {
+                Icon(Icons.Default.Call, null, tint = if (number.isEmpty()) TextMuted else Bg, modifier = Modifier.size(28.dp))
+                Spacer(Modifier.width(10.dp))
+                Text("Ring", color = if (number.isEmpty()) TextMuted else Bg, fontSize = 20.sp, fontWeight = FontWeight.Medium)
+            }
+        }
+        Column(Modifier.weight(1.1f).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            listOf("123", "456", "789", "*0#").forEach { row ->
+                Row(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    row.forEach { ch ->
+                        val k = ch.toString()
+                        Column(
+                            Modifier.weight(1f).fillMaxHeight().heightIn(min = 56.dp).clip(Small).background(Card)
+                                .tapOrHold(k, onLongClick = if (k == "0") ({ onChange(appendKey(number, "+")) }) else null) { onChange(appendKey(number, k)) },
+                            verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally,
+                        ) {
+                            Text(k, color = TextPrimary, fontSize = 30.sp, fontWeight = FontWeight.Medium)
+                            KEY_LETTERS[k]?.let { Text(it, color = TextMuted, fontSize = 11.sp, letterSpacing = 1.sp) }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun EmptyNote(text: String, action: Pair<String, () -> Unit>? = null) {
+    Column(Modifier.fillMaxWidth().clip(Small).background(Card).padding(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+        Text(text, color = TextMuted, fontSize = 15.sp, lineHeight = 21.sp)
+        action?.let { (label, go) -> Pill(label) { go() } }
+    }
+}
+
+@Composable
+private fun Initial(name: String) {
+    Box(Modifier.size(44.dp).clip(CircleShape).background(Line), contentAlignment = Alignment.Center) {
+        Text(letterOf(name), color = TextPrimary, fontSize = 18.sp, fontWeight = FontWeight.Medium)
+    }
+}
+
+@Composable
+private fun ContactList(contacts: List<Contact>?, noPermission: Boolean, onCall: (String) -> Unit) {
+    var query by remember { mutableStateOf("") }
+    val favs = Favorites.all()
+    Column(Modifier.fillMaxSize()) {
+        Field(query, "Søk etter navn eller nummer", Modifier.fillMaxWidth().padding(bottom = 10.dp)) { query = it }
+        when {
+            noPermission -> EmptyNote("Trykk «Gi tilgang» øverst for å se kontaktene.")
+            contacts == null -> Text("Henter kontakter …", color = TextMuted, fontSize = 15.sp)
+            contacts.isEmpty() -> EmptyNote(
+                "Fant ingen kontakter. Kontaktene fra telefonen havner ofte bare i stereoens egen Bluetooth-app. " +
+                    "På iPhonen: Innstillinger → Bluetooth → trykk (i) ved stereoen → slå på «Synkroniser kontakter». " +
+                    "Du kan også lagre folk under Favoritter.",
+                "Bluetooth-siden" to { Nav.screen = Screen.BT },
+            )
+            else -> {
+                val shown = remember(query, contacts) { filterContacts(contacts, query) }
+                if (shown.isEmpty()) Text("Ingen treff på «$query».", color = TextMuted, fontSize = 15.sp)
+                LazyColumn(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    items(shown.size) { i ->
+                        val c = shown[i]
+                        val letter = letterOf(c.name)
+                        if (query.isBlank() && (i == 0 || letterOf(shown[i - 1].name) != letter))
+                            Text(letter, color = TextMuted, fontSize = 13.sp, modifier = Modifier.padding(start = 6.dp, top = 8.dp, bottom = 2.dp))
+                        val fav = favs.firstOrNull { sameNumber(it.number, c.number) }
+                        Row(Modifier.fillMaxWidth().heightIn(min = 64.dp).clip(RoundedCornerShape(14.dp)).background(Card).clickable { onCall(c.number) }.padding(start = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            Initial(c.name)
+                            Column(Modifier.weight(1f)) {
+                                Text(c.name, color = TextPrimary, fontSize = 17.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                Text(c.number, color = TextMuted, fontSize = 13.sp, maxLines = 1)
+                            }
+                            Box(Modifier.size(64.dp).clickable { if (fav != null) Favorites.remove(fav) else Favorites.add(c) }, contentAlignment = Alignment.Center) {
+                                Icon(if (fav != null) Icons.Default.Star else Icons.Default.StarBorder,
+                                    if (fav != null) "Fjern ${c.name} fra favoritter" else "Legg ${c.name} til favoritter",
+                                    tint = if (fav != null) TextPrimary else TextMuted, modifier = Modifier.size(26.dp))
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun RecentList(recents: List<RecentCall>?, contacts: List<Contact>, noPermission: Boolean, isDialer: Boolean, onCall: (String) -> Unit) {
+    val now = remember(recents) { System.currentTimeMillis() }
+    // Navn fra telefonboka når anropslisten bare har nummeret
+    val named = remember(recents, contacts) {
+        recents.orEmpty().map { r -> r to (r.name?.takeIf { it.isNotBlank() } ?: contacts.firstOrNull { numbersMatch(it.number, r.number) }?.name) }
+    }
+    when {
+        noPermission -> EmptyNote("Trykk «Gi tilgang» øverst for å se siste anrop.")
+        recents == null -> Text("Henter anrop …", color = TextMuted, fontSize = 15.sp)
+        recents.isEmpty() -> EmptyNote(
+            if (isDialer) "Ingen anrop ennå." else "Ingen anrop her ennå. Stereoens egen telefonapp deler ikke alltid anropslisten – gjør T'OS til telefon-app, så kommer de nye samtalene hit."
+        )
+        else -> LazyColumn(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            items(named) { (r, name) ->
+                val missed = r.type == CallLog.Calls.MISSED_TYPE || r.type == CallLog.Calls.REJECTED_TYPE
+                Row(Modifier.fillMaxWidth().heightIn(min = 64.dp).clip(RoundedCornerShape(14.dp)).background(Card)
+                    .clickable(enabled = r.number.isNotBlank()) { onCall(r.number) }.padding(horizontal = 14.dp),
+                    verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                    Icon(when (r.type) {
+                        CallLog.Calls.OUTGOING_TYPE -> PhoneIcons.Outgoing
+                        CallLog.Calls.MISSED_TYPE, CallLog.Calls.REJECTED_TYPE -> PhoneIcons.Missed
+                        else -> PhoneIcons.Incoming
+                    }, recentLabel(r.type).ifEmpty { null }, tint = if (missed) TextPrimary else TextMuted, modifier = Modifier.size(22.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(name ?: r.title, color = TextPrimary, fontSize = 17.sp, fontWeight = if (missed) FontWeight.Medium else FontWeight.Normal,
+                            maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        val label = recentLabel(r.type)
+                        Text(listOfNotNull(label.takeIf { missed }, whenText(r.date, now)).joinToString(" · "), color = TextMuted, fontSize = 13.sp, maxLines = 1)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun FavoriteGrid(onCall: (String) -> Unit) {
+    val context = LocalContext.current
     var adding by remember { mutableStateOf(false) }
     // Sletting krever to trykk: første trykk spør «Slette?», andre sletter
     var confirmDel by remember { mutableStateOf<Contact?>(null) }
     LaunchedEffect(confirmDel) { if (confirmDel != null) { delay(4000); confirmDel = null } }
     var name by remember { mutableStateOf("") }
     var num by remember { mutableStateOf("") }
-    val recents by produceState(emptyList<Contact>(), permTick) { value = withContext(Dispatchers.IO) { recentCalls(context) } }
-
-    Page("Telefon", onClose, extra = {
-        Pill("Åpne telefon-appen", Icons.Default.Dialpad) { AppRepository.launchTile(context, Tiles.byPrefix("Tel")) }
-        Spacer(Modifier.width(12.dp))
-    }) {
-        Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-            Column(Modifier.weight(0.6f)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("FAVORITTER", color = TextMuted, fontSize = 12.sp, letterSpacing = 1.sp, modifier = Modifier.weight(1f))
-                    Text(if (adding) "Avbryt" else "+ Legg til", color = TextPrimary, fontSize = 15.sp,
-                        modifier = Modifier.heightIn(min = 48.dp).clip(RoundedCornerShape(12.dp)).clickable { adding = !adding; confirmDel = null }.padding(horizontal = 12.dp, vertical = 14.dp))
-                }
-                if (adding) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(bottom = 10.dp)) {
-                        Field(name, "Navn", Modifier.weight(1f)) { name = it }
-                        Field(num, "Nummer", Modifier.weight(1f), KeyboardType.Phone) { num = it }
-                        Pill("Lagre", strong = true) {
-                            if (favText(num).isBlank()) context.toast("Skriv inn et nummer først")
-                            else { Favorites.add(Contact(name.ifBlank { num }, num)); context.toast("Lagret"); name = ""; num = ""; adding = false }
-                        }
-                    }
-                }
-                val favs = Favorites.all()
-                if (favs.isEmpty() && !adding) Text("Trykk «+ Legg til» for å lagre folk du ringer ofte.", color = TextMuted, fontSize = 15.sp)
-                LazyVerticalGrid(GridCells.Fixed(2), verticalArrangement = Arrangement.spacedBy(12.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    items(favs) { f ->
-                        Row(Modifier.height(84.dp).clip(Small).background(Card).clickable { Favorites.call(context, f.number) }.padding(horizontal = 16.dp),
-                            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                            Box(Modifier.size(48.dp).clip(CircleShape).background(Line), contentAlignment = Alignment.Center) {
-                                Text(f.name.take(1).uppercase(), color = TextPrimary, fontSize = 20.sp, fontWeight = FontWeight.Medium)
-                            }
-                            Column(Modifier.weight(1f)) {
-                                Text(f.name, color = TextPrimary, fontSize = 17.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                Text(f.number, color = TextMuted, fontSize = 13.sp, maxLines = 1)
-                            }
-                            if (adding) {
-                                val ask = confirmDel == f
-                                Box(
-                                    Modifier.heightIn(min = 48.dp).widthIn(min = 48.dp).clip(RoundedCornerShape(24.dp))
-                                        .background(if (ask) TextPrimary else Line)
-                                        .clickable { if (ask) { Favorites.remove(f); confirmDel = null } else confirmDel = f }
-                                        .padding(horizontal = 10.dp),
-                                    contentAlignment = Alignment.Center,
-                                ) {
-                                    if (ask) Text("Slette?", color = Bg, fontSize = 14.sp, fontWeight = FontWeight.Medium)
-                                    else Icon(Icons.Default.Delete, "Slett ${f.name}", tint = TextPrimary)
-                                }
-                            }
-                        }
-                    }
+    Column(Modifier.fillMaxSize()) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("FAVORITTER", color = TextMuted, fontSize = 12.sp, letterSpacing = 1.sp, modifier = Modifier.weight(1f))
+            Text(if (adding) "Ferdig" else "+ Legg til / endre", color = TextPrimary, fontSize = 15.sp,
+                modifier = Modifier.heightIn(min = 48.dp).clip(RoundedCornerShape(12.dp)).clickable { adding = !adding; confirmDel = null }.padding(horizontal = 12.dp, vertical = 14.dp))
+        }
+        if (adding) {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(bottom = 10.dp)) {
+                Field(name, "Navn", Modifier.weight(1f)) { name = it }
+                Field(num, "Nummer", Modifier.weight(1f), KeyboardType.Phone) { num = it }
+                Pill("Lagre", strong = true) {
+                    if (favText(num).isBlank()) context.toast("Skriv inn et nummer først")
+                    else { Favorites.add(Contact(name.ifBlank { num }, num)); context.toast("Lagret"); name = ""; num = "" }
                 }
             }
-            Column(Modifier.weight(0.4f).fillMaxHeight().clip(Small).background(Card).padding(16.dp)) {
-                Text("SISTE ANROP", color = TextMuted, fontSize = 12.sp, letterSpacing = 1.sp, modifier = Modifier.padding(bottom = 8.dp))
-                if (recents.isEmpty()) Text(
-                    if (!canLog) "T'OS har ikke lov til å se anropslisten. Gi tillatelse når den spør, eller under Innstillinger → Apper."
-                    else "Stereoen deler ikke anropslisten med T'OS. Den ligger i telefon-appen.",
-                    color = TextMuted, fontSize = 14.sp)
-                LazyColumn(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    items(recents) { r ->
-                        Text(r.name, color = TextPrimary, fontSize = 16.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).clip(RoundedCornerShape(10.dp)).clickable { Favorites.call(context, r.number) }.padding(vertical = 13.dp, horizontal = 6.dp))
+        }
+        val favs = Favorites.all()
+        if (favs.isEmpty() && !adding) EmptyNote("Ingen favoritter ennå. Trykk på stjerna i Kontakter, eller «+ Legg til».")
+        LazyVerticalGrid(GridCells.Fixed(2), verticalArrangement = Arrangement.spacedBy(12.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            items(favs) { f ->
+                Row(Modifier.height(84.dp).clip(Small).background(Card).clickable { onCall(f.number) }.padding(horizontal = 16.dp),
+                    verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Box(Modifier.size(48.dp).clip(CircleShape).background(Line), contentAlignment = Alignment.Center) {
+                        Text(letterOf(f.name), color = TextPrimary, fontSize = 20.sp, fontWeight = FontWeight.Medium)
+                    }
+                    Column(Modifier.weight(1f)) {
+                        Text(f.name, color = TextPrimary, fontSize = 17.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(f.number, color = TextMuted, fontSize = 13.sp, maxLines = 1)
+                    }
+                    if (adding) {
+                        val ask = confirmDel == f
+                        Box(
+                            Modifier.heightIn(min = 48.dp).widthIn(min = 48.dp).clip(RoundedCornerShape(24.dp))
+                                .background(if (ask) TextPrimary else Line)
+                                .clickable { if (ask) { Favorites.remove(f); confirmDel = null } else confirmDel = f }
+                                .padding(horizontal = 10.dp),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            if (ask) Text("Slette?", color = Bg, fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                            else Icon(Icons.Default.Delete, "Slett ${f.name}", tint = TextPrimary)
+                        }
                     }
                 }
             }
