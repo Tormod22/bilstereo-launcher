@@ -27,9 +27,6 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -41,13 +38,12 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -94,7 +90,7 @@ fun Pill(label: String, icon: androidx.compose.ui.graphics.vector.ImageVector? =
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         if (icon != null) Icon(icon, null, tint = if (strong) Bg else TextPrimary, modifier = Modifier.size(20.dp))
-        Text(label, color = if (strong) Bg else TextPrimary, fontSize = 14.sp, maxLines = 1)
+        Text(label, color = if (strong) Bg else TextPrimary, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
 
@@ -139,23 +135,48 @@ fun ChoiceRow(title: String, key: String, options: List<Pair<String, String>>, d
     val cur = Prefs.str(key, default)
     val idx = options.indexOfFirst { it.first == cur }.coerceAtLeast(0)
     SettingRow(title, sub, onClick = { Prefs.set(key, options[(idx + 1) % options.size].first) }) {
-        Text(options[idx].second, color = TextPrimary, fontSize = 15.sp)
+        Text(options[idx].second, color = TextPrimary, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.widthIn(max = 240.dp))
         Icon(Icons.Default.UnfoldMore, null, tint = TextMuted, modifier = Modifier.padding(start = 6.dp).size(20.dp))
     }
 }
 
+/**
+ * Tekstfelt med T'OS sitt eget tastatur (Androids tastatur vises aldri). Trykk på feltet = tastaturet kommer opp nederst.
+ * [keyboard]: Number/Phone gir talltastatur, Password gir prikker og en «vis»-knapp.
+ * [onDone] kjøres av handlingstasten nederst til høyre (merket [doneLabel], ellers «OK»/«Ferdig»).
+ */
 @Composable
-fun Field(value: String, hint: String, modifier: Modifier = Modifier, keyboard: KeyboardType = KeyboardType.Text, onDone: (() -> Unit)? = null, onChange: (String) -> Unit) {
-    Box(modifier.clip(RoundedCornerShape(14.dp)).background(Line).padding(horizontal = 14.dp, vertical = 12.dp)) {
-        if (value.isEmpty()) Text(hint, color = TextMuted, fontSize = 16.sp)
-        BasicTextField(
-            value, onChange, singleLine = true,
-            textStyle = TextStyle(color = TextPrimary, fontSize = 16.sp),
-            cursorBrush = SolidColor(TextPrimary),
-            keyboardOptions = KeyboardOptions(keyboardType = keyboard, imeAction = if (onDone != null) ImeAction.Go else ImeAction.Done),
-            keyboardActions = KeyboardActions(onGo = { onDone?.invoke() }),
-            modifier = Modifier.fillMaxWidth(),
-        )
+fun Field(
+    value: String, hint: String, modifier: Modifier = Modifier, keyboard: KeyboardType = KeyboardType.Text,
+    onDone: (() -> Unit)? = null, doneLabel: String? = null, onChange: (String) -> Unit,
+) {
+    val owner = remember { Any() }
+    val cur = rememberUpdatedState(value)
+    val change = rememberUpdatedState(onChange)
+    val done = rememberUpdatedState(onDone)
+    var shown by remember { mutableStateOf(false) }
+    val password = kbIsPassword(keyboard)
+    val focused = TosKeyboard.binding?.owner === owner
+    // Forsvinner feltet (siden lukkes), forsvinner tastaturet også
+    DisposableEffect(owner) { onDispose { TosKeyboard.closeIfOwner(owner) } }
+    val shape = RoundedCornerShape(14.dp)
+    Row(
+        modifier.heightIn(min = 48.dp).clip(shape).background(Line)
+            .border(1.5.dp, if (focused) TextPrimary else Line, shape)
+            .clickable(onClickLabel = "Skriv") {
+                TosKeyboard.open(KbBinding(
+                    owner, kbKind(keyboard), kbAutoCap(keyboard), password, hint,
+                    doneLabel ?: if (onDone != null) "OK" else "Ferdig",
+                    read = { cur.value }, write = { change.value(it) }, done = { done.value?.invoke() },
+                    revealed = { shown }, toggle = { shown = !shown },
+                ))
+            }
+            .padding(start = 14.dp, end = if (password) 0.dp else 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        FieldText(if (password) kbMask(value, shown) else value, hint, focused, Modifier.weight(1f).padding(vertical = 12.dp))
+        if (password && value.isNotEmpty()) RoundIcon(if (shown) Icons.Default.VisibilityOff else Icons.Default.Visibility, 48.dp,
+            desc = if (shown) "Skjul passordet" else "Vis passordet") { shown = !shown }
     }
 }
 
@@ -173,8 +194,8 @@ fun PrefField(title: String, key: String, hint: String, keyboard: KeyboardType =
 @Composable
 fun BigNumber(value: String, label: String, modifier: Modifier = Modifier) {
     Column(modifier.clip(Small).background(Card).padding(16.dp)) {
-        Text(value, color = TextPrimary, fontSize = 30.sp, fontWeight = FontWeight.Medium, maxLines = 1)
-        Text(label, color = TextMuted, fontSize = 13.sp)
+        Text(value, color = TextPrimary, fontSize = 30.sp, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Text(label, color = TextMuted, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
 
@@ -280,7 +301,7 @@ fun RadioScreen(onClose: () -> Unit) {
                         Text(if (hw.isAm) "kHz" else "MHz", color = TextMuted, fontSize = 16.sp, modifier = Modifier.padding(bottom = 8.dp))
                         Text(hw.band, color = TextMuted, fontSize = 16.sp, modifier = Modifier.padding(bottom = 8.dp))
                     }
-                    hw.station?.let { Text(it, color = TextMuted, fontSize = 15.sp, maxLines = 1) }
+                    hw.station?.let { Text(it, color = TextMuted, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis) }
                 } else Text("Trykk «Start radio». Frekvensen vises her når radioen spiller.", color = TextMuted, fontSize = 15.sp)
             }
             if (hw != null) {
@@ -325,7 +346,7 @@ fun NavScreen(onClose: () -> Unit) {
     }) {
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
             val go = { if (q.isBlank()) context.toast("Skriv hvor du vil først") else Navigate.to(context, q) }
-            Field(q, "Hvor vil du? Adresse eller sted", Modifier.weight(1f), onDone = go) { q = it }
+            Field(q, "Hvor vil du? Adresse eller sted", Modifier.weight(1f), onDone = go, doneLabel = "Kjør") { q = it }
             Pill("Kjør", Icons.Default.Navigation, strong = true, onClick = go)
         }
         Spacer(Modifier.height(14.dp))
@@ -650,7 +671,7 @@ fun CarScreen(onClose: () -> Unit) {
 fun ClockScreen(onClose: () -> Unit) {
     var now by remember { mutableStateOf(Date()) }
     LaunchedEffect(Unit) { while (true) { now = Date(); delay(1000) } }
-    Box(Modifier.fillMaxSize().background(Bg).clickable { onClose() }, contentAlignment = Alignment.Center) {
+    Box(Modifier.fillMaxSize().background(Bg).clickable(onClickLabel = "Tilbake til forsiden") { onClose() }, contentAlignment = Alignment.Center) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Text(SimpleDateFormat("HH:mm", Locale.getDefault()).format(now), color = TextPrimary.copy(alpha = 0.85f), fontSize = 150.sp, fontWeight = FontWeight.Light)
             Text(SimpleDateFormat("EEEE d. MMMM", Locale("nb", "NO")).format(now).replaceFirstChar { it.uppercase() }, color = TextMuted, fontSize = 22.sp)
@@ -695,12 +716,12 @@ fun QuickPanel(onClose: () -> Unit) {
                             Settings.System.putInt(context.contentResolver, Settings.System.SCREEN_BRIGHTNESS, (it * 255).toInt().coerceIn(5, 255))
                         }
                     } else Prefs.set("app_brightness", it)
-                }, valueRange = 0.05f..1f, colors = sliderColors, modifier = Modifier.weight(1f))
+                }, valueRange = 0.05f..1f, colors = sliderColors, modifier = Modifier.weight(1f).semantics { contentDescription = "Lysstyrke" })
                 Icon(Icons.Default.VolumeUp, null, tint = TextMuted)
                 Slider(Ui.volume.coerceAtLeast(0).toFloat(), {
                     val v = it.roundToInt()
                     if (v != Ui.volume) { Ui.volume = v; am.setStreamVolume(AudioManager.STREAM_MUSIC, v, 0) }
-                }, valueRange = 0f..maxVol.toFloat(), colors = sliderColors, modifier = Modifier.weight(1f))
+                }, valueRange = 0f..maxVol.toFloat(), colors = sliderColors, modifier = Modifier.weight(1f).semantics { contentDescription = "Volum" })
             }
             // Rulles sidelengs når teksten er stor, så ingen knapp blir kuttet av
             Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(12.dp)) {

@@ -7,6 +7,7 @@ import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.provider.Settings
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -20,6 +21,7 @@ import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MenuDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -103,7 +105,8 @@ fun BluetoothScreen(onClose: () -> Unit) {
                 )
                 Text(
                     when {
-                        connected == null -> "Åpne Telefon for å koble til"
+                        !status.available || !status.on -> "Slå på og par telefonen under Innstillinger"
+                        connected == null -> "Koble til telefonen under Innstillinger"
                         connected.battery in 0..100 -> "Tilkoblet · batteri ${connected.battery} %"
                         else -> "Tilkoblet"
                     },
@@ -135,14 +138,13 @@ fun BluetoothScreen(onClose: () -> Unit) {
                 }
             }
 
-            // Høyre: fire store valg
+            // Høyre: fire store valg. Telefon og musikk er T'OS sine egne sider (ikke stereoens Bluetooth-app).
             Column(Modifier.weight(0.55f).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(14.dp)) {
                 Row(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                    BigTile(Icons.Default.Phone, "Telefon", Modifier.weight(1f)) { AppRepository.launchTile(context, Tiles.byPrefix("Tel")) }
-                    BigTile(Icons.Default.Headphones, "Bluetooth-musikk", Modifier.weight(1f)) { AppRepository.launchTile(context, Tiles.byPrefix("Blu")) }
+                    BigTile(Icons.Default.Phone, "Telefon", Modifier.weight(1f)) { Nav.screen = Screen.PHONE }
+                    BigTile(Icons.Default.Headphones, "Bluetooth-musikk", Modifier.weight(1f)) { Nav.screen = Screen.MUSIC }
                 }
                 Row(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                    BigTile(Icons.Default.Star, "Favoritter", Modifier.weight(1f)) { Nav.screen = Screen.PHONE }
                     BigTile(Icons.Default.PhoneIphone, "CarPlay", Modifier.weight(1f)) { AppRepository.launchTile(context, Tiles.byPrefix("Car")) }
                     BigTile(Icons.Default.Settings, "Innstillinger", Modifier.weight(1f)) {
                         Prefs.set("settings_cat", "BT"); Nav.screen = Screen.SETTINGS   // T'OS sin egen Bluetooth-side
@@ -181,9 +183,17 @@ fun ActionPicker(current: Action, modifier: Modifier, prefix: String = "", onPic
                 overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
             Icon(Icons.Default.ArrowDropDown, null, tint = TextMuted)
         }
-        DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+        // Mørk meny i T'OS-farger (ellers blir den hvit som i Android)
+        DropdownMenu(expanded = menu, onDismissRequest = { menu = false }, containerColor = Card,
+            shape = RoundedCornerShape(16.dp), border = BorderStroke(1.dp, Line)) {
             Action.entries.forEach { a ->
-                DropdownMenuItem(text = { Text(a.label) }, onClick = { onPick(a); menu = false })
+                DropdownMenuItem(
+                    text = { Text(a.label, fontSize = 16.sp, fontWeight = if (a == current) FontWeight.Medium else FontWeight.Normal) },
+                    onClick = { onPick(a); menu = false },
+                    leadingIcon = { if (a == current) Icon(Icons.Default.Check, null, tint = TextPrimary) else Spacer(Modifier.size(24.dp)) },
+                    colors = MenuDefaults.itemColors(textColor = TextPrimary, leadingIconColor = TextPrimary),
+                    modifier = Modifier.heightIn(min = 48.dp),
+                )
             }
         }
     }

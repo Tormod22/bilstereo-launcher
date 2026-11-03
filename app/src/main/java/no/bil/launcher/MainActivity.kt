@@ -32,12 +32,14 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
@@ -55,6 +57,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -69,6 +72,9 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.graphics.drawable.toBitmap
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
@@ -95,6 +101,12 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        // T'OS tegner hele skjermen selv – stereoens statuslinje og navigasjonslinje skjules
+        WindowCompat.setDecorFitsSystemWindows(window, false)
+        if (android.os.Build.VERSION.SDK_INT >= 28) window.attributes = window.attributes.apply {
+            layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+        }
+        hideSystemBars()
         // Android 12+ ignorerer spørsmålet om nøyaktig posisjon hvis ikke omtrentlig spørres om samtidig
         val perms = mutableListOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION)
         if (android.os.Build.VERSION.SDK_INT >= 31) perms += Manifest.permission.BLUETOOTH_CONNECT
@@ -102,6 +114,35 @@ class MainActivity : ComponentActivity() {
         handle(intent)
         if (Startup.isFreshBoot(this) && !SafeMode.on) Startup.run(applicationContext)
         setContent { Root() }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        Notify.appVisible = true
+        hideSystemBars()
+    }
+
+    override fun onPause() {
+        Notify.appVisible = false
+        super.onPause()
+    }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        // Linjene kan ha blitt vist (sveip fra kanten, en dialog) – skjul dem igjen
+        if (hasFocus) hideSystemBars()
+    }
+
+    /** Skjuler Androids status- og navigasjonslinje. Et sveip fra kanten viser dem et øyeblikk. */
+    private fun hideSystemBars() {
+        if (!Prefs.bool("hide_system_bars", true)) {
+            WindowInsetsControllerCompat(window, window.decorView).show(WindowInsetsCompat.Type.systemBars())
+            return
+        }
+        WindowInsetsControllerCompat(window, window.decorView).apply {
+            systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            hide(WindowInsetsCompat.Type.systemBars())
+        }
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -113,7 +154,7 @@ class MainActivity : ComponentActivity() {
         val s = intent?.getStringExtra(Nav.EXTRA)
         val next = Screen.entries.firstOrNull { it.name == s } ?: Screen.DASH
         // Hjem lukker alt som ligger oppå (hurtigpanel, app-velgere)
-        Nav.quick = false; Nav.pick = null; Ui.pickSlot = false
+        Nav.quick = false; Nav.pick = null; Ui.pickSlot = false; TosKeyboard.close()
         // Førstegangsoppsettet blir stående til det er fullført
         Nav.screen = if (next == Screen.DASH && !Prefs.bool("setup_done")) Screen.SETUP else next
         // Læring av en knapp gjelder bare mens Knapper-siden er åpen
@@ -158,7 +199,6 @@ fun Root() {
     val context = LocalContext.current
     val home = { Nav.screen = Screen.DASH }
     var lastTouch by remember { mutableLongStateOf(SystemClock.elapsedRealtime()) }
-    var volumeShown by remember { mutableStateOf<Int?>(null) }
 
     // Nattmodus og lysstyrke for T'OS sitt vindu
     LaunchedEffect(Theme.mode) { Theme.update(Hub.gps?.lat, Hub.gps?.lon) }
@@ -188,9 +228,10 @@ fun Root() {
         }
     }
 
-    // Volum: vis et diskret tall når volumhjulet brukes
+    // Volum: T'OS sitt eget volumvindu når volumhjulet brukes
     DisposableEffect(Unit) {
         val am = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+        val max = am.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
         var last = am.getStreamVolume(AudioManager.STREAM_MUSIC)
         Ui.volume = last
         val obs = object : ContentObserver(Handler(Looper.getMainLooper())) {
@@ -198,15 +239,25 @@ fun Root() {
                 val v = am.getStreamVolume(AudioManager.STREAM_MUSIC)
                 if (v != last) {
                     last = v; Ui.volume = v
-                    // Hurtigpanelet har sin egen volumglider – ikke legg tallet oppå den
-                    if (!Nav.quick) volumeShown = v
+                    // Hurtigpanelet har sin egen volumglider – ikke legg vinduet oppå den
+                    if (!Nav.quick) VolumeUi.show(v, max)
                 }
             }
         }
         context.contentResolver.registerContentObserver(Settings.System.CONTENT_URI, true, obs)
         onDispose { context.contentResolver.unregisterContentObserver(obs) }
     }
-    LaunchedEffect(volumeShown) { if (volumeShown != null) { delay(1500); volumeShown = null } }
+
+    // Bluetooth-ikonet i statuslinja (leses i bakgrunnen, bare mens T'OS vises)
+    LaunchedEffect(Unit) {
+        while (true) {
+            if (Notify.appVisible) TosStatus.bt = withContext(Dispatchers.IO) { btState(btStatus(context)) }
+            delay(5000)
+        }
+    }
+
+    // Trykk utenfor tastaturet lukker det (etter at trykket er levert, så et annet felt eller «Lagre» virker med én gang)
+    val main = remember { Handler(Looper.getMainLooper()) }
 
     val d = LocalDensity.current
     CompositionLocalProvider(LocalDensity provides Density(d.density, d.fontScale * Theme.textScale)) {
@@ -214,51 +265,61 @@ fun Root() {
             Modifier.fillMaxSize().background(Bg)
                 .pointerInput(Unit) {
                     awaitPointerEventScope {
-                        while (true) { awaitPointerEvent(PointerEventPass.Initial); lastTouch = SystemClock.elapsedRealtime() }
+                        var atPress: KbBinding? = null
+                        while (true) {
+                            val ev = awaitPointerEvent(PointerEventPass.Initial)
+                            lastTouch = SystemClock.elapsedRealtime()
+                            val b = TosKeyboard.binding
+                            val p = ev.changes.firstOrNull()?.position
+                            if (ev.type == PointerEventType.Press) {
+                                val r = TosKeyboard.bounds
+                                atPress = if (b != null && p != null && r != null && !r.contains(p)) b else null
+                            } else if (ev.type == PointerEventType.Release && atPress != null) {
+                                val was = atPress; atPress = null
+                                main.post { if (TosKeyboard.binding === was) TosKeyboard.close() }
+                            }
+                        }
                     }
                 }
         ) {
-            Box(Modifier.fillMaxSize().padding(14.dp)) {
-                // BACK på forsiden gjør ingenting (ellers lukkes T'OS og stereoens gamle startskjerm vises)
-                BackHandler { if (Nav.screen != Screen.DASH) { Learn.cancel(); home() } }
-                when (Nav.screen) {
-                    Screen.DASH -> Dashboard(onApps = { Nav.screen = Screen.APPS }, onPickSlot = { Ui.pickSlot = true })
-                    Screen.APPS -> AppDrawer(home)
-                    Screen.BT -> BluetoothScreen(home)
-                    Screen.KEYS -> KeysScreen { Learn.cancel(); home() }
-                    Screen.MUSIC -> MusicScreen(home)
-                    Screen.MAP -> MapScreen(home)
-                    Screen.NAV -> NavScreen(home)
-                    Screen.RADIO -> RadioScreen(home)
-                    Screen.CAR -> CarScreen(home)
-                    Screen.PHONE -> PhoneScreen(home)
-                    Screen.SETTINGS -> SettingsScreen(home)
-                    Screen.TUNING -> TuningScreen(home)
-                    Screen.SETUP -> SetupScreen(home)
-                    Screen.CLOCK -> {}
+            // Statuslinja vises på sidene, ikke på forsiden (bilkortet har klokka) eller skjermspareren
+            val status = Nav.screen != Screen.DASH && Nav.screen != Screen.CLOCK
+            Column(Modifier.fillMaxSize().padding(start = 14.dp, end = 14.dp, bottom = 14.dp, top = if (status) 4.dp else 14.dp)) {
+                if (status) TosStatusBar(Modifier.fillMaxWidth().height(34.dp).padding(bottom = 4.dp))
+                Box(Modifier.fillMaxWidth().weight(1f)) {
+                    // BACK på forsiden gjør ingenting (ellers lukkes T'OS og stereoens gamle startskjerm vises)
+                    BackHandler { if (Nav.screen != Screen.DASH) { Learn.cancel(); home() } }
+                    when (Nav.screen) {
+                        Screen.DASH -> Dashboard(onApps = { Nav.screen = Screen.APPS }, onPickSlot = { Ui.pickSlot = true })
+                        Screen.APPS -> AppDrawer(home)
+                        Screen.BT -> BluetoothScreen(home)
+                        Screen.KEYS -> KeysScreen { Learn.cancel(); home() }
+                        Screen.MUSIC -> MusicScreen(home)
+                        Screen.MAP -> MapScreen(home)
+                        Screen.NAV -> NavScreen(home)
+                        Screen.RADIO -> RadioScreen(home)
+                        Screen.CAR -> CarScreen(home)
+                        Screen.PHONE -> PhoneScreen(home)
+                        Screen.SETTINGS -> SettingsScreen(home)
+                        Screen.TUNING -> TuningScreen(home)
+                        Screen.SETUP -> SetupScreen(home)
+                        Screen.CLOCK -> {}
+                    }
                 }
             }
             if (Nav.screen == Screen.CLOCK) ClockScreen(home)
             if (Nav.quick) { BackHandler { Nav.quick = false }; QuickPanel { Nav.quick = false } }
             Nav.pick?.let { (title, key) -> BackHandler { Nav.pick = null }; AppPicker(title, "Automatisk", { Prefs.set(key, it) }) { Nav.pick = null } }
             if (Ui.pickSlot) { BackHandler { Ui.pickSlot = false }; AppPicker("Velg app for midtflisa", "Telefon (standard)", { Prefs.set("slot_pkg", it) }) { Ui.pickSlot = false } }
-            if (!Nav.quick) volumeShown?.let { VolumeOverlay(it, Modifier.align(Alignment.Center)) }
+            VolumeHost(Modifier.align(Alignment.Center))
             Call.name?.let { CallBanner(it, Modifier.align(Alignment.TopCenter)) }
+            // Meldinger: over bunnraden, eller øverst når tastaturet er oppe
+            NoticeHost(
+                if (TosKeyboard.visible) Modifier.align(Alignment.TopCenter).padding(top = if (Call.name != null) 100.dp else 20.dp, start = 24.dp, end = 24.dp)
+                else Modifier.align(Alignment.BottomCenter).padding(bottom = 124.dp, start = 24.dp, end = 24.dp)
+            )
+            KeyboardHost(Modifier.align(Alignment.BottomCenter))
         }
-    }
-}
-
-@Composable
-private fun VolumeOverlay(v: Int, modifier: Modifier) {
-    val context = LocalContext.current
-    val max = remember { (context.getSystemService(Context.AUDIO_SERVICE) as AudioManager).getStreamMaxVolume(AudioManager.STREAM_MUSIC) }
-    Row(modifier.clip(RoundedCornerShape(28.dp)).background(Card).padding(horizontal = 28.dp, vertical = 18.dp),
-        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-        Icon(if (v == 0) Icons.Default.VolumeOff else Icons.Default.VolumeUp, null, tint = TextPrimary, modifier = Modifier.size(32.dp))
-        Box(Modifier.width(220.dp).height(6.dp).clip(RoundedCornerShape(3.dp)).background(Line)) {
-            Box(Modifier.fillMaxWidth(v / max.coerceAtLeast(1).toFloat()).fillMaxHeight().background(TextPrimary))
-        }
-        Text("$v", color = TextPrimary, fontSize = 24.sp, fontWeight = FontWeight.Medium)
     }
 }
 
@@ -375,7 +436,8 @@ fun CarCard(gps: Gps?, modifier: Modifier) {
                 Notice()
             }
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                if (!Hub.online) Icon(Icons.Default.WifiOff, "Ikke internett", tint = TextMuted, modifier = Modifier.size(18.dp))
+                // Bare det som er verdt å vite: uten nett, og tilkoblet telefon
+                StatusIcons(full = false)
                 val bv = CarBattery.volt
                 if (CarBattery.enabled && bv != null) {
                     Icon(Icons.Default.BatteryChargingFull, "Bilbatteri", tint = TextMuted, modifier = Modifier.size(18.dp))
@@ -756,10 +818,34 @@ private fun openHomeSettings(context: Context) {
     }
 }
 
+/** Er T'OS valgt som startskjerm nå? */
+fun isDefaultHome(context: Context): Boolean = runCatching {
+    context.packageManager.resolveActivity(Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME), 0)
+        ?.activityInfo?.packageName == context.packageName
+}.getOrDefault(false)
+
+/** Engangsoppsett nederst i app-skuffen (åpner Android-innstillingene, så den ligger ikke blant de vanlige knappene). */
 @Composable
-fun HomeButton() {
+fun HomeSetupRow() {
     val context = LocalContext.current
-    PillButton(Icons.Default.Home, "Startskjerm") { openHomeSettings(context) }
+    val isHome = remember { isDefaultHome(context) }
+    Row(
+        Modifier.fillMaxWidth().heightIn(min = 64.dp).clip(RoundedCornerShape(18.dp)).background(Card)
+            .clickable(onClickLabel = "Åpne Android-innstillingene") { openHomeSettings(context) }
+            .padding(horizontal = 18.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        Icon(if (isHome) Icons.Default.CheckCircle else Icons.Default.Home, null, tint = TextMuted, modifier = Modifier.size(24.dp))
+        Column(Modifier.weight(1f)) {
+            Text("Oppsett: velg startskjerm", color = TextPrimary, fontSize = 16.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(
+                if (isHome) "T'OS er startskjermen. Trykk bare hvis Hjem-knappen likevel viser stereoens gamle skjerm."
+                else "Gjøres én gang: velg T'OS, så viser Hjem-knappen alltid T'OS. Åpner Android-innstillingene.",
+                color = TextMuted, fontSize = 13.sp, maxLines = 2, overflow = TextOverflow.Ellipsis,
+            )
+        }
+        Icon(Icons.AutoMirrored.Filled.OpenInNew, null, tint = TextMuted, modifier = Modifier.size(20.dp))
+    }
 }
 
 @Composable
@@ -770,7 +856,10 @@ fun PillButton(icon: ImageVector, label: String, onClick: () -> Unit) = Pill(lab
 @Composable
 fun AppDrawer(onClose: () -> Unit) {
     val context = LocalContext.current
-    val apps by produceState(initialValue = emptyList<AppEntry>(), Prefs.str("hidden_apps")) { value = withContext(Dispatchers.IO) { AppRepository.installedApps(context) } }
+    var loaded by remember { mutableStateOf(false) }
+    val apps by produceState(initialValue = emptyList<AppEntry>(), Prefs.str("hidden_apps")) {
+        value = withContext(Dispatchers.IO) { AppRepository.installedApps(context) }; loaded = true
+    }
 
     Column(Modifier.fillMaxSize().clip(Shape).background(Panel).padding(24.dp)) {
         Row(Modifier.fillMaxWidth().padding(bottom = 16.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -784,7 +873,6 @@ fun AppDrawer(onClose: () -> Unit) {
             ) {
                 PillButton(Icons.Default.Settings, "Innstillinger") { Nav.screen = Screen.SETTINGS }
                 PillButton(Icons.Default.Tune, "Knapper") { Nav.screen = Screen.KEYS }
-                HomeButton()
                 UpdateButton()
             }
             Spacer(Modifier.width(12.dp))
@@ -797,9 +885,11 @@ fun AppDrawer(onClose: () -> Unit) {
         ) {
             // T'OS sine egne sider først
             val own = listOf(
-                Triple(Icons.Default.Radio, "Radio", Screen.RADIO), Triple(Icons.Default.Bluetooth, "Bluetooth", Screen.BT),
-                Triple(Icons.Default.DirectionsCar, "Bil og tur", Screen.CAR), Triple(Icons.Default.Map, "Kart", Screen.MAP),
-                Triple(Icons.Default.Settings, "Innstillinger", Screen.SETTINGS), Triple(Icons.Default.Speed, "Tuning", Screen.TUNING),
+                Triple(Icons.Default.MusicNote, "Musikk", Screen.MUSIC), Triple(Icons.Default.Radio, "Radio", Screen.RADIO),
+                Triple(Icons.Default.Phone, "Telefon", Screen.PHONE), Triple(Icons.Default.Bluetooth, "Bluetooth", Screen.BT),
+                Triple(Icons.Default.Navigation, "Navigasjon", Screen.NAV), Triple(Icons.Default.Map, "Kart", Screen.MAP),
+                Triple(Icons.Default.DirectionsCar, "Bil og tur", Screen.CAR), Triple(Icons.Default.Speed, "Tuning", Screen.TUNING),
+                Triple(Icons.Default.Settings, "Innstillinger", Screen.SETTINGS),
             )
             items(own, key = { it.second }) { (icon, label, screen) ->
                 Column(
@@ -810,8 +900,11 @@ fun AppDrawer(onClose: () -> Unit) {
                         Icon(icon, null, tint = TextPrimary, modifier = Modifier.size(28.dp))
                     }
                     Spacer(Modifier.height(8.dp))
-                    Text(label, color = TextPrimary, fontSize = 13.sp, maxLines = 1)
+                    Text(label, color = TextPrimary, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
+            }
+            if (!loaded) item(span = { GridItemSpan(maxLineSpan) }) {
+                Text("Henter appene …", color = TextMuted, fontSize = 15.sp, modifier = Modifier.padding(8.dp))
             }
             items(apps, key = { it.packageName }) { app ->
                 Column(
@@ -825,6 +918,7 @@ fun AppDrawer(onClose: () -> Unit) {
                     Text(app.label, color = TextPrimary, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
             }
+            item(span = { GridItemSpan(maxLineSpan) }) { Box(Modifier.padding(top = 10.dp)) { HomeSetupRow() } }
         }
     }
 }
