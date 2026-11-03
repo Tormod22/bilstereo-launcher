@@ -1,0 +1,781 @@
+<!doctype html>
+<html lang="nb">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#000000">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>T'OS forhåndsvisning</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500&display=swap">
+<style>
+/* Speiler MainActivity.kt: samme farger, mål (dp = px på 1024×600) og oppsett.
+   Endrer du noe i appen, endre det samme her. */
+:root {
+  --bg: #000000;
+  --panel: #111113;
+  --card: #1C1C1F;
+  --line: #2A2A2E;
+  --text: #F5F5F7;
+  --muted: #86868B;
+  --radius: 28px;
+  --gap: 14px;
+  --font: "Roboto", system-ui, -apple-system, "Segoe UI", sans-serif;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { height: 100%; margin: 0; }
+body {
+  background: var(--bg); color: var(--text); font-family: var(--font);
+  display: flex; flex-direction: column; overflow: hidden;
+  -webkit-tap-highlight-color: transparent; user-select: none;
+}
+
+/* ---------- Testpanel (finnes ikke i appen) ---------- */
+.tools {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px;
+  padding: 8px max(16px, env(safe-area-inset-right, 0px)) 8px max(16px, env(safe-area-inset-left, 0px));
+  padding-top: max(8px, env(safe-area-inset-top, 0px));
+  background: #0A0A0B; border-bottom: 1px solid var(--line);
+  font-size: 13px; color: var(--muted);
+}
+.tools b { color: var(--text); font-weight: 500; margin-right: 4px; }
+.tools label { display: inline-flex; align-items: center; gap: 6px; }
+.tools select, .tools button, .tools .file {
+  font: inherit; color: var(--text); background: var(--card); border: 1px solid var(--line);
+  border-radius: 8px; padding: 5px 10px; cursor: pointer;
+}
+.tools input[type=range] { width: 120px; accent-color: #F5F5F7; }
+.tools .file input { display: none; }
+.tools button:focus-visible, .tools select:focus-visible { outline: 2px solid var(--text); outline-offset: 2px; }
+.tools .num { color: var(--text); font-variant-numeric: tabular-nums; min-width: 3ch; display: inline-block; text-align: right; }
+body.hide-tools .tools { display: none; }
+.showtools {
+  position: fixed; top: calc(6px + env(safe-area-inset-top, 0px)); right: calc(6px + env(safe-area-inset-right, 0px));
+  z-index: 20; display: none; font: 12px var(--font); color: var(--muted);
+  background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 4px 8px; opacity: .6;
+}
+body.hide-tools .showtools { display: block; }
+
+/* ---------- Skjermen (skaleres til vinduet) ---------- */
+.viewport { flex: 1; position: relative; min-height: 0; }
+.device {
+  position: absolute; left: 50%; top: 50%; transform-origin: 0 0;
+  display: flex; align-items: stretch; gap: 22px; padding: 26px 30px;
+  background: #050506; border-radius: 34px; border: 1px solid #1a1a1c;
+}
+.screen { position: relative; width: 1024px; height: 600px; background: var(--bg); padding: var(--gap); flex: none; }
+/* Knappene på stereoen (blå skrift som på ekte) */
+.side { display: flex; flex-direction: column; justify-content: center; gap: 46px; width: 92px; }
+.hw {
+  font: 600 22px var(--font); letter-spacing: .04em; color: #3EA6E8; background: none; border: 0;
+  padding: 8px 0; cursor: pointer; text-shadow: 0 0 8px rgba(62,166,232,.35);
+}
+.hw:active { color: #9fd6ff; }
+.hw:focus-visible { outline: 2px solid #3EA6E8; outline-offset: 4px; border-radius: 6px; }
+.rotate {
+  display: none; position: absolute; inset: 0; align-items: center; justify-content: center;
+  text-align: center; color: var(--muted); font-size: 15px; padding: 24px;
+}
+@media (orientation: portrait) and (max-width: 700px) { .rotate { display: flex; } .device { opacity: .15; } }
+
+.dash { display: flex; gap: var(--gap); height: 100%; }
+.panel { background: var(--panel); border-radius: var(--radius); overflow: hidden; }
+.tap { cursor: pointer; }
+.tap:active { filter: brightness(1.25); }
+svg.i { fill: currentColor; display: block; }
+
+/* 1. Bilkort */
+.car { flex: 1; display: flex; flex-direction: column; padding: 28px; min-width: 0; }
+.car-top { display: flex; align-items: flex-start; }
+.clock { font-size: 40px; font-weight: 500; line-height: 1.15; }
+.date, .model { font-size: 15px; color: var(--muted); }
+.car-top > div:first-child { flex: 1; }
+.stage { flex: 1; position: relative; margin: 12px 0; display: flex; align-items: center; justify-content: center; min-height: 0; }
+.stage::before {
+  content: ""; position: absolute; left: 5%; right: 5%; bottom: 0; height: 50%;
+  border-radius: 9999px; background: radial-gradient(closest-side, #26262A, var(--panel));
+}
+.stage img { position: relative; width: 100%; height: 100%; object-fit: contain; }
+.stage svg { position: relative; width: 55%; height: 55%; color: var(--line); }
+.speed-row { display: flex; align-items: flex-end; gap: 10px; }
+.speed { font-size: 76px; font-weight: 500; line-height: 76px; font-variant-numeric: tabular-nums; }
+.unit, .gps { color: var(--muted); padding-bottom: 14px; }
+.unit { font-size: 18px; }
+.gps { font-size: 13px; margin-left: auto; }
+.speedline { height: 3px; border-radius: 2px; background: var(--line); margin-top: 0; overflow: hidden; }
+.speedline > div { height: 100%; width: 0; background: var(--text); transition: width .6s; }
+
+/* Høyre kolonne */
+.right { flex: 1; display: flex; flex-direction: column; gap: var(--gap); min-width: 0; }
+
+/* 2. Kart */
+.map { flex: 1; position: relative; }
+.map canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+.map .wait { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: var(--muted); font-size: 15px; text-align: center; padding: 20px; }
+.navchip {
+  position: absolute; left: 16px; bottom: 16px; display: flex; align-items: center; gap: 10px;
+  background: rgba(28, 28, 31, .92); border-radius: 18px; padding: 12px 18px; font-size: 17px; font-weight: 500;
+}
+.attrib { position: absolute; right: 10px; bottom: 6px; font-size: 9px; color: #55555a; }
+
+/* 3. Raden nederst */
+.actions { height: 96px; display: flex; gap: var(--gap); }
+.music { flex: 2.6; display: flex; align-items: center; padding: 0 12px 0 20px; gap: 6px; position: relative; min-width: 0; }
+.music .cover { width: 52px; height: 52px; border-radius: 14px; background: var(--card); display: flex; align-items: center; justify-content: center; flex: none; }
+.mtext { flex: 1; min-width: 0; padding: 0 6px 0 6px; }
+.mtext b { display: block; font-size: 15px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mtext span { display: block; font-size: 13px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mprog { position: absolute; left: 28px; right: 28px; bottom: 10px; height: 3px; border-radius: 2px; background: var(--line); overflow: hidden; }
+.mprog div { height: 100%; width: 0; background: var(--text); }
+.round.m { width: 48px; height: 48px; border: 1.5px solid var(--text); flex: none; }
+.limit { width: 46px; height: 46px; border-radius: 50%; border: 3px solid var(--text); display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 17px; }
+.limit.over { background: var(--text); color: var(--bg); }
+.speed.over { background: var(--text); color: var(--bg); border-radius: 16px; padding: 0 12px; }
+.gpsrow { margin-left: auto; display: flex; align-items: center; gap: 12px; padding-bottom: 8px; color: var(--muted); font-size: 14px; }
+.notice { margin-top: 8px; display: inline-flex; align-items: center; gap: 6px; background: var(--card); border-radius: 12px; padding: 6px 12px; font-size: 13px; }
+.notice svg { color: var(--muted); }
+.chips { position: absolute; left: 16px; bottom: 16px; display: flex; gap: 10px; }
+.chips .navchip { position: static; }
+.navbanner { position: absolute; left: 16px; top: 16px; background: rgba(28,28,31,.94); border-radius: 18px; padding: 12px 18px; max-width: 70%; }
+.navbanner b { display: block; font-size: 22px; font-weight: 500; } .navbanner span { color: var(--muted); font-size: 14px; }
+/* Nye sider */
+.stations { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+.station { height: 120px; border-radius: 18px; background: var(--card); padding: 16px; display: flex; flex-direction: column; justify-content: space-between; }
+.station b { font-size: 19px; font-weight: 500; } .station span { font-size: 13px; color: var(--muted); }
+.station.on { background: var(--text); color: var(--bg); } .station.on span { color: var(--bg); }
+.nums { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.num2 { background: var(--card); border-radius: 18px; padding: 16px; }
+.num2 b { display: block; font-size: 30px; font-weight: 500; } .num2 span { color: var(--muted); font-size: 13px; }
+.sec { color: var(--muted); font-size: 12px; letter-spacing: 1px; text-transform: uppercase; margin: 18px 0 8px; }
+.srow { min-height: 60px; border-radius: 18px; background: var(--card); display: flex; align-items: center; padding: 10px 18px; margin-bottom: 8px; gap: 12px; }
+.srow > div:first-child { flex: 1; } .srow .pill { background: var(--line); } .srow small { display: block; color: var(--muted); font-size: 13px; }
+.tg { width: 52px; height: 30px; border-radius: 15px; background: var(--line); padding: 3px; display: flex; }
+.tg i { width: 24px; height: 24px; border-radius: 50%; background: var(--muted); }
+.tg.on { background: var(--text); justify-content: flex-end; } .tg.on i { background: var(--bg); }
+.scroll { overflow-y: auto; flex: 1; min-height: 0; }
+.quick { position: absolute; inset: 0; background: rgba(0,0,0,.6); display: none; z-index: 5; }
+.quick.show { display: block; }
+.quick > div { background: var(--panel); border-radius: 0 0 28px 28px; padding: 24px; display: flex; flex-direction: column; gap: 14px; }
+.quick input[type=range] { flex: 1; accent-color: #F5F5F7; }
+.qrow { display: flex; gap: 12px; align-items: center; color: var(--muted); }
+.musicbig { display: flex; gap: 28px; align-items: center; flex: 1; }
+.musicbig .cv { width: 300px; height: 300px; border-radius: 24px; background: var(--card); display: flex; align-items: center; justify-content: center; }
+.carwrap { display: flex; gap: 14px; flex: 1; min-height: 0; }
+.setwrap { display: flex; gap: 18px; flex: 1; min-height: 0; }
+.cats { width: 250px; flex: none; overflow-y: auto; display: flex; flex-direction: column; gap: 4px; }
+.cgrp { color: var(--muted); font-size: 12px; letter-spacing: 1px; padding: 10px 12px 6px; }
+.cat { height: 50px; border-radius: 14px; display: flex; align-items: center; padding: 0 12px; color: var(--muted); font-size: 15px; flex: none; }
+.cat.on { background: var(--line); color: var(--text); }
+.cpane h3 { margin: 0 0 12px; font-size: 22px; font-weight: 500; }
+.srow .muted, .srow > span { color: var(--muted); font-size: 15px; }
+.music .app { width: 52px; height: 52px; border-radius: 14px; background: var(--card); display: flex; align-items: center; justify-content: center; margin-right: auto; }
+.round { border-radius: 50%; display: flex; align-items: center; justify-content: center; }
+.round.s { width: 44px; height: 44px; }
+.round.l { width: 56px; height: 56px; border: 1.5px solid var(--text); }
+.tile { flex: .8; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; }
+.tile span { color: var(--muted); font-size: 14px; }
+
+/* App-skuff */
+.drawer, .page { height: 100%; display: none; flex-direction: column; padding: 24px; }
+.screen:not([data-view="dash"]) .dash { display: none; }
+.screen[data-view="apps"] .drawer, .screen[data-view="bt"] #bt, .screen[data-view="keys"] #keys, .screen[data-view="radio"] #radio, .screen[data-view="car"] #car, .screen[data-view="music"] #musicp, .screen[data-view="settings"] #settings, .screen[data-view="tuning"] #tuning { display: flex; }
+.pill { height: 48px; border-radius: 24px; background: var(--card); display: flex; align-items: center; gap: 8px; padding: 0 18px; font-size: 14px; white-space: nowrap; }
+/* Bluetooth */
+.btwrap { flex: 1; display: flex; gap: 14px; min-height: 0; }
+.btstat { flex: .45; background: var(--card); border-radius: 22px; padding: 20px; display: flex; flex-direction: column; gap: 10px; }
+.btstat h3 { margin: 0; font-size: 22px; font-weight: 500; }
+.btstat .sub { color: var(--muted); font-size: 14px; }
+.dev { display: flex; align-items: center; gap: 10px; font-size: 16px; color: var(--muted); }
+.dev i { width: 10px; height: 10px; border-radius: 50%; border: 1.5px solid var(--muted); }
+.dev.on { color: var(--text); } .dev.on i { background: var(--text); border-color: var(--text); }
+.btmusic { margin-top: auto; display: flex; align-items: center; gap: 6px; }
+.btmusic span { flex: 1; color: var(--muted); font-size: 14px; }
+.btgrid { flex: .55; display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.big { background: var(--card); border-radius: 22px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; font-size: 16px; }
+/* Knapper */
+.hint { color: var(--muted); font-size: 15px; padding-bottom: 12px; }
+.krow { height: 64px; border-radius: 18px; background: var(--card); display: flex; align-items: center; gap: 14px; padding: 0 18px; }
+.krows { display: flex; flex-direction: column; gap: 8px; }
+.krow b { width: 80px; font-size: 18px; font-weight: 500; }
+.krow select { flex: 1; font: 16px var(--font); color: var(--text); background: transparent; border: 0; padding: 8px; }
+.krow select option { background: var(--card); }
+.krow .st { color: var(--muted); font-size: 13px; }
+.krow .lb { height: 44px; border-radius: 22px; background: var(--line); display: flex; align-items: center; padding: 0 18px; font-size: 14px; }
+.drawer-head { display: flex; align-items: center; gap: 12px; padding-bottom: 16px; }
+.drawer-head h2 { flex: 1; margin: 0; font-size: 28px; font-weight: 500; }
+.upd { height: 48px; border-radius: 24px; background: var(--card); display: flex; align-items: center; gap: 8px; padding: 0 18px; font-size: 14px; }
+.upd.avail { background: var(--text); color: var(--bg); }
+.close { width: 48px; height: 48px; }
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 12px; overflow-y: auto; align-content: start; }
+.appbox { background: var(--card); border-radius: 18px; padding: 14px; display: flex; flex-direction: column; align-items: center; gap: 8px; }
+.appicon { width: 52px; height: 52px; border-radius: 14px; display: flex; align-items: center; justify-content: center; font-size: 20px; font-weight: 500; background: #2c2c30; color: var(--text); }
+.appbox span { font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+.hiddennote { margin-top: 12px; font-size: 12px; color: var(--muted); }
+
+/* Android-aktig «toast» */
+.navipop { position: absolute; top: 24px; right: 24px; z-index: 6; display: flex; align-items: center; gap: 12px; background: rgba(28,28,31,.94);
+  border: 1px solid var(--line); border-radius: 26px; padding: 12px 22px 12px 14px; box-shadow: 0 8px 24px rgba(0,0,0,.5); transition: opacity .6s; }
+.navipop b { display: block; font-size: 17px; font-weight: 400; } .navipop span { color: var(--muted); font-size: 13px; }
+.navipop.fade { opacity: 0; }
+.toast {
+  position: absolute; left: 50%; bottom: 40px; transform: translateX(-50%);
+  background: #2c2c30; color: var(--text); font-size: 15px; padding: 12px 20px; border-radius: 22px;
+  opacity: 0; transition: opacity .25s; pointer-events: none; white-space: nowrap; max-width: 90%;
+  overflow: hidden; text-overflow: ellipsis;
+}
+.toast.show { opacity: 1; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body>
+
+<div class="tools" id="tools">
+  <b>Test</b>
+  <label for="res">Skjerm
+    <select id="res">
+      <option value="1024x600">1024 × 600 (vanlig 7")</option>
+      <option value="1280x720">1280 × 720</option>
+      <option value="1280x800">1280 × 800</option>
+    </select>
+  </label>
+  <label for="gpsmode">GPS
+    <select id="gpsmode">
+      <option value="sim">Simulert kjøring</option>
+      <option value="real">Ekte (din posisjon)</option>
+      <option value="none">Ingen GPS</option>
+    </select>
+  </label>
+  <label for="simspeed" id="speedwrap">Fart <input id="simspeed" type="range" min="0" max="160" value="60"><span class="num" id="simspeedv">60</span></label>
+  <label class="file" for="carfile">Velg bilbilde…<input id="carfile" type="file" accept="image/*"></label>
+  <button id="fs" type="button">Fullskjerm</button>
+  <button id="hide" type="button">Skjul</button>
+</div>
+<button class="showtools" id="showtools" type="button">Test</button>
+
+<div class="viewport" id="viewport">
+  <div class="device" id="device">
+  <div class="side">
+    <button class="hw" type="button" data-key="MENU">MENU</button>
+    <button class="hw" type="button" data-key="BACK">BACK</button>
+    <button class="hw" type="button" data-key="NAVI">NAVI</button>
+  </div>
+  <div class="screen" id="screen" data-view="dash">
+    <div class="dash">
+      <!-- 1. Bilen -->
+      <section class="car panel">
+        <div class="car-top">
+          <div><div class="clock" id="clock">--:--</div><div class="date" id="date"></div><div class="notice tap" id="notice" hidden><svg class="i" viewBox="0 0 24 24" width="16" height="16"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg><span id="noticetext"></span></div></div>
+          <div class="model" title="Bilbatteri (eksempel)">12,6 V&nbsp;&nbsp;·&nbsp;&nbsp;Avensis</div>
+        </div>
+        <div class="stage" id="stage">
+          <svg class="i" viewBox="0 0 24 24" id="caricon"><path d="M18.92 6.01C18.72 5.42 18.16 5 17.5 5h-11c-.66 0-1.21.42-1.42 1.01L3 12v8c0 .55.45 1 1 1h1c.55 0 1-.45 1-1v-1h12v1c0 .55.45 1 1 1h1c.55 0 1-.45 1-1v-8l-2.08-5.99zM6.5 16c-.83 0-1.5-.67-1.5-1.5S5.67 13 6.5 13s1.5.67 1.5 1.5S7.33 16 6.5 16zm11 0c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5zM5 11l1.5-4.5h11L19 11H5z"/></svg>
+        </div>
+        <div class="speed-row">
+          <div class="speed" id="speed">0</div><div class="unit">km/t</div><div class="gpsrow"><span id="gpsstate">Søker GPS</span><div class="limit" id="limit" hidden>50</div></div>
+        </div>
+        <div class="speedline"><div id="speedbar"></div></div>
+      </section>
+
+      <div class="right">
+        <!-- 2. Kart -->
+        <section class="map panel tap" id="map">
+          <canvas id="mapc"></canvas>
+          <div class="wait" id="mapwait">Venter på GPS</div>
+          <div class="navbanner" id="navbanner" hidden><b>300 m</b><span>Sving til høyre mot Storgata (eksempel)</span></div>
+          <div class="chips">
+            <div class="navchip tap" data-say="Åpner Navigasjon: Hjem, Jobb og siste steder"><svg class="i" viewBox="0 0 24 24" width="22" height="22"><path d="M12 2L4.5 20.29l.71.71L12 18l6.79 3 .71-.71z"/></svg>Navigasjon</div>
+            <div class="navchip tap" data-say="Starter navigasjon hjem"><svg class="i" viewBox="0 0 24 24" width="22" height="22"><path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"/></svg>Hjem</div>
+          </div>
+          <div class="attrib">© Esri</div>
+        </section>
+
+        <!-- 3. Én rad -->
+        <div class="actions">
+          <div class="music panel">
+            <div class="cover tap" data-go="music"><svg class="i" viewBox="0 0 24 24" width="28" height="28"><path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/></svg></div>
+            <div class="mtext tap" data-go="music"><b id="mtitle">Musikk</b><span id="msub">Ingenting spiller</span></div>
+            <div class="round m tap" id="play"><svg class="i" viewBox="0 0 24 24" width="28" height="28"><path d="M8 5v14l11-7z"/></svg></div>
+            <div class="round s tap" id="mnext"><svg class="i" viewBox="0 0 24 24" width="26" height="26"><path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z"/></svg></div>
+            <div class="mprog"><div id="mprog"></div></div>
+          </div>
+          <div class="tile panel tap" data-say="Åpner Telefon-siden med favoritter (langt trykk = velg en annen app)">
+            <svg class="i" viewBox="0 0 24 24" width="30" height="30"><path d="M6.62 10.79c1.44 2.83 3.76 5.14 6.59 6.59l2.2-2.2c.27-.27.67-.36 1.02-.24 1.12.37 2.33.57 3.57.57.55 0 1 .45 1 1V20c0 .55-.45 1-1 1-9.39 0-17-7.61-17-17 0-.55.45-1 1-1h3.5c.55 0 1 .45 1 1 0 1.25.2 2.45.57 3.57.11.35.03.74-.25 1.02l-2.2 2.2z"/></svg>
+            <span>Telefon</span>
+          </div>
+          <div class="tile panel tap" id="openapps">
+            <svg class="i" viewBox="0 0 24 24" width="30" height="30"><path d="M4 8h4V4H4v4zm6 12h4v-4h-4v4zm-6 0h4v-4H4v4zm0-6h4v-4H4v4zm6 0h4v-4h-4v4zm6-10v4h4V4h-4zm-6 4h4V4h-4v4zm6 6h4v-4h-4v4zm0 6h4v-4h-4v4z"/></svg>
+            <span>Apper</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- App-skuff -->
+    <section class="drawer panel">
+      <div class="drawer-head">
+        <h2>Apper</h2>
+        <div class="pill tap" data-go="keys"><svg class="i" viewBox="0 0 24 24" width="20" height="20"><path d="M3 17v2h6v-2H3zM3 5v2h10V5H3zm10 16v-2h8v-2h-8v-2h-2v6h2zM7 9v2H3v2h4v2h2V9H7zm14 4v-2H11v2h10zm-6-4h2V7h4V5h-4V3h-2v6z"/></svg><span>Knapper</span></div>
+        <div class="pill tap" data-go="settings"><svg class="i" viewBox="0 0 24 24" width="20" height="20"><path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/></svg><span>Innstillinger</span></div>
+        <div class="pill tap" data-say="Åpner valget av startskjerm i Innstillinger"><svg class="i" viewBox="0 0 24 24" width="20" height="20"><path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"/></svg><span>Startskjerm</span></div>
+        <div class="upd tap" id="upd">
+          <svg class="i" viewBox="0 0 24 24" width="20" height="20"><path d="M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/></svg>
+          <span id="updtext">Se etter oppdatering</span>
+        </div>
+        <div class="round close tap" id="closeapps">
+          <svg class="i" viewBox="0 0 24 24" width="26" height="26"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </div>
+      </div>
+      <div class="grid" id="grid"></div>
+      <div class="hiddennote">Eksempel-apper. På stereoen vises de som faktisk er installert. Kalkulator er skjult.</div>
+    </section>
+
+    <!-- Bluetooth-side -->
+    <section class="page panel" id="bt">
+      <div class="drawer-head"><h2>Bluetooth</h2><div class="round close tap" data-go="dash"><svg class="i" viewBox="0 0 24 24" width="26" height="26"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg></div></div>
+      <div class="btwrap">
+        <div class="btstat">
+          <h3>Tormods iPhone</h3><div class="sub">Tilkoblet (eksempel)</div>
+          <div class="sub" style="margin-top:4px;font-size:13px">Kjente enheter</div>
+          <div class="dev on"><i></i>Tormods iPhone</div>
+          <div class="dev"><i></i>Jobbtelefon</div>
+          <div class="btmusic"><span>Musikk</span>
+            <div class="round s tap" data-say="Forrige sang"><svg class="i" viewBox="0 0 24 24" width="26" height="26"><path d="M6 6h2v12H6zm3.5 6l8.5 6V6z"/></svg></div>
+            <div class="round l tap" data-say="Spill / pause"><svg class="i" viewBox="0 0 24 24" width="30" height="30"><path d="M8 5v14l11-7z"/></svg></div>
+            <div class="round s tap" data-say="Neste sang"><svg class="i" viewBox="0 0 24 24" width="26" height="26"><path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z"/></svg></div>
+          </div>
+        </div>
+        <div class="btgrid">
+          <div class="big tap" data-say="Åpner stereoens Bluetooth-telefon"><svg class="i" viewBox="0 0 24 24" width="40" height="40"><path d="M6.62 10.79c1.44 2.83 3.76 5.14 6.59 6.59l2.2-2.2c.27-.27.67-.36 1.02-.24 1.12.37 2.33.57 3.57.57.55 0 1 .45 1 1V20c0 .55-.45 1-1 1-9.39 0-17-7.61-17-17 0-.55.45-1 1-1h3.5c.55 0 1 .45 1 1 0 1.25.2 2.45.57 3.57.11.35.03.74-.25 1.02l-2.2 2.2z"/></svg>Telefon</div>
+          <div class="big tap" data-say="Åpner Bluetooth-musikk"><svg class="i" viewBox="0 0 24 24" width="40" height="40"><path d="M12 1c-4.97 0-9 4.03-9 9v7c0 1.66 1.34 3 3 3h3v-8H5v-2c0-3.87 3.13-7 7-7s7 3.13 7 7v2h-4v8h3c1.66 0 3-1.34 3-3v-7c0-4.97-4.03-9-9-9z"/></svg>Bluetooth-musikk</div>
+          <div class="big tap" data-say="Åpner CarPlay (Zlink)"><svg class="i" viewBox="0 0 24 24" width="40" height="40"><path d="M15.5 1h-8C6.12 1 5 2.12 5 3.5v17C5 21.88 6.12 23 7.5 23h8c1.38 0 2.5-1.12 2.5-2.5v-17C18 2.12 16.88 1 15.5 1zm-4 21c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5zm4.5-4H7V4h9v14z"/></svg>CarPlay</div>
+          <div class="big tap" data-say="Åpner Bluetooth-innstillinger"><svg class="i" viewBox="0 0 24 24" width="40" height="40"><path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/></svg>Innstillinger</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Knapper-side -->
+    <section class="page panel" id="keys">
+      <div class="drawer-head"><h2>Knapper</h2>
+        <div class="upd tap" data-say="Åpner Tilgjengelighet i Innstillinger. Slå på «T'OS knapper»."><svg class="i" viewBox="0 0 24 24" width="20" height="20"><path d="M13 3h-2v10h2V3zm4.83 2.17l-1.42 1.42C17.99 7.86 19 9.81 19 12c0 3.87-3.13 7-7 7s-7-3.13-7-7c0-2.19 1.01-4.14 2.58-5.42L6.17 5.17C4.23 6.82 3 9.26 3 12c0 4.97 4.03 9 9 9s9-4.03 9-9c0-2.74-1.23-5.18-3.17-6.83z"/></svg><span>Slå på knappestyring</span></div>
+        <div class="round close tap" data-go="dash"><svg class="i" viewBox="0 0 24 24" width="26" height="26"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg></div></div>
+      <div class="hint" id="khint">Trykk «Lær» og så knappen på stereoen. Velg deretter hva knappen skal gjøre.</div>
+      <div class="krows" id="krows"></div>
+    </section>
+
+    <!-- Radio -->
+    <section class="page panel" id="radio">
+      <div class="drawer-head"><h2>Radio</h2><div class="pill tap" id="radiostop">Stopp nettradio</div><div class="round close tap" data-go="dash"><svg class="i" viewBox="0 0 24 24" width="26" height="26"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg></div></div>
+      <div class="srow" style="padding:14px 20px;margin-bottom:6px"><div><small style="letter-spacing:1px">STEREOENS RADIO</small>
+        <span style="font-size:40px;font-weight:500">101.7</span> <span class="muted" style="font-size:16px">MHz · FM1</span><small>NRK P1 (eksempel)</small></div>
+        <div class="round s tap" data-say="Søker ned">◀◀</div><div class="round s tap" data-say="Søker opp">▶▶</div>
+        <div class="pill tap" data-say="Bytter FM-bånd">FM</div><div class="pill tap" data-say="Bytter til AM">AM</div><div class="pill tap" data-say="Åpner radio-appen">Åpne</div></div>
+      <div class="sec">Nettradio</div>
+      <div class="stations" id="stations"><div class="station tap" data-url="https://lyd.nrk.no/nrk_radio_p1_ostlandssendingen_mp3_h" data-name="NRK P1"><b>NRK P1</b><span>Nettradio</span></div><div class="station tap" data-url="https://lyd.nrk.no/nrk_radio_p2_mp3_h" data-name="NRK P2"><b>NRK P2</b><span>Nettradio</span></div><div class="station tap" data-url="https://lyd.nrk.no/nrk_radio_p3_mp3_h" data-name="NRK P3"><b>NRK P3</b><span>Nettradio</span></div><div class="station tap" data-url="https://lyd.nrk.no/nrk_radio_mp3_mp3_h" data-name="NRK mP3"><b>NRK mP3</b><span>Nettradio</span></div><div class="station tap" data-url="https://lyd.nrk.no/nrk_radio_alltid_nyheter_mp3_h" data-name="Alltid Nyheter"><b>Alltid Nyheter</b><span>Nettradio</span></div><div class="station tap" data-url="https://p4.p4groupaudio.com/P04_MM" data-name="P4"><b>P4</b><span>Nettradio</span></div><div class="station tap" data-url="https://live-bauerno.sharp-stream.com/radionorge_no_mp3" data-name="Radio Norge"><b>Radio Norge</b><span>Nettradio</span></div><div class="station tap" data-url="https://live-bauerno.sharp-stream.com/radiorock_no_mp3" data-name="Radio Rock"><b>Radio Rock</b><span>Nettradio</span></div></div>
+      <div class="hint" id="radiomsg" style="padding-top:12px"></div>
+    </section>
+
+    <!-- Musikk -->
+    <section class="page panel" id="musicp">
+      <div class="drawer-head"><h2>Musikk</h2><div class="pill tap" data-say="Åpner Spotify">Åpne app</div><div class="round close tap" data-go="dash"><svg class="i" viewBox="0 0 24 24" width="26" height="26"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg></div></div>
+      <div class="musicbig"><div class="cv"><svg class="i" viewBox="0 0 24 24" width="120" height="120"><path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/></svg></div>
+        <div style="flex:1;display:flex;flex-direction:column;gap:10px"><b id="bigtitle" style="font-size:30px;font-weight:500">Ingen musikk spiller</b><span id="bigsub" style="font-size:20px;color:var(--muted)"></span>
+        <div class="mprog" style="position:static;margin-top:10px"><div id="bigprog"></div></div>
+        <div style="display:flex;gap:24px;align-items:center;margin-top:16px"><div class="round s tap" style="width:64px;height:64px" data-say="Forrige sang"><svg class="i" viewBox="0 0 24 24" width="34" height="34"><path d="M6 6h2v12H6zm3.5 6l8.5 6V6z"/></svg></div><div class="round l tap" style="width:84px;height:84px" id="bigplay"><svg class="i" viewBox="0 0 24 24" width="44" height="44"><path d="M8 5v14l11-7z"/></svg></div><div class="round s tap" style="width:64px;height:64px" id="bignext"><svg class="i" viewBox="0 0 24 24" width="34" height="34"><path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z"/></svg></div></div></div></div>
+    </section>
+
+    <!-- Bil og tur -->
+    <section class="page panel" id="car">
+      <div class="drawer-head"><h2>Bil og tur</h2><div class="pill tap" id="tripreset">Nullstill tur</div><div class="round close tap" data-go="dash"><svg class="i" viewBox="0 0 24 24" width="26" height="26"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg></div></div>
+      <div class="carwrap"><div class="scroll" style="flex:.62">
+        <div class="nums" style="grid-template-columns:1fr 1fr"><div class="num2"><b id="tkm">0,0</b><span>km denne turen</span></div><div class="num2"><b id="ttime">0 min</b><span>kjøretid</span></div></div>
+        <div class="nums" style="margin-top:10px"><div class="num2"><b id="tavg">0</b><span>snittfart km/t</span></div><div class="num2"><b id="tmax">0</b><span>høyeste fart km/t</span></div><div class="num2"><b id="tdir">–</b><span>retning</span></div></div>
+        <div class="sec">Bilbatteri</div>
+        <div class="srow"><div>12,6 V · Godt ladet (eksempel)<small>Målt av OBD-brikke. Over 13 V betyr at dynamoen lader.</small></div></div>
+        <div class="sec">Tuning og ytelse</div>
+        <div class="srow"><div>0–100 km/t: 9,8 s (eksempel)<small>Beste: 9,6 s · målt med GPS</small></div><div class="pill tap" data-go="tuning">Åpne</div></div>
+        <div class="sec">Påminnelser</div>
+        <div class="srow"><div>Tid for vinterdekk</div><div class="pill tap" data-say="Merket som gjort for i år">Ferdig</div></div>
+        <div class="sec">Stereoen</div>
+        <div class="srow"><div>Temperatur 48 °C · minne 1,9 av 3,7 GB<small>Internett: tilkoblet (eksempel)</small></div></div>
+      </div>
+      <div class="num2" style="flex:.38;display:flex;flex-direction:column;align-items:center;gap:10px;text-align:center"><b style="font-size:18px">Hvor står bilen?</b>
+        <div style="width:200px;height:200px;border-radius:12px;background:#fff;display:flex;align-items:center;justify-content:center;color:#000;font-size:13px">QR-kode</div>
+        <span>Skann med iPhone-kameraet før du går, så får du posisjonen i Kart.</span></div></div>
+    </section>
+
+    <!-- Innstillinger (egen app med T'OS-tema) -->
+    <section class="page panel" id="settings">
+      <div class="drawer-head"><h2>Innstillinger</h2><div class="round close tap" data-go="dash"><svg class="i" viewBox="0 0 24 24" width="26" height="26"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg></div></div>
+      <div class="setwrap"><div class="cats"><div class="cgrp">STEREOEN</div><div class="cat tap on" data-cat="net">Wi-Fi og internett</div><div class="cat tap" data-cat="bt">Bluetooth</div><div class="cat tap" data-cat="sound">Lyd</div><div class="cat tap" data-cat="screen">Skjerm</div><div class="cat tap" data-cat="apps">Apper</div><div class="cat tap" data-cat="storage">Lagring</div><div class="cat tap" data-cat="time">Dato, tid og språk</div><div class="cat tap" data-cat="about">Om stereoen</div><div class="cgrp">T'OS</div><div class="cat tap" data-cat="map">Kart og kjøring</div><div class="cat tap" data-cat="music">Musikk og oppstart</div><div class="cat tap" data-cat="phone">Telefon</div><div class="cat tap" data-cat="car">Bil</div><div class="cat tap" data-cat="keys">Knapper</div><div class="cat tap" data-cat="backup">Sikkerhetskopi og hjelp</div></div><div class="scroll"><div class="cpane" data-pane="net"><h3>Wi-Fi og internett</h3><div class="srow tap" data-say="Tilkoblet internett"><div>Tilkoblet internett<small>Wi-Fi: Tormods iPhone (eksempel)</small></div><span class="muted"></span></div><div class="srow tap" data-say="Velg Wi-Fi-nettverk"><div>Velg Wi-Fi-nettverk<small>Slå av/på og koble til</small></div><span class="muted">›</span></div><div class="srow tap" data-say="Internett fra iPhonen"><div>Internett fra iPhonen<small>På iPhonen: Innstillinger → Personlig Wi-Fi-sone → «Tillat andre å koble til»</small></div><span class="muted"></span></div></div><div class="cpane" data-pane="bt" hidden><h3>Bluetooth</h3><div class="srow tap" data-say="Bluetooth er på"><div>Bluetooth er på<small>Tilkoblet: Tormods iPhone (eksempel)</small></div><span class="muted"></span></div><div class="srow tap" data-say="Par ny enhet"><div>Par ny enhet<small>Telefon, tuningboks o.l.</small></div><span class="muted">›</span></div><div class="srow tap" data-say="Telefon og Bluetooth-musikk"><div>Telefon og Bluetooth-musikk<small>Stereoens egen Bluetooth-app</small></div><span class="muted">›</span></div></div><div class="cpane" data-pane="sound" hidden><h3>Lyd</h3><div class="srow"><div style="flex:none;width:150px">Musikk og radio</div><input type="range" aria-label="Musikk og radio" value="60" style="flex:1;accent-color:#F5F5F7"></div><div class="srow"><div style="flex:none;width:150px">Samtaler</div><input type="range" aria-label="Samtaler" value="70" style="flex:1;accent-color:#F5F5F7"></div><div class="srow"><div style="flex:none;width:150px">Varsler</div><input type="range" aria-label="Varsler" value="40" style="flex:1;accent-color:#F5F5F7"></div><div class="srow"><div style="flex:none;width:150px">Ringelyd</div><input type="range" aria-label="Ringelyd" value="50" style="flex:1;accent-color:#F5F5F7"></div><div class="srow tap" data-say="Equalizer"><div>Equalizer<small>Bass, diskant og lydbilde</small></div><span class="muted">›</span></div><div class="srow tap tgrow"><div>Lyd når du er over fartsgrensen</div><div class="tg"><i></i></div></div></div><div class="cpane" data-pane="screen" hidden><h3>Skjerm</h3><div class="srow"><div style="flex:none;width:150px">Lysstyrke</div><input type="range" aria-label="Lysstyrke" value="70" style="flex:1;accent-color:#F5F5F7"></div><div class="srow tap" data-say="Nattmodus"><div>Nattmodus</div><span class="muted">Automatisk (etter sola)</span></div><div class="srow tap tgrow"><div>Demp hele stereoen om natten<small>Senker lysstyrken etter solnedgang</small></div><div class="tg"><i></i></div></div><div class="srow tap" data-say="App-ikoner"><div>App-ikoner</div><span class="muted">Mørke (gråtoner)</span></div><div class="srow tap" data-say="Tekststørrelse"><div>Tekststørrelse</div><span class="muted">Normal</span></div><div class="srow tap" data-say="Klokke når bilen står stille"><div>Klokke når bilen står stille</div><span class="muted">Etter 3 min</span></div><div class="srow tap" data-say="Bilbilde"><div>Bilbilde<small>PNG med svart eller gjennomsiktig bakgrunn</small></div><span class="muted">›</span></div></div><div class="cpane" data-pane="apps" hidden><h3>Apper</h3><div class="srow tap" data-say="Startskjerm"><div>Startskjerm<small>Velg T'OS som startskjerm</small></div><span class="muted">›</span></div><div class="srow"><div class="appicon" style="width:38px;height:38px;font-size:16px">C</div><div>Chrome</div><div class="pill tap" data-say="Chrome skjult fra app-lista">Skjul</div></div><div class="srow"><div class="appicon" style="width:38px;height:38px;font-size:16px">G</div><div>Google Maps</div><div class="pill tap" data-say="Google Maps skjult fra app-lista">Skjul</div></div><div class="srow"><div class="appicon" style="width:38px;height:38px;font-size:16px">S</div><div>Spotify</div><div class="pill tap" data-say="Spotify skjult fra app-lista">Skjul</div></div><div class="srow"><div class="appicon" style="width:38px;height:38px;font-size:16px">W</div><div>Waze</div><div class="pill tap" data-say="Waze skjult fra app-lista">Skjul</div></div><div class="srow"><div class="appicon" style="width:38px;height:38px;font-size:16px">Y</div><div>YouTube</div><div class="pill tap" data-say="YouTube skjult fra app-lista">Skjul</div></div></div><div class="cpane" data-pane="storage" hidden><h3>Lagring</h3><div class="srow tap" data-say="Brukt 21,4 av 57,2 GB"><div>Brukt 21,4 av 57,2 GB<small>35,8 GB ledig (eksempel)</small></div><span class="muted"></span></div><div class="srow tap" data-say="Kart uten nett"><div>Kart uten nett<small>180 MB (eksempel)</small></div><span class="muted"></span></div><div class="srow tap" data-say="Midlertidige filer i T'OS"><div>Midlertidige filer i T'OS<small>12 MB</small></div><span class="muted">Tøm</span></div></div><div class="cpane" data-pane="time" hidden><h3>Dato, tid og språk</h3><div class="srow tap" data-say="21:30"><div>21:30<small>mandag 2. november 2026</small></div><span class="muted"></span></div><div class="srow tap" data-say="Dato og tid"><div>Dato og tid<small>Tidssone, automatisk tid</small></div><span class="muted">›</span></div><div class="srow tap" data-say="Språk"><div>Språk<small>norsk bokmål</small></div><span class="muted">›</span></div><div class="srow tap" data-say="Tastatur"><div>Tastatur</div><span class="muted">›</span></div></div><div class="cpane" data-pane="about" hidden><h3>Om stereoen</h3><div class="srow tap" data-say="T'OS 4.2"><div>T'OS 4.2<small>Du har siste versjon</small></div><span class="muted"></span></div><div class="srow tap" data-say="Stereo"><div>Stereo<small>LEHX L6 Pro (eksempel)</small></div><span class="muted"></span></div><div class="srow tap" data-say="Android"><div>Android<small>13</small></div><span class="muted"></span></div><div class="srow tap" data-say="Prosessor"><div>Prosessor<small>8 kjerner · 48 °C</small></div><span class="muted"></span></div><div class="srow tap" data-say="Android-innstillinger"><div>Android-innstillinger<small>Stereoens originale innstillinger</small></div><span class="muted">›</span></div></div><div class="cpane" data-pane="map" hidden><h3>Kart og kjøring</h3><div class="srow tap" data-say="Kart uten nett (Rogaland)"><div>Kart uten nett (Rogaland)<small>Tegnes på stereoen og virker uten nett</small></div><span class="muted">Last ned</span></div><div class="srow tap" data-say="Hjem-adresse"><div>Hjem-adresse</div><span class="muted">(ikke satt)</span></div><div class="srow tap" data-say="Kartapp"><div>Kartapp</div><span class="muted">Google Maps</span></div><div class="srow tap tgrow"><div>Kartet følger kjøreretningen</div><div class="tg on"><i></i></div></div><div class="srow tap tgrow"><div>Kartet zoomer ut i høy fart</div><div class="tg on"><i></i></div></div><div class="srow tap tgrow"><div>Vis fartsgrense<small>Fra OpenStreetMap. Kan mangle eller være feil – skiltene gjelder.</small></div><div class="tg on"><i></i></div></div></div><div class="cpane" data-pane="music" hidden><h3>Musikk og oppstart</h3><div class="srow tap tgrow"><div>Sangtittel og cover<small>Slått på</small></div><div class="tg on"><i></i></div></div><div class="srow tap" data-say="Musikkapp"><div>Musikkapp</div><span class="muted">Automatisk</span></div><div class="srow tap tgrow"><div>Fortsett musikken når bilen starter</div><div class="tg on"><i></i></div></div><div class="srow tap tgrow"><div>Åpne siste app når bilen starter</div><div class="tg"><i></i></div></div></div><div class="cpane" data-pane="phone" hidden><h3>Telefon</h3><div class="srow tap tgrow"><div>Åpne CarPlay når iPhonen kobles til</div><div class="tg"><i></i></div></div><div class="srow tap" data-say="Favoritter"><div>Favoritter<small>0 lagret</small></div><span class="muted">›</span></div></div><div class="cpane" data-pane="car" hidden><h3>Bil</h3><div class="srow tap" data-say="Neste EU-kontroll"><div>Neste EU-kontroll</div><span class="muted">f.eks. 15.3.2027</span></div><div class="srow tap" data-say="Neste service"><div>Neste service</div><span class="muted">f.eks. 1.6.2027</span></div><div class="srow tap tgrow"><div>Minn meg på dekkskift<small>Midten av oktober og slutten av mars</small></div><div class="tg on"><i></i></div></div><div class="srow tap" data-go="tuning"><div>Tuning og ytelse<small>Tuningboks-app og 0–100-måling</small></div><span>›</span></div></div><div class="cpane" data-pane="keys" hidden><h3>Knapper</h3><div class="srow tap" data-go="keys"><div>Knapper på stereoen og rattet<small>Lær knappene og velg hva de gjør</small></div><span>›</span></div></div><div class="cpane" data-pane="backup" hidden><h3>Sikkerhetskopi og hjelp</h3><div class="srow tap" data-say="Lagre innstillinger til fil"><div>Lagre innstillinger til fil<small>Velg Google Drive for å ha dem trygt</small></div><span class="muted">›</span></div><div class="srow tap" data-say="Hent innstillinger fra fil"><div>Hent innstillinger fra fil</div><span class="muted">›</span></div><div class="srow tap" data-say="Del feilrapport"><div>Del feilrapport<small>Send til deg selv og lim inn i Claude</small></div><span class="muted">›</span></div></div></div></div>
+    </section>
+
+    <!-- Tuning -->
+    <section class="page panel" id="tuning">
+      <div class="drawer-head"><h2>Tuning og ytelse</h2><div class="pill tap" data-say="Velg appen til tuningboksen">Velg tuning-app</div><div class="round close tap" data-go="dash"><svg class="i" viewBox="0 0 24 24" width="26" height="26"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg></div></div>
+      <div class="carwrap"><div class="scroll" style="flex:.58">
+        <div class="srow"><div>RaceChip (eksempel)<small>Velg kjøremodus og effekt i appen til tuningboksen</small></div><div class="pill tap" style="background:var(--text);color:var(--bg)" data-say="Åpner RaceChip-appen">Åpne</div></div>
+        <div class="sec">Akselerasjon (målt med GPS)</div>
+        <div class="nums" style="grid-template-columns:1fr 1fr">
+          <div class="num2"><span>0–100 km/t</span><b id="acc0">9,8 s</b><span>Beste: 9,6 s</span><div class="pill tap acc" data-run="0–100" style="margin-top:8px;width:max-content;background:var(--text);color:var(--bg)">Mål</div></div>
+          <div class="num2"><span>80–120 km/t</span><b>–</b><span>Beste: –</span><div class="pill tap acc" data-run="80–120" style="margin-top:8px;width:max-content;background:var(--text);color:var(--bg)">Mål</div></div>
+        </div>
+        <div class="hint" id="acchint" style="padding-top:12px">Mål før og etter tuning for å se forskjellen. Bruk lukket område – ikke offentlig vei.</div>
+      </div>
+      <div class="num2 scroll" style="flex:.42">
+        <b style="font-size:17px">Slik får Avensisen mer kraft</b>
+        <p style="margin:8px 0 0;font-size:15px">Tuningboks</p><span>Kobles mellom motor og sensorer. Noen (f.eks. RaceChip GTS Black) har Bluetooth-app der du bytter modus. Størst effekt på diesel (D-4D).</span>
+        <p style="margin:8px 0 0;font-size:15px">Omprogrammering</p><span>Verksted skriver ny programvare til motorstyringen. Gjøres med spesialutstyr, ikke fra stereoen.</span>
+        <p style="margin:8px 0 0;font-size:15px">Gasspedalboks</p><span>Raskere respons på gasspedalen, men ikke mer effekt.</span>
+        <b style="font-size:17px;display:block;margin-top:12px">Før du tuner</b>
+        <span>Statens vegvesen krever at effektøkning godkjennes og føres i vognkortet. Uten det kan forsikringen avvise skader. Si fra til forsikringsselskapet.</span>
+      </div></div>
+    </section>
+
+    <!-- Hurtigpanel (sveip ned) -->
+    <div class="quick" id="quick"><div>
+      <div class="qrow"><svg class="i" viewBox="0 0 24 24" width="22" height="22"><path d="M12 7c-2.76 0-5 2.24-5 5s2.24 5 5 5 5-2.24 5-5-2.24-5-5-5z"/></svg><input type="range" id="qbright" aria-label="Lysstyrke" min="5" max="100" value="70"><svg class="i" viewBox="0 0 24 24" width="22" height="22"><path d="M3 9v6h4l5 5V4L7 9H3z"/></svg><input type="range" id="qvol" aria-label="Volum" min="0" max="30" value="12"></div>
+      <div class="qrow"><div class="pill tap" data-say="Åpner Wi-Fi">Wi-Fi</div><div class="pill tap" data-go="bt">Bluetooth</div><div class="pill tap" id="qnight">Auto lys</div><div class="pill tap" data-say="Åpner ryggekamera">Kamera</div><div class="pill tap" data-go="car">Bil og tur</div><div class="pill tap" data-go="settings">Innstillinger</div></div>
+    </div></div>
+
+    <div class="navipop tap" id="navipop" hidden><div class="appicon" style="width:38px;height:38px;font-size:16px">W</div><div><b>Åpne heller Waze</b><span>Trykk her</span></div></div>
+    <div class="toast" id="toast"></div>
+  </div>
+  <div class="side">
+    <button class="hw" type="button" data-key="RADIO">RADIO</button>
+    <button class="hw" type="button" data-key="MUSIC">MUSIC</button>
+    <button class="hw" type="button" data-key="BT">BT</button>
+  </div>
+  </div>
+  <div class="rotate">Snu telefonen på tvers for å se startskjermen slik den blir på stereoen.</div>
+</div>
+
+<script>
+(() => {
+  const $ = id => document.getElementById(id);
+  const screen = $('screen'), viewport = $('viewport'), device = $('device');
+  const store = {
+    get(k) { try { return localStorage.getItem(k); } catch (e) { return null; } },
+    set(k, v) { try { localStorage.setItem(k, v); } catch (e) {} },
+  };
+
+  /* ---------- Skalering til vinduet ---------- */
+  let W = 1024, H = 600;
+  function fit() {
+    screen.style.width = W + 'px'; screen.style.height = H + 'px';
+    const uw = device.offsetWidth, uh = device.offsetHeight;
+    const s = Math.min(viewport.clientWidth / uw, viewport.clientHeight / uh);
+    device.style.transform = `scale(${s}) translate(-50%, -50%)`;
+    drawMap();
+  }
+  $('res').value = store.get('res') || '1024x600';
+  function setRes() { [W, H] = $('res').value.split('x').map(Number); store.set('res', $('res').value); fit(); }
+  $('res').onchange = setRes;
+  addEventListener('resize', fit);
+
+  /* ---------- Klokke ---------- */
+  function tick() {
+    const d = new Date();
+    $('clock').textContent = d.toLocaleTimeString('nb-NO', { hour: '2-digit', minute: '2-digit' });
+    const s = d.toLocaleDateString('nb-NO', { weekday: 'long', day: 'numeric', month: 'long' });
+    $('date').textContent = s.charAt(0).toUpperCase() + s.slice(1);
+  }
+  tick(); setInterval(tick, 1000);
+
+  /* ---------- Bilbilde: car_png.png ved siden av fila, i appen, eller valgt fil ---------- */
+  function showCar(src) {
+    const img = new Image();
+    img.onload = () => { $('stage').querySelectorAll('img,svg').forEach(e => e.remove()); $('stage').appendChild(img); };
+    img.src = src;
+  }
+  const saved = store.get('car');
+  if (saved) showCar(saved);
+  else ['car_png.png', '../app/src/main/res/drawable/car_png.png'].forEach(p => {
+    const t = new Image(); t.onload = () => showCar(p); t.src = p;
+  });
+  $('carfile').onchange = e => {
+    const f = e.target.files[0]; if (!f) return;
+    const r = new FileReader();
+    r.onload = () => { showCar(r.result); store.set('car', r.result); };
+    r.readAsDataURL(f);
+  };
+
+  /* ---------- GPS ---------- */
+  let gps = null, watch = null, simTimer = null;
+  // Simulert tur: en runde på ca. 450 m rundt Oslo sentrum
+  const SIM = { lat: 59.9139, lon: 10.7522, r: 450 };
+  let simAngle = 0;
+  const trip = { m: 0, s: 0, max: 0, last: null };
+  const dirs = ['N', 'NØ', 'Ø', 'SØ', 'S', 'SV', 'V', 'NV'];
+  let bearing = 0;
+  function setGps(g) {
+    if (g && gps) {
+      const dy = (g.lat - gps.lat) * 111320, dx = (g.lon - gps.lon) * 111320 * Math.cos(g.lat * Math.PI / 180);
+      if (dx || dy) bearing = (Math.atan2(dx, dy) * 180 / Math.PI + 360) % 360;
+      if (g.speed >= 3) { trip.m += Math.hypot(dx, dy); trip.s += 1; }
+      trip.max = Math.max(trip.max, g.speed);
+    }
+    gps = g;
+    const sp = g ? g.speed : 0, limit = g ? 50 : null, over = limit && sp > limit + 3;
+    $('speed').classList.toggle('over', !!over);
+    $('limit').hidden = !limit; $('limit').classList.toggle('over', !!over);
+    $('gpsstate').textContent = !g ? 'Søker GPS' : sp > 3 ? dirs[Math.round(bearing / 45) % 8] : 'GPS';
+    $('tkm').textContent = (trip.m / 1000).toFixed(1).replace('.', ',');
+    $('ttime').textContent = Math.floor(trip.s / 60) + ' min';
+    $('tavg').textContent = trip.s > 30 ? Math.round(trip.m / trip.s * 3.6) : 0;
+    $('tmax').textContent = trip.max; $('tdir').textContent = g ? dirs[Math.round(bearing / 45) % 8] : '–';
+    $('speed').textContent = g ? g.speed : 0;
+    $('speedbar').style.width = Math.min(1, (g ? g.speed : 0) / 160) * 100 + '%';
+    if (!g) { $('mapwait').textContent = 'Venter på GPS'; $('mapwait').hidden = false; }
+    loadMap();
+  }
+  function stopGps() {
+    if (watch !== null) navigator.geolocation.clearWatch(watch);
+    clearInterval(simTimer); watch = null; simTimer = null;
+  }
+  function startGps() {
+    stopGps();
+    const mode = $('gpsmode').value; store.set('gpsmode', mode);
+    $('speedwrap').style.display = mode === 'sim' ? '' : 'none';
+    setGps(null);
+    if (mode === 'sim') {
+      const step = () => {
+        const v = +$('simspeed').value;
+        simAngle += (v / 3.6) / SIM.r;                         // meter per sekund langs runden
+        const lat = SIM.lat + SIM.r * Math.cos(simAngle) / 111320;
+        const lon = SIM.lon + SIM.r * Math.sin(simAngle) / (111320 * Math.cos(SIM.lat * Math.PI / 180));
+        setGps({ speed: v, lat, lon });
+      };
+      step(); simTimer = setInterval(step, 1000);
+    } else if (mode === 'real') {
+      if (!navigator.geolocation) { toast('Nettleseren har ikke GPS'); return; }
+      watch = navigator.geolocation.watchPosition(
+        p => setGps({ speed: Math.round((p.coords.speed || 0) * 3.6), lat: p.coords.latitude, lon: p.coords.longitude }),
+        err => toast(err.code === 1 ? 'Posisjon ble ikke tillatt i nettleseren' : 'Fant ikke posisjon'),
+        { enableHighAccuracy: true, maximumAge: 1000 });
+    }
+  }
+  $('gpsmode').value = store.get('gpsmode') || 'sim';
+  $('gpsmode').onchange = startGps;
+  $('simspeed').oninput = () => { $('simspeedv').textContent = $('simspeed').value; };
+
+  /* ---------- Kart: samme fliser og utregning som Data.kt ---------- */
+  const TILE = 256, COLS = 4, ROWS = 3, ZOOM = 15;
+  const tileCache = new Map();
+  let mapImg = null, mapKey = null, tilesFailed = false;
+  function tile(z, x, y) {
+    const k = `${z}/${x}/${y}`;
+    if (tileCache.has(k)) return tileCache.get(k);
+    const p = new Promise(res => {
+      const im = new Image();
+      im.onload = () => res(im); im.onerror = () => res(null);
+      const emb = window.EMBED_TILES && window.EMBED_TILES[k];   // innebygde fliser (Claude-versjonen)
+      im.src = emb || `https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/${z}/${y}/${x}`;
+    });
+    if (tileCache.size > 60) tileCache.clear();
+    tileCache.set(k, p); return p;
+  }
+  async function loadMap() {
+    if (!gps) return;
+    const key = `${Math.trunc(gps.lat * 200)},${Math.trunc(gps.lon * 200)}`;
+    if (key !== mapKey) {
+      mapKey = key;
+      const n = 2 ** ZOOM, xf = (gps.lon + 180) / 360 * n;
+      const lr = gps.lat * Math.PI / 180;
+      const yf = (1 - Math.log(Math.tan(lr) + 1 / Math.cos(lr)) / Math.PI) / 2 * n;
+      const x0 = Math.floor(xf) - COLS / 2, y0 = Math.floor(yf) - Math.floor(ROWS / 2);
+      const c = document.createElement('canvas'); c.width = TILE * COLS; c.height = TILE * ROWS;
+      const g = c.getContext('2d'); let ok = 0;
+      await Promise.all([...Array(ROWS * COLS).keys()].map(async i => {
+        const col = i % COLS, row = Math.floor(i / COLS);
+        const im = await tile(ZOOM, x0 + col, y0 + row);
+        if (im) { g.drawImage(im, col * TILE, row * TILE); ok++; }
+      }));
+      if (key !== mapKey) return;
+      tilesFailed = ok === 0;
+      mapImg = tilesFailed ? null : { c, x0, y0 };
+    }
+    if (mapImg) {
+      const n = 2 ** ZOOM, lr = gps.lat * Math.PI / 180;
+      mapImg.px = ((gps.lon + 180) / 360 * n - mapImg.x0) * TILE;
+      mapImg.py = ((1 - Math.log(Math.tan(lr) + 1 / Math.cos(lr)) / Math.PI) / 2 * n - mapImg.y0) * TILE;
+    }
+    $('mapwait').hidden = !!mapImg;
+    if (tilesFailed) $('mapwait').textContent = 'Fikk ikke lastet kartet (trenger internett)';
+    drawMap();
+  }
+  function drawMap() {
+    const cv = $('mapc'), box = $('map');
+    const w = box.clientWidth, h = box.clientHeight, dpr = Math.min(2, devicePixelRatio || 1);
+    cv.width = w * dpr; cv.height = h * dpr;
+    const g = cv.getContext('2d'); g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, w, h);
+    if (!mapImg) return;
+    // Samme som appen: bildet sentreres på posisjonen og skaleres så kortet alltid er fylt
+    const { c, px, py } = mapImg, bw = c.width, bh = c.height;
+    const s = Math.max(w / (2 * Math.max(1, Math.min(px, bw - px))), h / (2 * Math.max(1, Math.min(py, bh - py))));
+    g.filter = 'brightness(0.6)';   // samme demping som MapDim i appen
+    g.drawImage(c, w / 2 - px * s, h / 2 - py * s, bw * s, bh * s);
+    g.filter = 'none';
+    const cx = w / 2, cy = h / 2;
+    g.fillStyle = 'rgba(245,245,247,.18)'; g.beginPath(); g.arc(cx, cy, 14, 0, 7); g.fill();
+    g.fillStyle = '#F5F5F7'; g.beginPath(); g.arc(cx, cy, 4.5, 0, 7); g.fill();
+    g.strokeStyle = '#111113'; g.lineWidth = 1.5; g.beginPath(); g.arc(cx, cy, 4.5, 0, 7); g.stroke();
+  }
+  let naviT;
+  function openNavi() {
+    toast('Åpner Google Maps');
+    const p = $('navipop'); p.hidden = false; p.classList.remove('fade'); clearTimeout(naviT);
+    naviT = setTimeout(() => { p.classList.add('fade'); naviT = setTimeout(() => { p.hidden = true; }, 600); }, 5000);
+  }
+  $('navipop').onclick = () => { $('navipop').hidden = true; clearTimeout(naviT); toast('Åpner Waze i stedet'); };
+  $('map').onclick = openNavi;
+
+  /* ---------- Knapper ---------- */
+  let tt;
+  function toast(msg) {
+    const t = $('toast'); t.textContent = msg; t.classList.add('show');
+    clearTimeout(tt); tt = setTimeout(() => t.classList.remove('show'), 1800);
+  }
+  document.querySelectorAll('[data-say]').forEach(el => el.onclick = () => toast(el.dataset.say));
+  /* ---------- Musikk (eksempel-sanger; i appen hentes tittel og cover fra Spotify) ---------- */
+  const songs = [['Eksempel-sang', 'Artist (eksempel)', 214], ['Nattkjøring', 'Eksempelbandet', 187], ['Langs E18', 'Demo', 240]];
+  let song = 0, playing = false, pos = 0;
+  const PLAYD = 'M8 5v14l11-7z', PAUSED = 'M6 19h4V5H6v14zm8-14v14h4V5h-4z';
+  function showMusic() {
+    const r = radio.cur;
+    const t = r ? r.name : playing || pos ? songs[song][0] : 'Musikk';
+    const st = r ? (radio.audio && !radio.audio.paused ? 'Nettradio' : 'Nettradio – pause') : playing || pos ? songs[song][1] : 'Ingenting spiller';
+    $('mtitle').textContent = t; $('msub').textContent = st;
+    $('bigtitle').textContent = r || playing || pos ? t : 'Ingen musikk spiller'; $('bigsub').textContent = r || playing || pos ? st : '';
+    const on = r ? radio.audio && !radio.audio.paused : playing;
+    document.querySelectorAll('#play path, #bigplay path').forEach(p => p.setAttribute('d', on ? PAUSED : PLAYD));
+    const f = r ? 0 : pos / songs[song][2] * 100;
+    $('mprog').style.width = f + '%'; $('bigprog').style.width = f + '%';
+  }
+  function playPause() { if (radio.cur) { radio.audio.paused ? radio.audio.play() : radio.audio.pause(); } else playing = !playing; showMusic(); }
+  function nextSong() { if (radio.cur) { radioStep(1); return; } song = (song + 1) % songs.length; pos = 0; playing = true; showMusic(); }
+  $('play').onclick = playPause; $('bigplay').onclick = playPause; $('mnext').onclick = nextSong; $('bignext').onclick = nextSong;
+  setInterval(() => { if (playing && !radio.cur) { pos++; if (pos >= songs[song][2]) nextSong(); showMusic(); } }, 1000);
+
+  /* ---------- Nettradio (spiller ekte strømmer når siden åpnes som fil i nettleseren) ---------- */
+  const radio = { cur: null, audio: null };
+  const stationEls = [...document.querySelectorAll('.station')];
+  function radioPlay(el) {
+    if (radio.audio) radio.audio.pause();
+    radio.cur = { name: el.dataset.name, el }; radio.audio = new Audio(el.dataset.url);
+    radio.audio.play().then(() => { $('radiomsg').textContent = ''; showMusic(); renderStations(); })
+      .catch(() => { $('radiomsg').textContent = 'Lyden kan ikke spilles i denne visningen. Åpne fila i en vanlig nettleser for å høre radio.'; });
+    renderStations(); showMusic();
+  }
+  function radioStep(d) { const i = stationEls.indexOf(radio.cur.el); radioPlay(stationEls[(i + d + stationEls.length) % stationEls.length]); }
+  function renderStations() {
+    stationEls.forEach(e => { const on = radio.cur && radio.cur.el === e; e.classList.toggle('on', !!on);
+      e.querySelector('span').textContent = !on ? 'Nettradio' : radio.audio && !radio.audio.paused ? 'Spiller' : 'Kobler til …'; });
+  }
+  stationEls.forEach(e => e.onclick = () => radio.cur && radio.cur.el === e ? playPause() : radioPlay(e));
+  $('radiostop').onclick = () => { if (radio.audio) radio.audio.pause(); radio.cur = null; radio.audio = null; renderStations(); showMusic(); };
+
+  /* ---------- Påminnelse, tur, hurtigpanel, sveip ---------- */
+  (() => { const d = new Date(), m = d.getMonth(), day = d.getDate();
+    const txt = (m === 9 && day >= 15) || (m === 10 && day <= 15) ? 'Tid for vinterdekk' : (m === 2 && day >= 25) || m === 3 ? 'Tid for sommerdekk' : null;
+    if (txt) { $('notice').hidden = false; $('noticetext').textContent = txt; } })();
+  $('notice').onclick = () => go('car');
+  document.querySelectorAll('.cat').forEach(c => c.onclick = () => {
+    document.querySelectorAll('.cat').forEach(x => x.classList.toggle('on', x === c));
+    document.querySelectorAll('.cpane').forEach(p => p.hidden = p.dataset.pane !== c.dataset.cat);
+  });
+  document.querySelectorAll('#settings [data-go], #tuning [data-go], #car [data-go]').forEach(el => el.onclick = () => go(el.dataset.go));
+  document.querySelectorAll('.acc').forEach(b => b.onclick = () => { $('acchint').textContent = 'Klar for ' + b.dataset.run + '. Målingen starter når du kjører.'; });
+  $('tripreset').onclick = () => { trip.m = 0; trip.s = 0; trip.max = 0; toast('Turen er nullstilt'); };
+  document.querySelectorAll('.tgrow').forEach(r => r.onclick = () => r.querySelector('.tg').classList.toggle('on'));
+  const modes = ['Auto lys', 'Natt', 'Dag'];
+  $('qnight').onclick = () => { const i = (modes.indexOf($('qnight').textContent) + 1) % 3; $('qnight').textContent = modes[i]; screen.style.filter = i === 1 ? 'brightness(.7)' : ''; };
+  $('quick').onclick = e => { if (e.target === $('quick')) $('quick').classList.remove('show'); };
+  let sx = null, sy = null;
+  const dash = document.querySelector('.dash');
+  dash.addEventListener('pointerdown', e => { sx = e.clientX; sy = e.clientY; });
+  dash.addEventListener('pointerup', e => {
+    if (sx === null) return; const dx = e.clientX - sx, dy = e.clientY - sy; sx = null;
+    if (dy > 90 && dy > Math.abs(dx)) $('quick').classList.add('show');
+    else if (dx > 110 && Math.abs(dx) > Math.abs(dy)) go('music');
+    else if (dx < -110 && Math.abs(dx) > Math.abs(dy)) toast('Kart i fullskjerm (langt trykk på kartet gjør det samme)');
+  });
+
+  /* ---------- App-skuff ---------- */
+  const apps = ['Bluetooth', 'CarPlay (Zlink)', 'Chrome', 'Filbehandler', 'Google Maps', 'Innstillinger',
+    'Kalkulator', 'Musikk', 'Play Butikk', 'Spotify', 'Waze', 'YouTube', 'YouTube Music']
+    .filter(a => !/kalkulator|calculator/i.test(a));
+  const own = [['Radio', 'radio'], ['Bluetooth', 'bt'], ['Bil og tur', 'car'], ['Musikk', 'music'], ['Innstillinger', 'settings'], ['Tuning', 'tuning']];
+  $('grid').innerHTML = own.map(([a, v]) => `<div class="appbox tap" data-go2="${v}"><div class="appicon" style="background:var(--line)">${a[0]}</div><span>${a}</span></div>`).join('') + apps.map(a =>
+    `<div class="appbox tap" data-app="${a}"><div class="appicon">${a[0]}</div><span>${a}</span></div>`).join('');
+  $('grid').onclick = e => { const o = e.target.closest('[data-go2]'); if (o) { go(o.dataset.go2); return; } const b = e.target.closest('[data-app]'); if (b) toast('Åpner ' + b.dataset.app); };
+  const go = v => { $('quick').classList.remove('show'); screen.dataset.view = v; if (v === 'dash') drawMap(); };
+  $('openapps').onclick = () => go('apps');
+  $('closeapps').onclick = () => go('dash');
+  document.querySelectorAll('[data-go]').forEach(el => el.onclick = () => go(el.dataset.go));
+  addEventListener('keydown', e => { if (e.key === 'Escape') go('dash'); });
+
+  /* ---------- Knappene på stereoen (samme valg som Buttons.kt) ---------- */
+  const ACTIONS = { HOME: "T'OS forside", BACK: 'Tilbake', NAVI: 'Kart / navigasjon', MUSIC: 'Musikk (Spotify)',
+    BT: 'Bluetooth-side', RADIO: 'Radio-appen', RADIO_PAGE: 'Radio-side (nettradio + radio)', PHONE: 'Telefon-side (favoritter)',
+    CARPLAY: 'CarPlay', APPS: 'Apper', PLAY_PAUSE: 'Spill / pause', NEXT_TRACK: 'Neste sang', CAR: 'Bil og tur', QUICK: 'Hurtigpanel',
+    NONE: 'Ingenting (stereoen bestemmer)' };
+  const KEYS = { MENU: 'HOME', BACK: 'BACK', NAVI: 'NAVI', RADIO: 'RADIO_PAGE', MUSIC: 'MUSIC', BT: 'BT' };
+  const keyAction = k => store.get('key_' + k) || KEYS[k];
+  let learning = null;
+  function perform(a) {
+    ({ HOME: () => go('dash'), BT: () => go('bt'), APPS: () => go('apps'),
+       BACK: () => go(screen.dataset.view === 'dash' ? 'dash' : 'dash'),
+       NAVI: openNavi, MUSIC: () => toast('Åpner Spotify'),
+       RADIO: () => toast('Åpner radio-appen'), PHONE: () => toast('Åpner Bluetooth-telefon'),
+       CARPLAY: () => toast('Åpner CarPlay'), RADIO_PAGE: () => go('radio'), PLAY_PAUSE: playPause, NEXT_TRACK: nextSong,
+       CAR: () => go('car'), QUICK: () => { go('dash'); $('quick').classList.add('show'); },
+       NONE: () => toast('Stereoen gjør det den gjør selv') }[a] || (() => {}))();
+  }
+  function renderKeys() {
+    $('krows').innerHTML = Object.keys(KEYS).map(k => `
+      <div class="krow"><b>${k}</b>
+        <select id="sel_${k}" data-k="${k}" aria-label="Hva ${k} gjør">${Object.entries(ACTIONS).map(([v, l]) =>
+          `<option value="${v}"${keyAction(k) === v ? ' selected' : ''}>${l}</option>`).join('')}</select>
+        <span class="st">${learning === k ? 'Venter …' : store.get('learned_' + k) ? 'Lært' : 'Ikke lært'}</span>
+        <div class="lb tap" data-learn="${k}">${learning === k ? 'Avbryt' : store.get('learned_' + k) ? 'Lær på nytt' : 'Lær'}</div>
+      </div>`).join('');
+    $('krows').querySelectorAll('select').forEach(s => s.onchange = () => store.set('key_' + s.dataset.k, s.value));
+    $('krows').querySelectorAll('[data-learn]').forEach(b => b.onclick = () => {
+      learning = learning === b.dataset.learn ? null : b.dataset.learn;
+      $('khint').textContent = learning ? `Trykk ${learning}-knappen på stereoen nå …` : 'Trykk «Lær» og så knappen på stereoen. Velg deretter hva knappen skal gjøre.';
+      renderKeys();
+    });
+  }
+  renderKeys();
+  document.querySelectorAll('.hw').forEach(b => b.onclick = () => {
+    const k = b.dataset.key;
+    if (learning) {
+      store.set('learned_' + learning, '1');
+      $('khint').textContent = `${learning} er lært.`;
+      learning = null; renderKeys(); return;
+    }
+    perform(keyAction(k));
+  });
+  showMusic();
+  $('upd').onclick = () => {
+    $('updtext').textContent = 'Ser etter…';
+    setTimeout(() => { $('updtext').textContent = 'Siste versjon'; }, 900);
+  };
+
+  /* ---------- Testpanel ---------- */
+  $('hide').onclick = () => { document.body.classList.add('hide-tools'); fit(); };
+  $('showtools').onclick = () => { document.body.classList.remove('hide-tools'); fit(); };
+  $('fs').onclick = () => {
+    const el = document.documentElement;
+    (el.requestFullscreen || el.webkitRequestFullscreen || (() => Promise.reject())).call(el)
+      ?.catch?.(() => toast('Fullskjerm støttes ikke her'));
+  };
+  try { navigator.wakeLock?.request('screen').catch(() => {}); } catch (e) {}
+
+  setRes(); startGps();
+})();
+</script>
+</body>
+</html>

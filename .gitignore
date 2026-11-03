@@ -1,0 +1,11 @@
+.gradle/
+build/
+local.properties
+.idea/
+*.iml
+*.apk
+
+# Signeringsnøkkel og hemmeligheter skal aldri i repoet
+*.jks
+*.keystore
+*hemmeligheter*

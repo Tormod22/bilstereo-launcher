@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">T\'OS</string>
+    <string name="key_service_name">T\'OS knapper</string>
+    <string name="key_service_desc">Lar T\'OS styre knappene på stereoen (MENU, BACK, NAVI, RADIO, MUSIC og BT). Ser bare hvilken app som er åpen, ikke hva som står på skjermen.</string>
+</resources>
