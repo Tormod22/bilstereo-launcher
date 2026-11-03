@@ -178,7 +178,8 @@ fun BigNumber(value: String, label: String, modifier: Modifier = Modifier) {
     }
 }
 
-fun Context.toast(msg: String) = android.widget.Toast.makeText(this, msg, android.widget.Toast.LENGTH_SHORT).show()
+@Suppress("UnusedReceiverParameter")
+fun Context.toast(msg: String) = Notify.show(msg)
 
 /* ======================= Musikk (punkt 1, 2, 4, 6) ======================= */
 
