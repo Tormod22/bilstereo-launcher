@@ -351,6 +351,9 @@ class KeyService : AccessibilityService() {
     private val ignored = setOf("android", "com.android.systemui")
 
     companion object {
+        /** Appen som er framme nå (ifølge knappestyringen), null hvis tjenesten ikke kjører. */
+        val frontPackage: String? get() = instance?.front?.current
+
         /** Tjenesten når den kjører – brukes til å vise popup over andre apper (uten egen tillatelse). */
         var instance: KeyService? = null
             private set

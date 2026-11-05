@@ -573,7 +573,9 @@ object Startup {
                         delay(3500)
                         // Musikkappen kan ha startet avspillingen selv – da ville «spill» bare vært unødvendig
                         if (!NowPlaying.playing) Media.play(c)
-                        if (!Prefs.bool("resume_last_app")) Buttons.show(c, Screen.DASH)
+                        // Tilbake til forsiden bare hvis musikkappen fortsatt er framme (har sjåføren åpnet noe annet, få det være)
+                        val front = KeyService.frontPackage
+                        if (!Prefs.bool("resume_last_app") && (front == null || front == pkg)) Buttons.show(c, Screen.DASH)
                     }
                 }
             }

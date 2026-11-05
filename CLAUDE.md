@@ -17,8 +17,14 @@ Snakk norsk med brukeren. Han er ikke utvikler – forklar enkelt, ikke bruk fag
 - Løsningen han godkjente: **tre ting** – (1) bilkort med klokke, stort bilbilde og fart som stort tall, (2) ekte kart, (3) én rad nederst: musikk/telefon/apper. Ingen kalender, ingen vær.
 - Kalkulator skal være skjult i app-skuffen (`HiddenApps` i `Apps.kt`).
 
-## Nåværende tilstand (v5.2)
+## Nåværende tilstand (v5.3)
 - `MainActivity.kt`: Compose-UI med de tre tingene + app-skuff + oppdateringsknapp. Skjermvalg via `Nav.screen` (DASH/APPS/BT/KEYS).
+- v5.3: Knapper-siden: `KeyPing` (Buttons.kt) – grønn prikk (eneste farge, brukerens ønske) på raden T'OS kjente igjen
+  (tastekode eller app knappen åpnet) i 1,5 s + «MENU (kode 21)»/«Ukjent knapp (kode …)» øverst; vises også for knapper satt
+  til «Ingenting». Sjåførforbedringer: fart «–» uten/mistet GPS (`speedText`/`gpsCaption`), større tekst på forsiden, lysere
+  grå om natten, `Startup.shouldResumeMusic` (ikke over CarPlay/radio/samtale), tilbake til forsiden etter oppstartsmusikk bare
+  hvis musikkappen fortsatt er framme (`KeyService.frontPackage`), forklaring på alle brytere, ScreensSmokeTest2 + UiLogicTest4.
+  Tester totalt 127.
 - v5.2: brukeren: «Spotify virker nå» + «NAVI-knappen har fortsatt bare den originale funksjonen». Årsak: stereoen åpner
   Google Maps selv; var NAVI lært til Maps, stoppet KeyService på «pkg in targets» (ville gått i ring) → ingenting skjedde.
   `NaviKey.kt`: når kartapp kommer fram uten at T'OS åpnet den (lært NAVI eller ikke) → Waze/Maps-popup (maks 1/min);
