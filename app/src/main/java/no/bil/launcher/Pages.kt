@@ -911,8 +911,13 @@ fun ClockScreen(onClose: () -> Unit) {
 
 /* ======================= Hurtigpanel (sveip ned, punkt 40) ======================= */
 
+/**
+ * Hurtigpanelet (T'OS sin nedtrekksmeny): lys, volum, snarveier og varsler. [onClose] lukker panelet (tilbake dit du var),
+ * [onGo] lukker det og viser en T'OS-skjerm (null = noe annet åpnes, f.eks. kameraet eller et varsel).
+ * Brukes både inne i T'OS og som vindu over andre apper ([ShadePanel]).
+ */
 @Composable
-fun QuickPanel(onClose: () -> Unit) {
+fun QuickPanel(onClose: () -> Unit, onGo: (Screen?) -> Unit = { onClose(); if (it != null) Nav.screen = it }) {
     val context = LocalContext.current
     val am = remember { context.getSystemService(Context.AUDIO_SERVICE) as AudioManager }
     val maxVol = remember { am.getStreamMaxVolume(AudioManager.STREAM_MUSIC) }
@@ -954,16 +959,25 @@ fun QuickPanel(onClose: () -> Unit) {
             }
             // Rulles sidelengs når teksten er stor, så ingen knapp blir kuttet av
             Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                Pill("Wi-Fi", Icons.Default.Wifi) { onClose(); Prefs.set("settings_cat", "NET"); Nav.screen = Screen.SETTINGS }
-                Pill("Bluetooth", Icons.Default.Bluetooth) { onClose(); Nav.screen = Screen.BT }
+                Pill("Wi-Fi", Icons.Default.Wifi) { Prefs.set("settings_cat", "NET"); onGo(Screen.SETTINGS) }
+                Pill("Bluetooth", Icons.Default.Bluetooth) { onGo(Screen.BT) }
                 Pill(when (Theme.mode) { "DAY" -> "Dag"; "NIGHT" -> "Natt"; else -> "Auto lys" }, Icons.Default.DarkMode) {
                     Prefs.set("night_mode", when (Theme.mode) { "AUTO" -> "NIGHT"; "NIGHT" -> "DAY"; else -> "AUTO" })
                     Theme.update(Hub.gps?.lat, Hub.gps?.lon)
                 }
-                Pill("Kamera", Icons.Default.Videocam) { onClose(); AppRepository.launchTile(context, Tiles.byPrefix("Rygg")) }
-                Pill("Bil og tur", Icons.Default.DirectionsCar) { onClose(); Nav.screen = Screen.CAR }
-                Pill("Innstillinger", Icons.Default.Settings) { onClose(); Nav.screen = Screen.SETTINGS }
+                Pill("Kamera", Icons.Default.Videocam) { onGo(null); AppRepository.launchTile(context, Tiles.byPrefix("Rygg")) }
+                Pill("Bil og tur", Icons.Default.DirectionsCar) { onGo(Screen.CAR) }
+                Pill("Innstillinger", Icons.Default.Settings) { onGo(Screen.SETTINGS) }
             }
+            // Varslene (i stedet for stereoens nedtrekksmeny)
+            NotificationsSection(
+                TosNotifications.items, TosNotifications.connected,
+                onOpen = { onGo(null); TosNotifications.open(context, it) },
+                onDismiss = { TosNotifications.dismiss(it) },
+                onClearAll = { TosNotifications.clearAll() },
+                onAskAccess = { onGo(null); openNotificationAccess(context) },
+                modifier = Modifier.fillMaxWidth(),
+            )
         }
     }
 }

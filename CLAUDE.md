@@ -17,7 +17,39 @@ Snakk norsk med brukeren. Han er ikke utvikler – forklar enkelt, ikke bruk fag
 - Løsningen han godkjente: **tre ting** – (1) bilkort med klokke, stort bilbilde og fart som stort tall, (2) ekte kart, (3) én rad nederst: musikk/telefon/apper. Ingen kalender, ingen vær.
 - Kalkulator skal være skjult i app-skuffen (`HiddenApps` i `Apps.kt`).
 
-## Nåværende tilstand (v5.4)
+## Nåværende tilstand (v5.5)
+- v5.5: brukeren: «når jeg drar ned fra toppen kommer det originale UI-et (nedtrekksmeny/hurtiginnstillinger)» + «studer
+  hvordan originalsystemet virker i detalj så vi kan erstatte 100 %». (1) «Kartlegg stereoen» (`SystemSurvey.kt`,
+  Innstillinger → Sikkerhetskopi og hjelp, under «Send oppsettrapport»): Build-felt, utvalgte systemegenskaper
+  (SystemProperties via refleksjon, ro.fyt/syu/lsec/ts …) + hele `getprop`, skjermer, startskjerm/standardapper, lyd
+  (strømmer, enheter), inndataenheter med alle tastekoder de har (hasKeys), mediaøkter, varsler, Bluetooth,
+  Settings.System/Global/Secure, maskinvarefunksjoner, appbruk siste døgn, alle pakker (oversikt) og systemapper/bil-apper
+  i detalj (A/S/R/P + intent-filter-handlinger lest fra manifestet via openXmlResourceParser). Fil:
+  Android/data/no.bil.launcher/files/kartlegging-<dato>.txt (3 nyeste beholdes), sendes via FileProvider
+  (`external-files-path` i file_paths.xml) når >100 KB, ellers som tekst. «Start opptak (2 min)» (`SurveyRecorder`):
+  KeyService blir HELT passiv (knapper/volum/vinduer går til stereoen som original) og skriver ned alle
+  WINDOW_STATE/WINDOWS_CHANGED/NOTIFICATION-hendelser, vindusliste (type, lag, tittel, pakke, størrelse), alle KeyEvent
+  (kode, skankode, enhet) og volum-meldinger; `RecordGuide` = lite T'OS-kort nede til høyre med instruksjoner, nedtelling,
+  «Stopp nå». Etterpå: T'OS fram (Innstillinger), fila lages og «Send» åpnes. BE BRUKEREN KJØRE OPPTAKET OG SENDE FILA.
+  (2) Nedtrekksmenyen i T'OS-stil (`Shade.kt`, bryter «Nedtrekksmeny i T'OS-stil», `tos_shade`, på, Innstillinger →
+  Skjerm): i T'OS åpner sveip ned fra øverste kant (28 dp) hurtigpanelet med en gang (Root). Systemvidt: KeyService
+  (`noteShade`/`checkShade`) – hint fra SystemUI-hendelse (tittel «Notification shade»/«Varselpanel»/«Quick settings»,
+  klasse NotificationShade/QSPanel), vinduslista avgjør (SystemUI TYPE_SYSTEM-vindu med tittel, eller uten tittel som
+  dekker ≥60 % av skjermen; andre appers overlegg teller aldri), `ShadeEdge` (bare når den kommer fram), egen
+  RedirectLimiter, ikke under samtale/tillatelsesvindu/opptak → GLOBAL_ACTION_DISMISS_NOTIFICATION_SHADE (API 31+, ellers
+  BACK) → T'OS framme: Nav.quick; ellers `ShadePanel` = hurtigpanelet som Compose-vindu (TYPE_ACCESSIBILITY_OVERLAY,
+  egen LifecycleOwner/SavedStateRegistryOwner) over appen; BACK/annen app/T'OS fram lukker det. Krasjet overlegget sist
+  (merke «shade_guard» lagret med commit) → reserve: T'OS fram med panelet (`Buttons.show(quick = true)`, `Nav.EXTRA_QUICK`)
+  og appen du var i åpnes igjen når panelet lukkes. Handlingen QUICK (knapp) bruker også overlegget. Hurtigpanelet har nå
+  «Varsler» (`TosNotifications` fra MediaListener.activeNotifications, `NoteFilter`: ikke T'OS/musikk/samtale/navigasjon/
+  tomme/gruppeoversikt; trykk = contentIntent.send (+ markLaunched), X = cancelNotification, «Fjern alle» med «Trykk igjen»,
+  «Ingen varsler», uten varseltilgang en rad som åpner den). key_service.xml: + typeWindowsChanged|typeNotificationStateChanged,
+  flagRetrieveInteractiveWindows, canRetrieveWindowContent=true (beskrivelsen er oppdatert). «shade_seen» i oppsettrapporten.
+  Tester: ShadeSurveyTest (11) + ShadePanelSmokeTest (2) + SurveySmokeTest (1). Tester totalt 152.
+  BEGRENSNINGER (ærlig): SystemUI sin nedtrekksmeny kan ikke fjernes av en vanlig app – T'OS lukker den og viser sin egen,
+  så et kort glimt kan synes. Lukkingen (GLOBAL_ACTION_DISMISS_NOTIFICATION_SHADE) krever Android 12+. UVERIFISERT på
+  enheten: tittel/klasse/vindu stereoens meny faktisk sender (se «shade_seen» og opptaket), om innkommende varsel øverst
+  (heads-up) kan forveksles, og om Android krever at «T'OS knapper» slås av/på etter oppdateringen (ny evne: vinduer).
 - `MainActivity.kt`: Compose-UI med de tre tingene + app-skuff + oppdateringsknapp. Skjermvalg via `Nav.screen` (DASH/APPS/BT/KEYS).
 - v5.4: brukeren (med bilde): stereoens «nylige apper»-knapp (to firkanter øverst til høyre i stereoens statuslinje) viste
   Androids Overview (blå bakgrunn, «No recent items», søppelbøtte). `Recents.kt`: T'OS sin egen «Siste apper» (Screen.RECENTS):

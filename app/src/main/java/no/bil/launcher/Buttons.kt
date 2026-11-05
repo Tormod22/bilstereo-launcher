@@ -21,6 +21,8 @@ object Nav {
     var quick by mutableStateOf(false)   // hurtigpanelet (sveip ned)
     var pick by mutableStateOf<Pair<String, String>?>(null)   // «velg app»: tittel til innstillingsnøkkel
     const val EXTRA = "screen"
+    /** Åpne hurtigpanelet med en gang (T'OS ble hentet fram for nedtrekksmenyen). */
+    const val EXTRA_QUICK = "quick"
 }
 
 /* ======================= Knappene på stereoen ======================= */
@@ -166,7 +168,12 @@ object Buttons {
             Action.CAR -> show(c, Screen.CAR)
             Action.TUNING -> show(c, Screen.TUNING)
             Action.SETTINGS -> show(c, Screen.SETTINGS)
-            Action.QUICK -> { show(c, Screen.DASH); Nav.quick = true }
+            Action.QUICK -> {
+                // I T'OS: panelet over skjermen som vises. Over en annen app: T'OS-panelet som vindu over den.
+                val svc = KeyService.instance
+                if (TosOverlay.appShown) Nav.quick = true
+                else if (svc == null || !ShadePanel.show(svc)) show(c, Screen.DASH, quick = true)
+            }
             Action.SPLIT -> splitScreen(c)
             Action.VOICE -> voice(c)
             Action.CAMERA -> AppRepository.launchTile(c, Tiles.byPrefix("Rygg"))
@@ -205,10 +212,11 @@ object Buttons {
      * Vis en T'OS-skjerm. [instant]: uten overgangsanimasjon (brukes når T'OS skal dekke over stereoens egne
      * skjermbilder, så de ikke synes under animasjonen).
      */
-    fun show(c: Context, s: Screen, instant: Boolean = false) {
+    fun show(c: Context, s: Screen, instant: Boolean = false, quick: Boolean = false) {
         Nav.screen = s
         val i = Intent(c, MainActivity::class.java)
             .putExtra(Nav.EXTRA, s.name)
+            .putExtra(Nav.EXTRA_QUICK, quick)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
         if (instant) i.addFlags(Intent.FLAG_ACTIVITY_NO_ANIMATION or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
         runCatching { c.startActivity(i) }

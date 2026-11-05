@@ -455,9 +455,12 @@ class MediaListener : NotificationListenerService() {
             pick(msm?.getActiveSessions(cn).orEmpty())
         }
         runCatching { activeNotifications.forEach { onNotificationPosted(it) } }
+        // Varslene i T'OS sitt panel (nedtrekksmenyen i T'OS-stil)
+        TosNotifications.attach(this)
     }
 
     override fun onListenerDisconnected() {
+        TosNotifications.detach()
         runCatching { msm?.removeOnActiveSessionsChangedListener(sessionsListener) }
         callbacks.forEach { (c, cb) -> runCatching { c.unregisterCallback(cb) } }
         callbacks.clear()
@@ -522,6 +525,7 @@ class MediaListener : NotificationListenerService() {
     }
 
     override fun onNotificationPosted(sbn: StatusBarNotification) {
+        TosNotifications.changed()
         val n = sbn.notification ?: return
         val ex = n.extras
         val title = ex.getCharSequence(Notification.EXTRA_TITLE)?.toString()
@@ -543,6 +547,7 @@ class MediaListener : NotificationListenerService() {
     }
 
     override fun onNotificationRemoved(sbn: StatusBarNotification) {
+        TosNotifications.changed()
         runCatching { BtLink.onNotificationRemoved(sbn.key) }
         if (sbn.packageName in navApps && sbn.isOngoing) { NavInfo.title = null; NavInfo.text = null }
         if (sbn.key == Call.key || (Call.key == null && sbn.notification?.category == Notification.CATEGORY_CALL)) Call.clear()

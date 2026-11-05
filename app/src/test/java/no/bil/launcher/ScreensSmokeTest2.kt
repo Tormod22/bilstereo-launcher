@@ -113,3 +113,68 @@ class RecentsSmokeTest {
         settle()
     }
 }
+
+/** T'OS sitt panel (nedtrekksmenyen i T'OS-stil) med varsler: mange og lange, tomme, uten varseltilgang. */
+@RunWith(AndroidJUnit4::class)
+@Config(sdk = [33], qualifiers = "w1024dp-h600dp-land-mdpi")
+class ShadePanelSmokeTest {
+    @get:Rule val rule = androidx.compose.ui.test.junit4.createComposeRule()
+
+    private fun settle() {
+        rule.mainClock.advanceTimeBy(500); rule.waitForIdle()
+        rule.mainClock.advanceTimeBy(500); rule.waitForIdle()
+    }
+
+    private val long = "Veldig lang varseltekst som aldri tar slutt ".repeat(6)
+
+    private fun notes(n: Int) = (1..n).map {
+        val meta = NoteMeta("k$it", "com.test.app$it", if (it == 1) long else "Melding $it", long, System.currentTimeMillis() - it * 600_000L,
+            ongoing = it == n, clearable = it != n, category = null, media = false, groupSummary = false)
+        NoteUi(meta, if (it == 2) long else "App $it", null, autoCancel = true)
+    }
+
+    @After fun reset() { rule.runOnUiThread { TosNotifications.items = emptyList(); TosNotifications.connected = false } }
+
+    @Test fun varslerAlleTilstander() {
+        rule.mainClock.autoAdvance = false
+        var state by androidx.compose.runtime.mutableStateOf(notes(7) to true)
+        var cleared = false
+        rule.setContent {
+            NotificationsSection(state.first, state.second, onOpen = {}, onDismiss = {}, onClearAll = { cleared = true }, onAskAccess = {})
+        }
+        settle()
+        // «Fjern alle» spør først
+        rule.onNodeWithText("Fjern alle").performClick()
+        settle()
+        rule.onNodeWithText("Trykk igjen for å fjerne alle").performClick()
+        settle()
+        check(cleared) { "«Fjern alle» skal fjerne etter andre trykk" }
+        rule.runOnUiThread { state = emptyList<NoteUi>() to true }
+        settle()
+        rule.onNodeWithText("Ingen varsler").assertExists()
+        rule.runOnUiThread { state = emptyList<NoteUi>() to false }
+        settle()
+        rule.onNodeWithText("Slå på varseltilgang for å se varslene her").assertExists()
+    }
+
+    @Test fun helePanelet() {
+        rule.mainClock.autoAdvance = false
+        rule.runOnUiThread { TosNotifications.items = notes(4); TosNotifications.connected = true }
+        rule.setContent { QuickPanel(onClose = {}, onGo = {}) }
+        settle()
+        rule.onNodeWithText("Varsler").assertExists()
+    }
+}
+
+/** «Kartlegg stereoen» lages uten å krasje (i testmiljøet mangler det meste – da står det «fikk ikke lest»). */
+@RunWith(AndroidJUnit4::class)
+@Config(sdk = [33])
+class SurveySmokeTest {
+    @Test fun kartleggingenLages() {
+        val c = androidx.test.core.app.ApplicationProvider.getApplicationContext<android.content.Context>()
+        val text = SystemSurvey.build(c, listOf("+   1,0 s  KNAPP NED  KEYCODE_MENU (82)"))
+        for (h in listOf("Enhet", "Skjermer", "Lyd", "Knapper og andre inndataenheter", "Pakker i detalj", "Opptak (1 linjer)"))
+            check(text.contains("===== $h")) { "Mangler delen «$h»" }
+        check(text.contains("KEYCODE_MENU")) { "Opptaket skal være med" }
+    }
+}
