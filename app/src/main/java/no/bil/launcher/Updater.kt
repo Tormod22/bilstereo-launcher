@@ -200,7 +200,7 @@ object Updater {
         when {
             current(context) >= target -> {
                 Prefs.set("upd_pending", null)
-                File(context.cacheDir, "apk").deleteRecursively()     // trengs ikke lenger
+                Hub.scope.launch(Dispatchers.IO) { File(context.cacheDir, "apk").deleteRecursively() }     // trengs ikke lenger (i bakgrunnen)
                 val name = runCatching { context.packageManager.getPackageInfo(context.packageName, 0).versionName }.getOrNull() ?: ""
                 Hub.scope.launch { delay(delayMs); show("Oppdatert til T'OS $name", long = true) }
             }

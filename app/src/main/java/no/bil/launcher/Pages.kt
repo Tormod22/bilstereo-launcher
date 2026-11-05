@@ -871,12 +871,21 @@ fun CarScreen(onClose: () -> Unit) {
 
 @Composable
 fun ClockScreen(onClose: () -> Unit) {
-    var now by remember { mutableStateOf(Date()) }
-    LaunchedEffect(Unit) { while (true) { now = Date(); delay(1000) } }
+    val timeFmt = remember { SimpleDateFormat("HH:mm", Locale.getDefault()) }
+    val dateFmt = remember { SimpleDateFormat("EEEE d. MMMM", Locale("nb", "NO")) }
+    var time by remember { mutableStateOf(timeFmt.format(Date())) }
+    var date by remember { mutableStateOf(dateFmt.format(Date()).replaceFirstChar { it.uppercase() }) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            val now = Date()
+            time = timeFmt.format(now); date = dateFmt.format(now).replaceFirstChar { it.uppercase() }
+            delay(1000L - System.currentTimeMillis() % 1000L)
+        }
+    }
     Box(Modifier.fillMaxSize().background(Bg).clickable(onClickLabel = "Tilbake til forsiden") { onClose() }, contentAlignment = Alignment.Center) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Text(SimpleDateFormat("HH:mm", Locale.getDefault()).format(now), color = TextPrimary.copy(alpha = 0.85f), fontSize = 150.sp, fontWeight = FontWeight.Light)
-            Text(SimpleDateFormat("EEEE d. MMMM", Locale("nb", "NO")).format(now).replaceFirstChar { it.uppercase() }, color = TextMuted, fontSize = 22.sp)
+            Text(time, color = TextPrimary.copy(alpha = 0.85f), fontSize = 150.sp, fontWeight = FontWeight.Light)
+            Text(date, color = TextMuted, fontSize = 22.sp)
             musicTitle?.let { Text(it, color = TextMuted, fontSize = 16.sp, modifier = Modifier.padding(top = 18.dp).widthIn(max = 700.dp), maxLines = 1, overflow = TextOverflow.Ellipsis) }
         }
     }
