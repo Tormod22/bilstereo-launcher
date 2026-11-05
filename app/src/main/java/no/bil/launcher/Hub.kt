@@ -60,8 +60,9 @@ object Hub {
         watchNetwork()
         CarBattery.start(app)
         HwRadio.start(app)
-        Eq.restore()
         Updater.announceIfUpdated(app)          // «Oppdatert til …» etter en oppdatering
+        // Equalizeren (lydtjenesten) settes etter at første skjermbilde er tegnet – den kan ta litt tid å koble til
+        scope.launch { delay(1500); Eq.restore() }
         scope.launch(Dispatchers.IO) { LocalBackup.autoSave(app) }   // daglig kopi av innstillingene i T'OS-mappa
         scope.launch { while (true) { Theme.update(gps?.lat ?: Prefs.float("park_lat").toDouble().takeIf { it != 0.0 }, gps?.lon ?: Prefs.float("park_lon").toDouble().takeIf { it != 0.0 }); NightBrightness.apply(app); delay(60_000) } }
         scope.launch { while (true) { readSystem(); delay(10_000) } }

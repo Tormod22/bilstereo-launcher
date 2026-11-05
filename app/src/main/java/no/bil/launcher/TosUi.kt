@@ -180,9 +180,10 @@ fun StatusIcons(full: Boolean, modifier: Modifier = Modifier) {
 /** Slank statuslinje øverst på sidene (ikke forsiden – der viser bilkortet klokka). Trykk = hurtigpanelet. */
 @Composable
 fun TosStatusBar(modifier: Modifier = Modifier) {
-    var now by remember { mutableStateOf(Date()) }
-    LaunchedEffect(Unit) { while (true) { now = Date(); delay(1000L - System.currentTimeMillis() % 1000L) } }
     val fmt = remember { SimpleDateFormat("HH:mm", Locale.getDefault()) }
+    // Teksten (ikke tidspunktet) er tilstanden: linja tegnes bare på nytt når minuttet skifter
+    var time by remember { mutableStateOf(fmt.format(Date())) }
+    LaunchedEffect(Unit) { while (true) { time = fmt.format(Date()); delay(1000L - System.currentTimeMillis() % 1000L) } }
     Row(
         modifier.clip(RoundedCornerShape(14.dp)).clickable(onClickLabel = "Åpne hurtigpanelet") { Nav.quick = true }
             .padding(horizontal = 12.dp),
@@ -192,6 +193,6 @@ fun TosStatusBar(modifier: Modifier = Modifier) {
         Spacer(Modifier.weight(1f))
         StatusIcons(full = true)
         Spacer(Modifier.width(14.dp))
-        Text(fmt.format(now), color = TextPrimary, fontSize = 15.sp, fontWeight = FontWeight.Medium)
+        Text(time, color = TextPrimary, fontSize = 15.sp, fontWeight = FontWeight.Medium)
     }
 }

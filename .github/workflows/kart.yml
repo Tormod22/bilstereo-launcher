@@ -24,7 +24,7 @@ permissions:
 
 jobs:
   kart:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     env:
       NAVN: ${{ inputs.navn || 'rogaland' }}
       BBOX: ${{ inputs.bbox || '4.5,58.2,7.3,59.9' }}
@@ -51,7 +51,7 @@ jobs:
           cat "$NAVN.json"
 
       - name: Legg kartet på release «kart»
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: kart
           name: Kart uten nett

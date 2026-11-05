@@ -16,7 +16,7 @@ concurrency:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v5
 
@@ -30,7 +30,7 @@ jobs:
       - name: Godta Android-lisenser
         run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
 
-      - uses: gradle/actions/setup-gradle@v4
+      - uses: gradle/actions/setup-gradle@v5
         with:
           gradle-version: "8.9"
 
@@ -98,7 +98,7 @@ jobs:
           cat version.json
 
       - name: Last opp som artefakt
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: bilstereo-apk
           path: bilstereo.apk
@@ -110,7 +110,7 @@ jobs:
 
       # Først APK-en, så version.json til slutt – da sier stereoen aldri «ny versjon» før APK-en ligger klar
       - name: Publiser APK på «latest»
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: latest
           name: Siste bygg
@@ -121,7 +121,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Publiser version.json på «latest»
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: latest
           files: version.json
