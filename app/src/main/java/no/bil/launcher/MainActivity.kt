@@ -266,7 +266,8 @@ fun Root() {
     }
 
     // Bluetooth-ikonet i statuslinja (leses i bakgrunnen, bare mens T'OS vises)
-    LaunchedEffect(Unit) {
+    // (starter på nytt med én gang ved en Bluetooth-hendelse: tilkoblet/frakoblet, varsel fra stereoens BT-app)
+    LaunchedEffect(BtLink.version) {
         while (true) {
             if (Notify.appVisible) TosStatus.bt = withContext(Dispatchers.IO) { btState(btStatus(context)) }
             delay(5000)

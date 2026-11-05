@@ -211,6 +211,15 @@ class KeyService : AccessibilityService() {
     }
 
     /** Stereoens «skall»: original startskjerm, app-liste/hovedmeny i startskjerm-appen, «car home»-apper. */
+    /** Kartappene T'OS kjenner: valgt kartapp, Google Maps, Waze og Kart-flisa sine kandidater. */
+    private fun navApps(): Set<String> =
+        (Buttons.targets(this, Action.NAVI) + listOf(NaviKey.MAPS, NaviKey.WAZE)).filter { it.isNotBlank() && it != packageName }.toSet()
+
+    private val labels = HashMap<String, String>()
+    private fun label(pkg: String): String = labels.getOrPut(pkg) {
+        runCatching { packageManager.getApplicationLabel(packageManager.getApplicationInfo(pkg, 0)).toString() }.getOrDefault("")
+    }
+
     private fun isShell(pkg: String, cls: String?): Boolean {
         // CarPlay-appen kan også være registrert som startskjerm – den skal aldri byttes ut
         if (isProjectionApp(pkg)) return false
@@ -265,6 +274,21 @@ class KeyService : AccessibilityService() {
         if (HwRadio.isEngine(pkg) && (key == null || Buttons.action(this, key) != Action.NONE)) {
             if (state.newlyFront && !Buttons.inCall(this) && redirects.allow(now)) bringBack(Screen.RADIO)
             return
+        }
+
+        // NAVI-knappen: stereoen åpner kartappen selv (Google Maps/Waze) eller sin egen navigasjonsapp.
+        // Uten dette ble ingenting gjort (kartappen er allerede «målet»), så Waze-popupen kom aldri.
+        val navAction = key?.let { Buttons.action(this, it) }
+        if (state.newlyFront && (key == null || navAction == Action.NAVI) && Prefs.bool("navi_detect", true) &&
+            !Buttons.inCall(this) && now - lastRedirect >= 1500) {
+            when (NaviKey.classify(pkg, navApps(), isSystemPkg(pkg), label(pkg), learned = key != null)) {
+                NaviKey.Kind.REAL_NAV -> { lastRedirect = now; NaviKey.offerOther(this, pkg); return }
+                NaviKey.Kind.STOCK_NAV -> {
+                    // Stereoens egen navigasjonsapp: åpne den valgte kartappen i stedet (med popupen for den andre)
+                    lastRedirect = now; Buttons.perform(this, Action.NAVI); return
+                }
+                NaviKey.Kind.OTHER -> {}
+            }
         }
 
         if (key == null) {

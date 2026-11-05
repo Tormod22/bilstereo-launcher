@@ -1,11 +1,7 @@
 package no.bil.launcher
 
-import android.Manifest
-import android.annotation.SuppressLint
-import android.bluetooth.BluetoothManager
 import android.content.Context
 import android.content.Intent
-import android.os.Build
 import android.provider.Settings
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -52,34 +48,31 @@ private fun PageHeader(title: String, onClose: () -> Unit, extra: @Composable Ro
 
 /* ======================= Bluetooth-side ======================= */
 
-data class BtDevice(val name: String, val connected: Boolean, val battery: Int = -1, val address: String = "")
-data class BtStatus(val available: Boolean, val on: Boolean, val devices: List<BtDevice>)
+/** [via]: hvordan T'OS vet at enheten er tilkoblet (Android, en profil, stereoens BT-app …) – står i oppsettrapporten. */
+data class BtDevice(val name: String, val connected: Boolean, val battery: Int = -1, val address: String = "", val via: String = "")
 
 /**
- * Leser Bluetooth via Android. NB: på mange bilstereoer er telefon-Bluetooth en egen brikke som
- * stereoens egen BT-app styrer – da ser Android ingenting, og vi viser det ærlig.
+ * [vendorPkg]: stereoens egen Bluetooth-app (finnes den, kan telefonen være tilkoblet uten at Android ser det).
+ * [noPermission]: T'OS har ikke fått lov til Bluetooth.
  */
-@SuppressLint("MissingPermission")
-fun btStatus(context: Context): BtStatus {
-    val adapter = (context.getSystemService(Context.BLUETOOTH_SERVICE) as? BluetoothManager)?.adapter
-        ?: return BtStatus(false, false, emptyList())
-    if (Build.VERSION.SDK_INT >= 31 && !context.hasPermission(Manifest.permission.BLUETOOTH_CONNECT))
-        return BtStatus(true, adapter.isEnabled, emptyList())
-    return runCatching {
-        val devices = adapter.bondedDevices.orEmpty().map { d ->
-            val connected = runCatching { d.javaClass.getMethod("isConnected").invoke(d) as Boolean }.getOrDefault(false)
-            // Batteri fra telefonen (skjult Android-funksjon, virker bare der Android selv styrer Bluetooth)
-            val battery = runCatching { d.javaClass.getMethod("getBatteryLevel").invoke(d) as Int }.getOrDefault(-1)
-            BtDevice(d.name ?: d.address, connected, battery, d.address)
-        }.sortedByDescending { it.connected }
-        BtStatus(true, adapter.isEnabled, devices)
-    }.getOrDefault(BtStatus(true, adapter.isEnabled, emptyList()))
+data class BtStatus(
+    val available: Boolean, val on: Boolean, val devices: List<BtDevice>,
+    val vendorPkg: String? = null, val noPermission: Boolean = false,
+) {
+    /** Telefonen som er tilkoblet (ikke OBD-brikka), eller null. */
+    val phone: BtDevice? get() = devices.firstOrNull { it.connected && !looksLikeObdName(it.name) }
 }
+
+/**
+ * Leser Bluetooth i flere lag (se [BtLink]). NB: på mange bilstereoer er telefon-Bluetooth en egen brikke som
+ * stereoens egen BT-app styrer – da ser Android ingenting, og T'OS sier ikke «ikke tilkoblet».
+ */
+fun btStatus(context: Context): BtStatus = BtLink.status(context)
 
 @Composable
 fun BluetoothScreen(onClose: () -> Unit) {
     val context = LocalContext.current
-    val status by produceState(initialValue = remember { btStatus(context) }) {
+    val status by produceState(initialValue = BtLink.current, BtLink.version) {
         // Bluetooth-oppslaget går via systemet (og prøver skjulte funksjoner) – ikke på hovedtråden hvert 3. sekund
         while (true) { value = withContext(Dispatchers.IO) { btStatus(context) }; delay(3000) }
     }
@@ -93,25 +86,9 @@ fun BluetoothScreen(onClose: () -> Unit) {
                 Modifier.weight(0.45f).fillMaxHeight().clip(RoundedCornerShape(22.dp)).background(Card).padding(20.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                val connected = status.devices.firstOrNull { it.connected }
-                Text(
-                    when {
-                        !status.available -> "Bluetooth styres av stereoen"
-                        !status.on -> "Bluetooth er av"
-                        connected != null -> connected.name
-                        else -> "Ingen telefon tilkoblet"
-                    },
-                    color = TextPrimary, fontSize = 22.sp, fontWeight = FontWeight.Medium,
-                )
-                Text(
-                    when {
-                        !status.available || !status.on -> "Slå på og par telefonen under Innstillinger"
-                        connected == null -> "Koble til telefonen under Innstillinger"
-                        connected.battery in 0..100 -> "Tilkoblet · batteri ${connected.battery} %"
-                        else -> "Tilkoblet"
-                    },
-                    color = TextMuted, fontSize = 14.sp,
-                )
+                val (head, sub) = btTexts(status)
+                Text(head, color = TextPrimary, fontSize = 22.sp, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(sub, color = TextMuted, fontSize = 14.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 if (status.devices.isNotEmpty()) {
                     Spacer(Modifier.height(4.dp))
                     Text("Kjente enheter", color = TextMuted, fontSize = 13.sp)
@@ -142,7 +119,10 @@ fun BluetoothScreen(onClose: () -> Unit) {
             Column(Modifier.weight(0.55f).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(14.dp)) {
                 Row(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
                     BigTile(Icons.Default.Phone, "Telefon", Modifier.weight(1f)) { Nav.screen = Screen.PHONE }
-                    BigTile(Icons.Default.Headphones, "Bluetooth-musikk", Modifier.weight(1f)) { Nav.screen = Screen.MUSIC }
+                    // Lyd fra telefonen: Bluetooth-kilden startes (stereoens BT-musikk om nødvendig), så musikksiden
+                    BigTile(Icons.Default.Headphones, "Bluetooth-lyd fra telefonen", Modifier.weight(1f)) {
+                        Nav.screen = Screen.MUSIC; Media.selectBluetooth(context)
+                    }
                 }
                 Row(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
                     BigTile(Icons.Default.PhoneIphone, "CarPlay", Modifier.weight(1f)) { AppRepository.launchTile(context, Tiles.byPrefix("Car")) }

@@ -253,7 +253,10 @@ fun MusicScreen(onClose: () -> Unit) {
     }) {
         // Lydkilder: bytt mellom musikkapp, Bluetooth, FM-radio og nettradio uten å åpne appene
         val sources = Media.sources(context)
-        if (sources.size > 1) {
+        val hasBt = sources.any { it.kind == SourceKind.BLUETOOTH }
+        // Stereoens egen BT-app uten mediaøkt: «Bluetooth-lyd fra telefonen» likevel (BT-motoren bytter lydkanal)
+        val btExtra = !hasBt && (BtLink.vendorPackagesCached().isNotEmpty() || BtLink.current.phone != null)
+        if (sources.size > 1 || btExtra) {
             Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(bottom = 12.dp),
                 horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 val anySelected = sources.any { it.selected }
@@ -265,10 +268,23 @@ fun MusicScreen(onClose: () -> Unit) {
                         SourceKind.RADIO -> Icons.Default.Radio
                         SourceKind.NET_RADIO -> Icons.Default.Language
                     }
-                    Pill(src.label, icon, strong = on) { if (!src.selected) Media.selectSource(context, src.pkg) }
+                    // Bluetooth kan trykkes igjen (ingen lyd fra telefonen → prøv å få stereoen til å spille den på nytt)
+                    Pill(src.label, icon, strong = on) {
+                        if (!src.selected || src.kind == SourceKind.BLUETOOTH) Media.selectSource(context, src.pkg)
+                    }
                 }
+                if (btExtra) Pill("Bluetooth-lyd fra telefonen", Icons.Default.Bluetooth) { Media.selectBluetooth(context) }
             }
         }
+        // Hvorfor det kan være stille: musikken spiller på en annen enhet, eller lyden skal komme fra telefonen
+        val remotePkg = NowPlaying.pkg.takeIf { NowPlaying.remote && NowPlaying.playing }
+        val hint = when {
+            remotePkg != null -> remotePlaybackMessage(remotePkg, sources.firstOrNull { it.pkg == remotePkg }?.label ?: "Appen")
+            sources.any { it.selected && it.kind == SourceKind.BLUETOOTH } -> PHONE_BT_HINT
+            else -> null
+        }
+        if (hint != null) Text(hint, color = if (remotePkg != null) TextPrimary else TextMuted, fontSize = 14.sp, maxLines = 2,
+            overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(bottom = 10.dp))
       // Coveret krymper når skjermen er lav (stor tekst / 1024×600), så knappene under ikke kuttes
       BoxWithConstraints(Modifier.fillMaxSize()) {
         val coverSize = minOf(300.dp, maxHeight)
@@ -559,6 +575,8 @@ fun PhoneScreen(onClose: () -> Unit) {
         }
         Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
             Column(Modifier.width(176.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                // Er telefonen koblet til? (sier aldri «ikke tilkoblet» når stereoens egen BT-app styrer)
+                Text(btShortText(BtLink.current), color = TextMuted, fontSize = 13.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 PhoneTab.entries.forEach { t ->
                     val sel = t == tab
                     Row(Modifier.fillMaxWidth().height(64.dp).clip(Small).background(if (sel) TextPrimary else Card).clickable { tab = t }.padding(horizontal = 16.dp),

@@ -318,6 +318,9 @@ object SetupReport {
         }.getOrDefault("(krever varseltilgang)"))
         appendLine("Lydmodus: ${runCatching { (c.getSystemService(Context.AUDIO_SERVICE) as android.media.AudioManager).mode }.getOrNull()} (0 = vanlig, 2/3 = samtale)")
         appendLine()
+        appendLine("--- Bluetooth og lyd ---")
+        append(runCatching { BtLink.report(c) }.getOrElse { "Fikk ikke lest Bluetooth: ${it.javaClass.simpleName}\n" })
+        appendLine()
         appendLine("--- GPS ---")
         val lm = c.getSystemService(Context.LOCATION_SERVICE) as? android.location.LocationManager
         appendLine("GPS på: ${runCatching { lm?.isProviderEnabled(android.location.LocationManager.GPS_PROVIDER) }.getOrNull()}, " +
@@ -332,8 +335,8 @@ object SetupReport {
         appendLine()
         appendLine("--- Valg ---")
         // Standardverdi true for de som er på fra start
-        val onByDefault = setOf("keep_home", "tos_volume", "radio_engine", "hide_stock_radio")
-        listOf("keep_home", "carplay_auto", "tos_volume", "radio_engine", "hide_stock_radio", "show_system_apps")
+        val onByDefault = setOf("keep_home", "tos_volume", "radio_engine", "hide_stock_radio", "bt_engine")
+        listOf("keep_home", "carplay_auto", "tos_volume", "radio_engine", "hide_stock_radio", "bt_engine", "show_system_apps")
             .forEach { appendLine("$it: ${Prefs.bool(it, it in onByDefault)}") }
         listOf("music_pkg", "carplay_pkg", "radio_pkg", "phone_pkg", "camera_pkg", "btmusic_pkg", "nav_app", "last_app", "last_player")
             .forEach { appendLine("$it: ${Prefs.str(it)}") }
