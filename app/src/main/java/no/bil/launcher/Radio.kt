@@ -6,6 +6,9 @@ import android.media.MediaPlayer
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /** Nettradio i T'OS selv (trenger internett, f.eks. fra iPhonen). Kanaler sjekket 2. nov. 2026. */
 object NetRadio {
@@ -180,16 +183,20 @@ object HwRadio {
     fun start(c: Context) {
         val a = c.applicationContext
         app = a
-        if (observing || !hasMcu(a)) return
+        if (observing) return
         observing = true
-        mcu = readMcu(a)
-        // App-konteksten (ikke skjermen): observatøren lever så lenge T'OS kjører
-        runCatching {
-            a.contentResolver.registerContentObserver(
-                android.provider.Settings.Global.getUriFor("SYS_MEDIA_INFO_JSON"), false,
-                object : android.database.ContentObserver(android.os.Handler(android.os.Looper.getMainLooper())) {
-                    override fun onChange(selfChange: Boolean) { mcu = readMcu(a) }
-                })
+        // Pakkesjekken gjøres i bakgrunnen, så den ikke forsinker første skjermbilde
+        Hub.scope.launch {
+            if (!withContext(Dispatchers.IO) { hasMcu(a) }) { observing = false; return@launch }
+            mcu = withContext(Dispatchers.IO) { readMcu(a) }
+            // App-konteksten (ikke skjermen): observatøren lever så lenge T'OS kjører
+            runCatching {
+                a.contentResolver.registerContentObserver(
+                    android.provider.Settings.Global.getUriFor("SYS_MEDIA_INFO_JSON"), false,
+                    object : android.database.ContentObserver(android.os.Handler(android.os.Looper.getMainLooper())) {
+                        override fun onChange(selfChange: Boolean) { mcu = readMcu(a) }
+                    })
+            }
         }
     }
 

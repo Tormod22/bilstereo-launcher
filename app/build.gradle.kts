@@ -15,8 +15,8 @@ android {
         // På GitHub: byggnummeret (1000 + nr.) så hver nye versjon alltid får høyere tall enn den forrige.
         // Lokalt: tallet under. (versionName = «x.y» lokalt, «x.y.nr» på GitHub.)
         val ciRun = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull()
-        versionCode = if (ciRun != null) 1000 + ciRun else 21
-        versionName = if (ciRun != null) "4.9.$ciRun" else "4.9"
+        versionCode = if (ciRun != null) 1000 + ciRun else 22
+        versionName = if (ciRun != null) "5.0.$ciRun" else "5.0"
         // Bilstereoen har ARM-prosessor; dropper x86 for å holde appen mindre (kartmotoren har egne biblioteker)
         ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a") }
     }
@@ -51,7 +51,12 @@ android {
     kotlinOptions { jvmTarget = "17" }
     buildFeatures { compose = true }
     // Testene bruker Android-klasser bare indirekte; tomme svar i stedet for krasj
-    testOptions { unitTests.isReturnDefaultValues = true }
+    testOptions {
+        unitTests.isReturnDefaultValues = true
+        // Robolectric (ScreensSmokeTest): ekte Android-ressurser og manifest i JVM-testene
+        unitTests.isIncludeAndroidResources = true
+        unitTests.all { it.maxHeapSize = "2g" }
+    }
 }
 
 dependencies {
@@ -67,4 +72,11 @@ dependencies {
     implementation("com.google.zxing:core:3.5.3")   // QR-kode for parkeringsplassen
     implementation("org.maplibre.gl:android-sdk:11.8.0")   // kart uten nett (PMTiles fra OpenStreetMap)
     testImplementation("junit:junit:4.13.2")
+    // «Alle skjermer åpner uten krasj»: Compose-UI kjøres i Robolectric (ingen stereo/emulator nødvendig)
+    testImplementation("org.robolectric:robolectric:4.13")
+    testImplementation(bom)
+    testImplementation("androidx.compose.ui:ui-test-junit4")
+    testImplementation("androidx.test:core:1.6.1")
+    testImplementation("androidx.test.ext:junit:1.2.1")
+    debugImplementation("androidx.compose.ui:ui-test-manifest")
 }

@@ -17,7 +17,7 @@ Snakk norsk med brukeren. Han er ikke utvikler – forklar enkelt, ikke bruk fag
 - Løsningen han godkjente: **tre ting** – (1) bilkort med klokke, stort bilbilde og fart som stort tall, (2) ekte kart, (3) én rad nederst: musikk/telefon/apper. Ingen kalender, ingen vær.
 - Kalkulator skal være skjult i app-skuffen (`HiddenApps` i `Apps.kt`).
 
-## Nåværende tilstand (v4.9)
+## Nåværende tilstand (v5.0)
 - `MainActivity.kt`: Compose-UI med de tre tingene + app-skuff + oppdateringsknapp. Skjermvalg via `Nav.screen` (DASH/APPS/BT/KEYS).
 - v3.0 «stor oppdatering» – alle 50 punktene i `docs/IDEER.md` (se Begrensninger der). Nye filer:
   `Prefs.kt` (TosApp, innstillinger m/ Compose-reaktivitet via Prefs.version, sikkerhetskopi JSON, CrashLog),
@@ -35,6 +35,10 @@ Snakk norsk med brukeren. Han er ikke utvikler – forklar enkelt, ikke bruk fag
   CI-status 3. nov: bygg #2 stoppet på «Sett opp fast signatur» = secrets mangler (brukeren må legge dem inn).
   Steget tåler nå mellomrom/linjeskift og sjekker nøkkel+passord med keytool (testet lokalt med ekte verdier).
   GitHub Pages er ikke slått på (testsiden gir 404) – valgfritt.
+  v5.0: røyktester med Robolectric 4.13 (`ScreensSmokeTest.kt`: alle 14 Screen i dag/natt, alle innstillingskategorier, hurtigpanel,
+  app-velger, tastatur, volum, Notify, samtalebanner, CallScreen) – fant og rettet null-krasj i Wi-Fi-lista. MapLibre kan ikke testes i JVM.
+  Ytelse: `CarArt` (bilbilde dekodes én gang på IO), klokke rekomponerer per minutt, `SpeedRow` egen, EQ/HwRadio/opprydding etter første bilde.
+  CI: setup-gradle@v5, action-gh-release@v3, upload-artifact@v6, Pages-actions oppdatert, runs-on ubuntu-24.04. Tester totalt 104.
   v4.9: bilbildet er lagt inn: `res/drawable-nodpi/car_png.png` (brukerens Canva-bilde av svart Avensis forfra, beskåret,
   svart bakgrunn gjort gjennomsiktig med myk kant, 1043x755). Releasen 4.8.4 (versionCode 1004) ble publisert 5. nov – secrets virker.
   v4.8: «T'OS er hele brukerflaten» – stereoens originale UI skal ikke dukke opp (4 parallelle grener, flettet og koblet sammen).

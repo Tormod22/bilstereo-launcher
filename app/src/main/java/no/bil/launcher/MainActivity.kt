@@ -62,7 +62,6 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Density
@@ -113,6 +112,8 @@ class MainActivity : ComponentActivity() {
         askPermissions.launch(perms.toTypedArray())
         handle(intent)
         if (Startup.isFreshBoot(this) && !SafeMode.on) Startup.run(applicationContext)
+        // Bilbildet leses i bakgrunnen mens skjermen bygges, så det er klart (nesten) med én gang
+        if (CarArt.bitmap == null) Hub.scope.launch(Dispatchers.IO) { CarArt.load(applicationContext) }
         setContent { Root() }
     }
 
@@ -396,9 +397,10 @@ fun Dashboard(onApps: () -> Unit, onPickSlot: () -> Unit) {
         },
         horizontalArrangement = Arrangement.spacedBy(14.dp),
     ) {
-        CarCard(Hub.gps, Modifier.weight(0.5f).fillMaxHeight())
+        // GPS-en leses inne i kortene (ikke her), så en ny måling bare tegner fart og kart på nytt
+        CarCard(Modifier.weight(0.5f).fillMaxHeight())
         Column(Modifier.weight(0.5f), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-            MapCard(Hub.gps, Modifier.weight(1f).fillMaxWidth())
+            MapCard(Modifier.weight(1f).fillMaxWidth())
             ActionRow(onApps, onPickSlot, Modifier.height(96.dp).fillMaxWidth())
         }
     }
@@ -416,6 +418,41 @@ private fun carBitmap(): androidx.compose.ui.graphics.ImageBitmap? {
         value = withContext(Dispatchers.IO) {
             File(context.filesDir, "car.png").takeIf { it.exists() }?.let { decodeScaled(it, 1200)?.asImageBitmap() }
         }
+    }
+    return bmp
+}
+
+/**
+ * Det innebygde bilbildet (res/drawable-nodpi/car_png.png). Leses én gang i bakgrunnen og huskes så lenge
+ * T'OS kjører – før ble det lest på hovedtråden hver gang forsiden ble vist, og det forsinket første bilde.
+ */
+object CarArt {
+    @Volatile var bitmap: androidx.compose.ui.graphics.ImageBitmap? = null
+        private set
+    /** Ingen innebygd bilbilde (eller det kunne ikke leses): vis bil-symbolet. */
+    var missing by mutableStateOf(false)
+        private set
+    private val lock = Any()
+
+    /** Trygt å kalle fra hvilken som helst tråd (helst ikke hovedtråden); gjør jobben bare én gang. */
+    fun load(c: Context): androidx.compose.ui.graphics.ImageBitmap? {
+        bitmap?.let { return it }
+        synchronized(lock) {
+            bitmap?.let { return it }
+            val res = c.resources.getIdentifier("car_png", "drawable", c.packageName)
+            val bmp = if (res == 0) null else runCatching { BitmapFactory.decodeResource(c.resources, res)?.asImageBitmap() }.getOrNull()
+            bitmap = bmp
+            if (bmp == null) android.os.Handler(android.os.Looper.getMainLooper()).post { missing = true }
+            return bmp
+        }
+    }
+}
+
+@Composable
+private fun bundledCarBitmap(): androidx.compose.ui.graphics.ImageBitmap? {
+    val context = LocalContext.current
+    val bmp by produceState(CarArt.bitmap) {
+        if (value == null) value = withContext(Dispatchers.IO) { CarArt.load(context.applicationContext) }
     }
     return bmp
 }
@@ -455,17 +492,21 @@ private fun Notice() {
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun CarCard(gps: Gps?, modifier: Modifier) {
-    val context = LocalContext.current
-    val res = remember { context.resources.getIdentifier("car_png", "drawable", context.packageName).takeIf { it != 0 } }
+fun CarCard(modifier: Modifier) {
     val picked = carBitmap()
-    var now by remember { mutableStateOf(Date()) }
-    LaunchedEffect(Unit) { while (true) { now = Date(); delay(1000) } }
+    val bundled = bundledCarBitmap()
+    // Klokka som tekst: sjekkes hvert sekund, men kortet tegnes bare på nytt når minuttet (teksten) skifter
     val timeFmt = remember { SimpleDateFormat("HH:mm", Locale.getDefault()) }
     val dateFmt = remember { SimpleDateFormat("EEEE d. MMMM", Locale("nb", "NO")) }
-    val time = timeFmt.format(now)
-    val date = dateFmt.format(now).replaceFirstChar { it.uppercase() }
-    val speed = gps?.speedKmh ?: 0
+    var time by remember { mutableStateOf(timeFmt.format(Date())) }
+    var date by remember { mutableStateOf(dateFmt.format(Date()).replaceFirstChar { it.uppercase() }) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            val now = Date()
+            time = timeFmt.format(now); date = dateFmt.format(now).replaceFirstChar { it.uppercase() }
+            delay(1000L - System.currentTimeMillis() % 1000L)
+        }
+    }
 
     Column(modifier.clip(Shape).background(Panel).padding(28.dp)) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
@@ -498,12 +539,22 @@ fun CarCard(gps: Gps?, modifier: Modifier) {
             )
             when {
                 picked != null -> Image(picked, null, contentScale = ContentScale.Fit, modifier = Modifier.fillMaxSize())
-                res != null -> Image(painterResource(res), null, contentScale = ContentScale.Fit, modifier = Modifier.fillMaxSize())
+                bundled != null -> Image(bundled, null, contentScale = ContentScale.Fit, modifier = Modifier.fillMaxSize())
+                !CarArt.missing -> {}   // leses ennå (et øyeblikk ved første oppstart)
                 else -> Icon(Icons.Default.DirectionsCar, null, tint = Line, modifier = Modifier.fillMaxSize(0.55f))
             }
         }
 
-        // Farten – stort tall og én tynn linje. Over fartsgrensen: tallet blir hvitt felt.
+        SpeedRow()
+    }
+}
+
+/** Farten – stort tall og én tynn linje. Over fartsgrensen: tallet blir hvitt felt. Egen del, så bare den tegnes på nytt ved hver GPS-måling. */
+@Composable
+private fun SpeedRow() {
+    val gps = Hub.gps
+    val speed = gps?.speedKmh ?: 0
+    Column {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Bottom) {
             val over = SpeedLimit.over
             Text(
@@ -636,10 +687,10 @@ private fun OnlineMapView(gps: Gps?, modifier: Modifier, zoom: Int, rotate: Bool
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun MapCard(gps: Gps?, modifier: Modifier) {
+fun MapCard(modifier: Modifier) {
     val context = LocalContext.current
     Box(modifier.clip(Shape).background(Panel)) {
-        MapView(gps, Modifier.fillMaxSize())
+        MapView(Hub.gps, Modifier.fillMaxSize())
         // Usynlig lag over kartet tar imot trykk (kartet selv skal ikke dras i)
         Box(Modifier.matchParentSize().combinedClickable(onClick = { openMaps(context) }, onLongClick = { Nav.screen = Screen.MAP }))
 
