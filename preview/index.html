@@ -509,7 +509,7 @@ svg.i { fill: currentColor; display: block; }
   }
   const saved = store.get('car');
   if (saved) showCar(saved);
-  else ['car_png.png', '../app/src/main/res/drawable/car_png.png'].forEach(p => {
+  else ['car_png.png', '../app/src/main/res/drawable-nodpi/car_png.png', '../app/src/main/res/drawable/car_png.png'].forEach(p => {
     const t = new Image(); t.onload = () => showCar(p); t.src = p;
   });
   $('carfile').onchange = e => {

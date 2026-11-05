@@ -17,7 +17,7 @@ Snakk norsk med brukeren. Han er ikke utvikler – forklar enkelt, ikke bruk fag
 - Løsningen han godkjente: **tre ting** – (1) bilkort med klokke, stort bilbilde og fart som stort tall, (2) ekte kart, (3) én rad nederst: musikk/telefon/apper. Ingen kalender, ingen vær.
 - Kalkulator skal være skjult i app-skuffen (`HiddenApps` i `Apps.kt`).
 
-## Nåværende tilstand (v4.8)
+## Nåværende tilstand (v4.9)
 - `MainActivity.kt`: Compose-UI med de tre tingene + app-skuff + oppdateringsknapp. Skjermvalg via `Nav.screen` (DASH/APPS/BT/KEYS).
 - v3.0 «stor oppdatering» – alle 50 punktene i `docs/IDEER.md` (se Begrensninger der). Nye filer:
   `Prefs.kt` (TosApp, innstillinger m/ Compose-reaktivitet via Prefs.version, sikkerhetskopi JSON, CrashLog),
@@ -35,6 +35,8 @@ Snakk norsk med brukeren. Han er ikke utvikler – forklar enkelt, ikke bruk fag
   CI-status 3. nov: bygg #2 stoppet på «Sett opp fast signatur» = secrets mangler (brukeren må legge dem inn).
   Steget tåler nå mellomrom/linjeskift og sjekker nøkkel+passord med keytool (testet lokalt med ekte verdier).
   GitHub Pages er ikke slått på (testsiden gir 404) – valgfritt.
+  v4.9: bilbildet er lagt inn: `res/drawable-nodpi/car_png.png` (brukerens Canva-bilde av svart Avensis forfra, beskåret,
+  svart bakgrunn gjort gjennomsiktig med myk kant, 1043x755). Releasen 4.8.4 (versionCode 1004) ble publisert 5. nov – secrets virker.
   v4.8: «T'OS er hele brukerflaten» – stereoens originale UI skal ikke dukke opp (4 parallelle grener, flettet og koblet sammen).
   UI-skall (`TosUi.kt`, `Keyboard.kt`): egen statuslinje (TosStatusBar), eget tastatur (alle tekstfelt via `Field`),
   egne meldinger (`Notify`/NoticeHost i stedet for Toast), eget volumvindu (VolumeUi/VolumeBar), stereoens status-/navigasjonslinje
@@ -114,7 +116,7 @@ Snakk norsk med brukeren. Han er ikke utvikler – forklar enkelt, ikke bruk fag
 - `Updater.kt`: sjekker `https://github.com/Tormod22/bilstereo-launcher/releases/download/latest/version.json`, laster ned `bilstereo.apk` og installerer via PackageInstaller-økt (svar i `UpdateReceiver`; reserve: FileProvider + Androids installasjonsbilde). Repoet må være OFFENTLIG for at dette virker.
 - `.github/workflows/build.yml`: bygger signert RELEASE-APK (assembleRelease → bilstereo.apk) på push til main og publiserer som release med tag `latest` (bilstereo.apk først, version.json sist). versionCode = 1000 + GITHUB_RUN_NUMBER settes automatisk; bump bare versionName (og lokal versionCode) i `app/build.gradle.kts`.
 - `preview/index.html`: nettleserkopi av startskjermen for å teste utseendet (samme farger/mål/kart). Holdes i takt med `MainActivity.kt`. Publiseres til GitHub Pages av `.github/workflows/preview.yml`.
-- Bilbilde: legges i `app/src/main/res/drawable/car_png.png` – koden finner den via `getIdentifier("car_png")`. Et bilde er generert i Canva (svart Avensis forfra på svart bakgrunn): https://www.canva.com/M/MAHZyi7AvB4 – brukeren må laste det ned selv og legge det inn.
+- Bilbilde: ligger i `app/src/main/res/drawable-nodpi/car_png.png` – koden finner den via `getIdentifier("car_png")`. Et bilde er generert i Canva (svart Avensis forfra på svart bakgrunn): https://www.canva.com/M/MAHZyi7AvB4 – brukeren må laste det ned selv og legge det inn.
 
 ## Oppdatering / signering
 - Updater forutsetter release «latest» (lages av build.yml på push til main). Første bygg på main (3. nov) feilet i setup-android – rettet i v4.3.
@@ -127,7 +129,7 @@ Snakk norsk med brukeren. Han er ikke utvikler – forklar enkelt, ikke bruk fag
 ## Status / gjenstår
 1. ✅ Koden kompilerer (`gradle assembleDebug`, AGP 8.5.2 / Kotlin 2.0.20). Én feil rettet i `Updater.kt` (lese version.json).
 2. ✅ Repoet `Tormod22/bilstereo-launcher` finnes. Kartfila krever at workflowen «Lag kart uten nett» er kjørt (går automatisk ved første push til main). Koden må ligge på `main` for at GitHub Actions skal bygge og publisere «latest»-release. Repoet må være offentlig for at oppdateringsknappen skal virke.
-3. Legg inn `car_png.png`.
+3. ✅ `car_png.png` lagt inn (v4.9, drawable-nodpi).
 4. Når enheten kommer: verifiser pakkenavn, test GPS/kart, test «åpne Maps i delt skjerm» (FLAG_ACTIVITY_LAUNCH_ADJACENT – kan falle tilbake til fullskjerm).
 5. Idéliste med 50 funksjoner: `docs/IDEER.md` (★ = foreslått først). Tidligere ønsker: sangtittel/cover i musikkortet (krever NotificationListener), ryggekamera-knapp.
 
