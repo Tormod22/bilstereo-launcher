@@ -17,8 +17,28 @@ Snakk norsk med brukeren. Han er ikke utvikler – forklar enkelt, ikke bruk fag
 - Løsningen han godkjente: **tre ting** – (1) bilkort med klokke, stort bilbilde og fart som stort tall, (2) ekte kart, (3) én rad nederst: musikk/telefon/apper. Ingen kalender, ingen vær.
 - Kalkulator skal være skjult i app-skuffen (`HiddenApps` i `Apps.kt`).
 
-## Nåværende tilstand (v5.2)
+## Nåværende tilstand (v5.4)
 - `MainActivity.kt`: Compose-UI med de tre tingene + app-skuff + oppdateringsknapp. Skjermvalg via `Nav.screen` (DASH/APPS/BT/KEYS).
+- v5.4: brukeren (med bilde): stereoens «nylige apper»-knapp (to firkanter øverst til høyre i stereoens statuslinje) viste
+  Androids Overview (blå bakgrunn, «No recent items», søppelbøtte). `Recents.kt`: T'OS sin egen «Siste apper» (Screen.RECENTS):
+  store mørke kort (ikon, navn, «sist brukt 5 min siden»), trykk = åpne, X = «Lukket» (killBackgroundProcesses), «Lukk alle»
+  med «Trykk igjen» – beholder T'OS, CarPlay/Car link og musikken som spiller (sier hvilke). Data: UsageStatsManager (12 t,
+  krever «Tilgang til appbruk»: Førstegangsoppsett-steg / ADB `appops set … GET_USAGE_STATS allow`), ellers T'OS sin egen liste
+  (`RecentApps.record` i KeyService når en app kommer fram + AppRepository.launch, Prefs «recent_apps»). KeyService:
+  `RecentsLogic.isStockRecents` (klasse RecentsActivity/Overview, eller tekst «No recent items»/«Overview»/«Oversikt» – bare fra
+  startskjerm/SystemUI/launcher-pakker) og KEYCODE_APP_SWITCH → svart teppe + T'OS sin side (RedirectLimiter, ikke under samtale).
+  Bryter «Siste apper i T'OS-stil» (tos_recents, på) i Innstillinger → Apper; av = som før (fanelista er bare innom, isPassingWindow).
+  Også: langt trykk på «Apper» på forsiden, «Siste» i app-skuffen, knappehandling Action.RECENTS. Test RecentsLogicTest (10) +
+  RecentsSmokeTest. Tester totalt 138. BEGRENSNING (ærlig): stereoens fanevisning er SystemUI/Quickstep – T'OS kan ikke tegne den
+  om, bare dekke over og bytte den ut; et kort glimt kan fortsatt synes, og stereoens statuslinje i andre apper kan ikke skjules.
+  «Lukket» = stoppet i bakgrunnen (apper med egen bakgrunnstjeneste kan starte igjen selv). UVERIFISERT på enheten: hvilket
+  klassenavn/tekst stereoens fanevisning sender – be brukeren sende oppsettrapporten hvis den fortsatt dukker opp.
+- v5.3: Knapper-siden: `KeyPing` (Buttons.kt) – grønn prikk (eneste farge, brukerens ønske) på raden T'OS kjente igjen
+  (tastekode eller app knappen åpnet) i 1,5 s + «MENU (kode 21)»/«Ukjent knapp (kode …)» øverst; vises også for knapper satt
+  til «Ingenting». Sjåførforbedringer: fart «–» uten/mistet GPS (`speedText`/`gpsCaption`), større tekst på forsiden, lysere
+  grå om natten, `Startup.shouldResumeMusic` (ikke over CarPlay/radio/samtale), tilbake til forsiden etter oppstartsmusikk bare
+  hvis musikkappen fortsatt er framme (`KeyService.frontPackage`), forklaring på alle brytere, ScreensSmokeTest2 + UiLogicTest4.
+  Tester totalt 127.
 - v5.2: brukeren: «Spotify virker nå» + «NAVI-knappen har fortsatt bare den originale funksjonen». Årsak: stereoen åpner
   Google Maps selv; var NAVI lært til Maps, stoppet KeyService på «pkg in targets» (ville gått i ring) → ingenting skjedde.
   `NaviKey.kt`: når kartapp kommer fram uten at T'OS åpnet den (lært NAVI eller ikke) → Waze/Maps-popup (maks 1/min);
@@ -74,7 +94,7 @@ Snakk norsk med brukeren. Han er ikke utvikler – forklar enkelt, ikke bruk fag
   PackageInstaller-økt + `UpdateReceiver` (første gang kan Android be om «Installer» én gang), ADB-oppsett i `docs/ADB-OPPSETT.md`
   + `docs/tos-oppsett.bat`, `LocalBackup` (Backup.kt, sikkerhetskopi i T'OS-mappa). Nye brytere: «Volum i T'OS-stil» (Lyd),
   «Skjul stereoens statuslinje» (Skjerm), «FM-radio i bakgrunnen (radiomotor)» + «Skjul stereoens radio-app» (Musikk og oppstart).
-  UUNNGÅELIG systemvisning (Android krever det): tillatelsesdialoger (posisjon, Bluetooth, telefon, varseltilgang, tilgjengelighet,
+  UUNNGÅELIG systemvisning (Android krever det): tillatelsesdialoger (posisjon, Bluetooth, telefon, varseltilgang, tilgang til appbruk, tilgjengelighet,
   «Vis over andre apper», skrive systeminnstillinger, ukjente kilder), slå på Bluetooth / parekode, avinstaller-bekreftelse,
   første installasjon/oppdatering hvis Android krever bekreftelse, «Velg startskjerm», CarPlay/Car link, ryggekamera, Androids
   egne innstillinger under Om stereoen → Avansert / «Avansert (Android)» per app, og stereoens telefon-/radio-app bare som reserve

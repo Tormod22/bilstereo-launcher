@@ -33,6 +33,8 @@
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
     <!-- Lukke stereoens radio-app når RADIO-knappen er satt til noe annet (unngår skurr) -->
     <uses-permission android:name="android.permission.KILL_BACKGROUND_PROCESSES" />
+    <!-- «Siste apper» i T'OS: hvilke apper som er brukt (brukeren gir «Tilgang til appbruk», eller ADB GET_USAGE_STATS) -->
+    <uses-permission android:name="android.permission.PACKAGE_USAGE_STATS" tools:ignore="ProtectedPermissions" />
     <!-- Styre radioen på szchoiceway-stereoer (fra OpenLauncher) -->
     <uses-permission android:name="com.szchoiceway.permission.broadcast" />
     <!-- Internett-ikon og nettradio -->

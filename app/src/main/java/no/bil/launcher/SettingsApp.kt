@@ -56,7 +56,7 @@ enum class SetCat(val label: String, val icon: ImageVector, val group: String, v
     BT("Bluetooth", Icons.Default.Bluetooth, "Stereoen", "bluetooth telefon paring pare obd brikke"),
     SOUND("Lyd", Icons.AutoMirrored.Filled.VolumeUp, "Stereoen", "lyd volum volumlinje equalizer eq bass diskant varsel ringelyd tastelyd alarm"),
     SCREEN("Skjerm", Icons.Default.LightMode, "Stereoen", "skjerm lysstyrke lys natt nattmodus dag ikoner tekst størrelse bilbilde skjermsparer klokke statuslinje"),
-    APPS("Apper", Icons.Default.Apps, "Stereoen", "apper app skjul vis startskjerm carplay car link radio kamera systemapper avinstaller"),
+    APPS("Apper", Icons.Default.Apps, "Stereoen", "apper app skjul vis startskjerm carplay car link radio kamera systemapper avinstaller siste nylige bakgrunn lukk"),
     STORAGE("Lagring", Icons.Default.Storage, "Stereoen", "lagring plass minne cache tøm kart minnepinne"),
     TIME("Dato, tid og språk", Icons.Default.Schedule, "Stereoen", "dato tid klokke tidssone 24 timer språk tastatur norsk"),
     ABOUT("Om stereoen", Icons.Default.Info, "Stereoen", "om versjon oppdatering oppdater stereo android prosessor minne oppsett tillatelser adb pc avansert"),
@@ -187,7 +187,7 @@ private fun SoundSettings() {
     Spacer(Modifier.height(8.dp))
     Section("Andre lyder")
     ToggleRow("Volum i T'OS-stil", "tos_volume", true, "Volumknappene viser T'OS sin volumlinje i stedet for stereoens (krever knappestyring)")
-    ToggleRow("Lyd når du er over fartsgrensen", "speed_beep", false)
+    ToggleRow("Lyd når du er over fartsgrensen", "speed_beep", false, "Ett kort pip når du kjører mer enn 3 km/t over grensen")
     val tick = rememberResumeTick()
     val canWrite = remember(tick) { Settings.System.canWrite(context) }
     if (canWrite) {
@@ -288,6 +288,7 @@ private fun AppsSettings() {
         context.open(Intent(Settings.ACTION_HOME_SETTINGS)) || context.open(Intent(Settings.ACTION_MANAGE_DEFAULT_APPS_SETTINGS))
     }) { Chevron() }
     ToggleRow("Hold T'OS som startskjerm", "keep_home", true, "Viser T'OS i stedet hvis den originale startskjermen dukker opp (krever knappestyring)")
+    ToggleRow("Siste apper i T'OS-stil", "tos_recents", true, "Knappen for nylige apper viser T'OS sin egen «Siste apper» i stedet for stereoens (krever knappestyring)")
     ToggleRow("Vis systemapper", "show_system_apps", false, "Viser også stereoens innebygde apper i app-lista")
     Section("Hvilke apper T'OS bruker")
     AppChoiceRow("CarPlay-app (f.eks. Car link 2.0)", "carplay_pkg", "Car")
@@ -545,10 +546,10 @@ private fun MapSettings() {
     }
     ChoiceRow("Fartsjustering", "speed_adj", listOf("0" to "Ingen", "-3" to "−3 %", "-5" to "−5 %", "3" to "+3 %", "5" to "+5 %"), "0",
         "Hvis farten i T'OS ikke stemmer med en fartsmåler du stoler på (idé fra OpenLauncher)")
-    ToggleRow("Kartet følger kjøreretningen", "map_rotate", true)
-    ToggleRow("Kartet zoomer ut i høy fart", "map_zoom_speed", true)
+    ToggleRow("Kartet følger kjøreretningen", "map_rotate", true, "Av: nord er alltid opp. Nesten stillestående bil: nord opp uansett.")
+    ToggleRow("Kartet zoomer ut i høy fart", "map_zoom_speed", true, "Du ser lenger fram på motorveien, og flere detaljer i byen")
     ToggleRow("Vis fartsgrense", "speed_limit", true, "Fra OpenStreetMap. Kan mangle eller være feil – skiltene gjelder.")
-    ToggleRow("Lyd når du er over fartsgrensen", "speed_beep", false)
+    ToggleRow("Lyd når du er over fartsgrensen", "speed_beep", false, "Ett kort pip når du kjører mer enn 3 km/t over grensen")
 }
 
 @Composable
@@ -558,8 +559,8 @@ private fun MusicSettings() {
         Toggle(MediaListener.enabled(context))
     }
     AppChoiceRow("Musikkapp", "music_pkg", "Mus")
-    ToggleRow("Fortsett musikken når bilen starter", "resume_music", true)
-    ToggleRow("Åpne siste app når bilen starter", "resume_last_app", false)
+    ToggleRow("Fortsett musikken når bilen starter", "resume_music", true, "Ikke hvis noe annet allerede spiller, f.eks. CarPlay eller radio")
+    ToggleRow("Åpne siste app når bilen starter", "resume_last_app", false, "Appen du brukte sist før bilen ble slått av")
     Section("Radio")
     ToggleRow("FM-radio i bakgrunnen (radiomotor)", "radio_engine", true,
         "Starter stereoens radio et øyeblikk bak T'OS hvis radioen ikke kom i gang av seg selv")
@@ -571,7 +572,7 @@ private fun MusicSettings() {
 
 @Composable
 private fun PhoneSettings() {
-    ToggleRow("Åpne CarPlay når iPhonen kobles til", "carplay_auto", false)
+    ToggleRow("Åpne CarPlay når iPhonen kobles til", "carplay_auto", false, "Viser CarPlay-appen med en gang telefonen er koblet til")
     SettingRow("Favoritter", "${Favorites.all().size} lagret", onClick = { Nav.screen = Screen.PHONE }) { Chevron() }
 }
 

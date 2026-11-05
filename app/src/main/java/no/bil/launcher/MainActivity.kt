@@ -180,6 +180,10 @@ class MainActivity : ComponentActivity() {
             if (Learn.offerKey(this, code)) { swallowUp += code; return true }
         }
         val key = Buttons.keyForCode(this, code)
+        // Grønn prikk på Knapper-siden (knappestyringen kan være av – da kommer knappene hit når T'OS er framme)
+        if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0 && KeyService.instance == null) {
+            if (key != null) KeyPing.hit(key, "kode $code") else if (KeyPing.reportUnknown(code)) KeyPing.unknown(code)
+        }
         if (key != null && Buttons.shouldIntercept(this, key, code)) {
             KeyService.handlePress(this, key, event, downAt, longDone)
             return true
@@ -321,6 +325,7 @@ fun Root() {
                         Screen.SETTINGS -> SettingsScreen(home)
                         Screen.TUNING -> TuningScreen(home)
                         Screen.SETUP -> SetupScreen(home)
+                        Screen.RECENTS -> RecentsScreen(home)
                         Screen.CLOCK -> {}
                     }
                 }
@@ -487,7 +492,7 @@ private fun Notice() {
     }
         .padding(horizontal = 12.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         Icon(Icons.Default.Info, null, tint = TextMuted, modifier = Modifier.size(16.dp))
-        Text(text, color = TextPrimary, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Text(text, color = TextPrimary, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
 
@@ -554,19 +559,19 @@ fun CarCard(modifier: Modifier) {
 @Composable
 private fun SpeedRow() {
     val gps = Hub.gps
-    val speed = gps?.speedKmh ?: 0
+    val speed = gps?.speed ?: 0
     Column {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Bottom) {
             val over = SpeedLimit.over
             Text(
-                "$speed", color = if (over) Bg else TextPrimary, fontSize = 76.sp, fontWeight = FontWeight.Medium, lineHeight = 76.sp,
+                speedText(gps), color = if (over) Bg else TextPrimary, fontSize = 76.sp, fontWeight = FontWeight.Medium, lineHeight = 76.sp,
                 modifier = if (over) Modifier.clip(RoundedCornerShape(16.dp)).background(TextPrimary).padding(horizontal = 12.dp) else Modifier,
             )
             Spacer(Modifier.width(10.dp))
             Text("km/t", color = TextMuted, fontSize = 18.sp, modifier = Modifier.padding(bottom = 14.dp))
             Spacer(Modifier.weight(1f))
             Row(Modifier.padding(bottom = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text(if (gps == null) "Søker GPS" else if (speed > 3) Hub.compass(gps.bearing) else "GPS", color = TextMuted, fontSize = 14.sp)
+                Text(gpsCaption(gps), color = TextMuted, fontSize = 16.sp)
                 LimitSign(46)
             }
         }
@@ -699,8 +704,8 @@ fun MapCard(modifier: Modifier) {
         if (NavInfo.active) {
             Column(Modifier.align(Alignment.TopStart).padding(16.dp).clip(RoundedCornerShape(18.dp)).background(Card.copy(alpha = 0.94f))
                 .padding(horizontal = 18.dp, vertical = 12.dp)) {
-                Text(NavInfo.title ?: "", color = TextPrimary, fontSize = 22.sp, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                NavInfo.text?.let { Text(it, color = TextMuted, fontSize = 14.sp, maxLines = 2, overflow = TextOverflow.Ellipsis) }
+                Text(NavInfo.title ?: "", color = TextPrimary, fontSize = 26.sp, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                NavInfo.text?.let { Text(it, color = TextPrimary.copy(alpha = 0.8f), fontSize = 17.sp, maxLines = 2, overflow = TextOverflow.Ellipsis) }
             }
         }
 
@@ -765,8 +770,8 @@ fun ActionRow(onApps: () -> Unit, onPickSlot: () -> Unit, modifier: Modifier) {
             Row(Modifier.fillMaxSize().padding(start = 18.dp, end = 10.dp), verticalAlignment = Alignment.CenterVertically) {
                 Box(Modifier.clip(RoundedCornerShape(14.dp)).combinedClickable(onClick = { Nav.screen = Screen.MUSIC }, onLongClick = { Buttons.openMusic(context) })) { Cover(52.dp) }
                 Column(Modifier.weight(1f).padding(horizontal = 10.dp).clickable { Nav.screen = Screen.MUSIC }) {
-                    Text(musicTitle ?: "Musikk", color = TextPrimary, fontSize = 15.sp, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    Text(musicSub ?: if (MediaListener.enabled(context)) "Ingenting spiller" else "Trykk for mer", color = TextMuted, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(musicTitle ?: "Musikk", color = TextPrimary, fontSize = 18.sp, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(musicSub ?: if (MediaListener.enabled(context)) "Ingenting spiller" else "Trykk for mer", color = TextMuted, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
                 RoundIcon(if (musicPlaying) Icons.Default.Pause else Icons.Default.PlayArrow, 48.dp, outlined = true, desc = if (musicPlaying) "Pause" else "Spill") { Media.playPause(context) }
                 RoundIcon(Icons.Default.SkipNext, 48.dp, desc = "Neste sang") { Media.next(context) }
@@ -786,7 +791,8 @@ fun ActionRow(onApps: () -> Unit, onPickSlot: () -> Unit, modifier: Modifier) {
             Spacer(Modifier.height(6.dp))
             Text(slotApp?.first ?: "Telefon", color = TextMuted, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(horizontal = 8.dp))
         }
-        ActionTile(Icons.Default.Apps, "Apper", Modifier.weight(0.8f)) { onApps() }
+        // Langt trykk: «Siste apper»
+        ActionTile(Icons.Default.Apps, "Apper", Modifier.weight(0.8f), onLongClick = { Nav.screen = Screen.RECENTS }) { onApps() }
     }
 }
 
@@ -821,10 +827,11 @@ fun AppPicker(title: String, defaultLabel: String, onPick: (String) -> Unit, onC
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun ActionTile(icon: ImageVector, label: String, modifier: Modifier, onClick: () -> Unit) {
+fun ActionTile(icon: ImageVector, label: String, modifier: Modifier, onLongClick: (() -> Unit)? = null, onClick: () -> Unit) {
     Column(
-        modifier.fillMaxHeight().clip(Shape).background(Panel).clickable(onClick = onClick),
+        modifier.fillMaxHeight().clip(Shape).background(Panel).combinedClickable(onClick = onClick, onLongClick = onLongClick),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
@@ -962,6 +969,7 @@ fun AppDrawer(onClose: () -> Unit) {
                 horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.End),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
+                PillButton(Icons.Default.History, "Siste") { Nav.screen = Screen.RECENTS }
                 PillButton(Icons.Default.Settings, "Innstillinger") { Nav.screen = Screen.SETTINGS }
                 PillButton(Icons.Default.Tune, "Knapper") { Nav.screen = Screen.KEYS }
                 UpdateButton()

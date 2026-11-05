@@ -87,6 +87,7 @@ adb shell appops set no.bil.launcher SYSTEM_ALERT_WINDOW allow
 adb shell appops set no.bil.launcher WRITE_SETTINGS allow
 adb shell appops set no.bil.launcher REQUEST_INSTALL_PACKAGES allow
 adb shell appops set no.bil.launcher ACCESS_RESTRICTED_SETTINGS allow
+adb shell appops set no.bil.launcher GET_USAGE_STATS allow
 adb shell pm grant no.bil.launcher android.permission.ACCESS_FINE_LOCATION
 adb shell pm grant no.bil.launcher android.permission.ACCESS_COARSE_LOCATION
 adb shell pm grant no.bil.launcher android.permission.BLUETOOTH_CONNECT
@@ -112,6 +113,7 @@ Hva linjene gjør:
 | `WRITE_SETTINGS` | Lysstyrke, nattdemping, tastelyd og 24-timers klokke |
 | `REQUEST_INSTALL_PACKAGES` | Installere oppdateringer av T'OS |
 | `ACCESS_RESTRICTED_SETTINGS` | Android 13: fjerner «begrenset innstilling» for apper fra Drive |
+| `GET_USAGE_STATS` | «Siste apper» i T'OS viser alle apper du har brukt (ikke bare de T'OS selv har sett) |
 | `pm grant …` | Posisjon, Bluetooth, varsel, kontakter, anrop og telefon |
 | `network-suggestions-set-user-approved` | Wi-Fi-nett kan legges inn fra T'OS uten spørsmål (Android 11+) |
 | `deviceidle whitelist` | Batterisparing stopper ikke T'OS |

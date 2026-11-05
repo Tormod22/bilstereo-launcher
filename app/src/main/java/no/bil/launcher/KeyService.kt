@@ -171,7 +171,19 @@ class KeyService : AccessibilityService() {
             swallowUp = code
             return true
         }
-        val key = Buttons.keyForCode(this, code) ?: return false
+        val key = Buttons.keyForCode(this, code)
+        // Grønn prikk på Knapper-siden: viser hvilken knapp T'OS kjente igjen (også når T'OS lar stereoen ta den)
+        if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0) {
+            if (key != null) KeyPing.hit(key, "kode $code") else if (KeyPing.reportUnknown(code)) KeyPing.unknown(code)
+        }
+        // Fanelista-knappen (nylige apper) sendt som tastekode: T'OS sin «Siste apper» i stedet for Androids
+        if (key == null && code == KeyEvent.KEYCODE_APP_SWITCH && Prefs.bool("tos_recents", true) && !Buttons.inCall(this)) {
+            if (event.action == KeyEvent.ACTION_UP && (event.flags and KeyEvent.FLAG_CANCELED) == 0) {
+                if (redirects.allow(SystemClock.elapsedRealtime())) bringBack(Screen.RECENTS)
+            }
+            return true
+        }
+        if (key == null) return false
         // Under en samtale skal svar/legg på (og mediaknappene, som telefonen bruker til det) gå til telefonen
         if (passToCall(code) && Buttons.inCall(this)) return false
         if (!Buttons.shouldIntercept(this, key, code)) return false
@@ -210,6 +222,12 @@ class KeyService : AccessibilityService() {
         TosOverlay.armUncover()
     }
 
+    /** Er hendelsen Androids fanevisning? Teksten (vindustittel) leses bare her, ikke innholdet på skjermen. */
+    private fun isStockRecentsEvent(pkg: String, cls: String?, e: AccessibilityEvent): Boolean {
+        val texts = runCatching { e.text.mapNotNull { it?.toString() } + listOfNotNull(e.contentDescription?.toString()) }.getOrDefault(emptyList())
+        return RecentsLogic.isStockRecents(pkg, cls, texts, pkg in homePkgs, packageName)
+    }
+
     /** Stereoens «skall»: original startskjerm, app-liste/hovedmeny i startskjerm-appen, «car home»-apper. */
     /** Kartappene T'OS kjenner: valgt kartapp, Google Maps, Waze og Kart-flisa sine kandidater. */
     private fun navApps(): Set<String> =
@@ -231,9 +249,17 @@ class KeyService : AccessibilityService() {
     override fun onAccessibilityEvent(event: AccessibilityEvent) {
         if (event.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) return
         val pkg = event.packageName?.toString() ?: return
+        val cls = event.className?.toString()
+        // Androids fanevisning (nylige apper, «No recent items») kom fram: vis T'OS sin «Siste apper» i stedet.
+        // Sjekkes før systemvinduene under, fordi den på eldre Android ligger i SystemUI. Av: fanelista er bare innom.
+        if (pkg != packageName && Prefs.bool("tos_recents", true) && isStockRecentsEvent(pkg, cls, event)) {
+            // Til oppsettrapporten: hvordan stereoens fanevisning ser ut (pakke/klasse)
+            Prefs.setQuiet("recents_seen", "$pkg/${cls.orEmpty()}")
+            if (!Buttons.inCall(this) && redirects.allow(SystemClock.elapsedRealtime())) bringBack(Screen.RECENTS)
+            return
+        }
         // Systemvinduer og tastatur legger seg bare over appen som er framme – de bytter ikke app
         if (pkg in ignored || "inputmethod" in pkg || "keyboard" in pkg) return
-        val cls = event.className?.toString()
         // Fanelista og tillatelsesvinduer er bare innom: appen under er fortsatt «framme» (og fortsatt T'OS sin)
         if (isPassingWindow(pkg, cls)) return
         if (pkg == packageName) {
@@ -249,6 +275,8 @@ class KeyService : AccessibilityService() {
         TosOverlay.tosFront = false
         val byUs = AppRepository.launchedByUs(pkg)
         val state = front.update(pkg, byUs)
+        // T'OS sin egen liste til «Siste apper» (brukes når Android ikke deler appbruken). Ikke startskjermer.
+        if (state.newlyFront && pkg !in homePkgs) RecentApps.record(this, pkg)
         // Merket er brukt opp: neste gang appen åpnes (f.eks. med knappen på stereoen) er det ikke T'OS som åpnet den
         if (byUs && state.newlyFront) AppRepository.forgetLaunched(pkg)
 
@@ -261,6 +289,7 @@ class KeyService : AccessibilityService() {
 
         val now = SystemClock.elapsedRealtime()
         val key = Buttons.keyForPkg(this, pkg)
+        if (key != null && state.newlyFront) KeyPing.hit(key, "åpnet ${label(pkg).ifBlank { pkg.substringAfterLast('.') }}")
 
         // Hold T'OS som startskjerm: dukker stereoens originale startskjerm (eller app-lista/hovedmenyen dens) opp,
         // f.eks. etter «fjern alle faner», vises T'OS i stedet – raskt og bak et svart teppe, så den ikke blinker fram.
@@ -345,6 +374,9 @@ class KeyService : AccessibilityService() {
     private val ignored = setOf("android", "com.android.systemui")
 
     companion object {
+        /** Appen som er framme nå (ifølge knappestyringen), null hvis tjenesten ikke kjører. */
+        val frontPackage: String? get() = instance?.front?.current
+
         /** Tjenesten når den kjører – brukes til å vise popup over andre apper (uten egen tillatelse). */
         var instance: KeyService? = null
             private set
@@ -417,7 +449,8 @@ internal fun passToCall(code: Int): Boolean = code in setOf(
 
 /**
  * Vinduer som bare er innom over appen som er framme: fanelista (nylige apper) og tillatelses-/installasjonsvinduer.
- * De skal ikke regnes som at du har forlatt appen. Testes i ServiceLogicTest2.
+ * De skal ikke regnes som at du har forlatt appen. (Med «Siste apper i T'OS-stil» på fanges fanelista før dette,
+ * se [RecentsLogic.isStockRecents].) Testes i ServiceLogicTest2.
  */
 internal fun isPassingWindow(pkg: String, cls: String?): Boolean {
     if (cls != null && cls.contains("recents", ignoreCase = true)) return true
