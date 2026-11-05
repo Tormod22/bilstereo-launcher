@@ -545,6 +545,13 @@ internal fun nextEu(oldDeadline: Date?, today: Date): Date {
 
 /* ======================= Ved oppstart: musikk og siste app ======================= */
 
+/**
+ * Skal musikken startes igjen når bilen starter? Bare når valget er på, ingenting spiller allerede
+ * (heller ikke CarPlay eller FM-radioen – de skal ikke overstyres), og det ikke er en samtale.
+ */
+internal fun shouldResumeMusic(enabled: Boolean, playing: Boolean, otherAudio: Boolean, inCall: Boolean): Boolean =
+    enabled && !playing && !otherAudio && !inCall
+
 object Startup {
     private var lastRun = 0L
 
@@ -555,7 +562,7 @@ object Startup {
         lastRun = now
         Hub.scope.launch {
             delay(4000)
-            if (Prefs.bool("resume_music", true) && !NowPlaying.playing) {
+            if (shouldResumeMusic(Prefs.bool("resume_music", true), NowPlaying.playing, otherAudioActive(c), Buttons.inCall(c))) {
                 if (NowPlaying.hasSession) Media.play(c)
                 else {
                     val tile = Tiles.byPrefix("Mus")
@@ -564,7 +571,8 @@ object Startup {
                     if (pkg != null) {
                         AppRepository.launch(c, pkg)
                         delay(3500)
-                        Media.play(c)
+                        // Musikkappen kan ha startet avspillingen selv – da ville «spill» bare vært unødvendig
+                        if (!NowPlaying.playing) Media.play(c)
                         if (!Prefs.bool("resume_last_app")) Buttons.show(c, Screen.DASH)
                     }
                 }
@@ -575,6 +583,10 @@ object Startup {
             }
         }
     }
+
+    /** Spiller noe allerede (CarPlay, FM-radio fra stereoen, en annen app)? Da skal T'OS ikke starte musikk over det. */
+    private fun otherAudioActive(c: Context): Boolean =
+        runCatching { (c.getSystemService(Context.AUDIO_SERVICE) as AudioManager).isMusicActive }.getOrDefault(false)
 
     /** Første gang T'OS starter etter at stereoen er slått på. */
     fun isFreshBoot(c: Context): Boolean {

@@ -38,7 +38,8 @@ internal val Panel: Color get() = if (Theme.night) Color(0xFF0A0A0B) else Color(
 internal val Card: Color get() = if (Theme.night) Color(0xFF141416) else Color(0xFF1C1C1F)
 internal val Line: Color get() = if (Theme.night) Color(0xFF202023) else Color(0xFF2A2A2E)
 internal val TextPrimary: Color get() = if (Theme.night) Color(0xFFB9B9BE) else Color(0xFFF5F5F7)
-internal val TextMuted: Color get() = if (Theme.night) Color(0xFF68686D) else Color(0xFF86868B)
+// Natt: dempet, men fortsatt lesbart i et blikk (0xFF68686D var for svakt på 0xFF0A0A0B)
+internal val TextMuted: Color get() = if (Theme.night) Color(0xFF77777C) else Color(0xFF86868B)
 
 /** Soloppgang/solnedgang (vanlig NOAA-formel). Tar hensyn til midnattssol og mørketid. */
 object Sun {
