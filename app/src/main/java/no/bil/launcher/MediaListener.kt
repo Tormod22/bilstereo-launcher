@@ -29,6 +29,8 @@ object NowPlaying {
     var playing by mutableStateOf(false)
     var pkg by mutableStateOf<String?>(null)
     var durationMs by mutableLongStateOf(0L)
+    /** Appen spiller på en annen enhet (Spotify Connect o.l.) – lyden kommer ikke fra stereoen. */
+    var remote by mutableStateOf(false)
     private var posMs = 0L
     private var posAt = 0L
     private var speed = 1f
@@ -63,6 +65,7 @@ object NowPlaying {
             ?: md?.getBitmap(MediaMetadata.METADATA_KEY_DISPLAY_ICON)
         durationMs = md?.getLong(MediaMetadata.METADATA_KEY_DURATION) ?: 0L
         pkg = c?.packageName
+        remote = isRemote(c)
         val st = c?.playbackState
         playing = isPlayingState(st?.state)
         posMs = st?.position ?: 0L
@@ -136,6 +139,10 @@ internal fun isIncomingCall(callType: Int, hasFullScreen: Boolean, ongoing: Bool
     return hasFullScreen && !chronometer
 }
 
+/** Spiller økten på en annen enhet (Spotify Connect, Chromecast …)? */
+internal fun isRemote(c: MediaController?): Boolean =
+    c != null && runCatching { c.playbackInfo?.playbackType == MediaController.PlaybackInfo.PLAYBACK_TYPE_REMOTE }.getOrDefault(false)
+
 /** Spiller (eller laster/hopper til neste sang – da kommer lyden straks). */
 internal fun isPlayingState(state: Int?): Boolean = state == PlaybackState.STATE_PLAYING || state == PlaybackState.STATE_BUFFERING ||
     state == PlaybackState.STATE_SKIPPING_TO_NEXT || state == PlaybackState.STATE_SKIPPING_TO_PREVIOUS ||
@@ -179,6 +186,10 @@ internal fun sourceKind(pkg: String, radioChosen: String, btChosen: String = "")
     return SourceKind.MUSIC
 }
 
+/** Skal økten [pkg] pauses når brukeren bytter kilde til [keep]/[keepKind]? Testes i BtLogicTest. */
+internal fun shouldPauseOnSwitch(pkg: String, keep: String?, keepKind: SourceKind?, kind: SourceKind, playing: Boolean, remote: Boolean): Boolean =
+    playing && !remote && pkg != keep && !(keepKind != null && keepKind != SourceKind.MUSIC && kind == keepKind)
+
 /** Styrer musikken: nettradio i T'OS, ellers appen som spiller, ellers vanlige mediaknapper. */
 object Media {
     /** «Pakkenavnet» til T'OS sin egen nettradio i kildelista. */
@@ -203,7 +214,9 @@ object Media {
     fun bluetoothPackage(c: Context): String? {
         Prefs.str("btmusic_pkg").takeIf { it.isNotBlank() && hasPlayer(c, it) }?.let { return it }
         if (hasPlayer(c, "com.android.bluetooth")) return "com.android.bluetooth"
-        return Tiles.byPrefix("Blu").candidates.firstOrNull { it != "com.android.bluetooth" && AppRepository.isInstalled(c, it) }
+        Tiles.byPrefix("Blu").candidates.firstOrNull { it != "com.android.bluetooth" && AppRepository.isInstalled(c, it) }?.let { return it }
+        // Stereoens egen BT-app (funnet av BtLink i bakgrunnen)
+        return BtLink.vendorPackagesCached().firstOrNull()
     }
 
     /** Kan [pkg] spille uten skjermbilde (mediatjeneste eller medieknapp-mottaker)? */
@@ -278,10 +291,11 @@ object Media {
                 if (pkg != RADIO_MARK) NowPlaying.preferredPkg = pkg
                 HwRadio.powerOn(a)
             }
+            kind == SourceKind.BLUETOOTH -> selectBluetooth(a, pkg)
             else -> {
                 NetRadio.stop(a)
-                if (HwRadio.wanted) HwRadio.powerOff(a)
                 NowPlaying.preferredPkg = pkg
+                if (HwRadio.wanted) HwRadio.powerOff(a, keep = pkg)
                 pauseOthers(keep = pkg)
                 val s = NowPlaying.sessions.firstOrNull { it.packageName == pkg }
                 if (s != null) {
@@ -289,8 +303,7 @@ object Media {
                     runCatching { s.transportControls.play() }
                     return
                 }
-                val failMsg = if (kind == SourceKind.BLUETOOTH) "Koble til telefonen med Bluetooth og trykk spill på den"
-                    else "Fikk ikke startet musikken. Trykk «Åpne app»."
+                val failMsg = "Fikk ikke startet musikken. Trykk «Åpne app»."
                 val viaBrowser = MediaConnect.play(a, pkg)
                 if (!viaBrowser && !MediaConnect.mediaButton(a, pkg, KeyEvent.KEYCODE_MEDIA_PLAY)) { Notify.show(failMsg, long = true); return }
                 // Spiller den ikke etter 3 s: prøv medieknappen (hvis ikke brukt), ellers si fra
@@ -303,10 +316,31 @@ object Media {
         }
     }
 
-    /** Pause det som spiller i andre apper (så to kilder ikke spiller samtidig). */
-    private fun pauseOthers(keep: String?) {
+    /**
+     * Lyd fra telefonen over Bluetooth («Bluetooth-lyd fra telefonen»): andre kilder pauses (ikke telefonens egne
+     * Bluetooth-økter), FM-radio og nettradio slås av, og Bluetooth-lyden startes ([BtAudio]).
+     */
+    fun selectBluetooth(c: Context, pkg: String? = null) {
+        val a = c.applicationContext
+        NetRadio.stop(a)
+        val p = pkg ?: runCatching { bluetoothPackage(a) }.getOrNull()
+        NowPlaying.preferredPkg = p
+        if (HwRadio.wanted) HwRadio.powerOff(a, keep = p)
+        pauseOthers(keep = p, keepKind = SourceKind.BLUETOOTH)
+        BtAudio.activate(a, p)
+    }
+
+    /**
+     * Pause det som spiller i andre apper (så to kilder ikke spiller samtidig). Beholdes: [keep], alle økter av typen
+     * [keepKind] (f.eks. alle Bluetooth-økter når telefonen er valgt), og økter som spiller på en annen enhet
+     * (Spotify Connect – pause der ville stoppet musikken på telefonen).
+     */
+    private fun pauseOthers(keep: String?, keepKind: SourceKind? = null) {
+        val radio = Prefs.str("radio_pkg"); val bt = Prefs.str("btmusic_pkg")
         NowPlaying.sessions.forEach { s ->
-            if (s.packageName != keep && isPlayingState(s.playbackState?.state)) runCatching { s.transportControls.pause() }
+            val p = s.packageName ?: return@forEach
+            if (shouldPauseOnSwitch(p, keep, keepKind, sourceKind(p, radio, bt), isPlayingState(s.playbackState?.state), isRemote(s)))
+                runCatching { s.transportControls.pause() }
         }
     }
 
@@ -339,6 +373,63 @@ object Media {
     }
 }
 
+/* ======================= Kommer lyden ut av stereoen? ======================= */
+
+/**
+ * Når en app begynner å spille, sjekker T'OS at lyden faktisk kommer ut av høyttalerne:
+ *  - spiller den på en annen enhet (Spotify Connect: telefonen, en annen stereo …), sies det fra hvordan du velger stereoen,
+ *  - har stereoens FM-radio fortsatt lydkanalen (slått på i T'OS), slås den av,
+ *  - er musikkvolumet skrudd helt ned eller av, sies det fra.
+ * Hver melding høyst én gang i minuttet.
+ */
+object PlaybackWatch {
+    private val shown = java.util.concurrent.ConcurrentHashMap<String, Long>()
+
+    private fun due(key: String, gapMs: Long = 60_000): Boolean {
+        val now = SystemClock.elapsedRealtime()
+        val last = shown[key]
+        if (last != null && now - last < gapMs) return false
+        shown[key] = now
+        return true
+    }
+
+    private fun label(c: Context, pkg: String): String = runCatching {
+        c.packageManager.getApplicationLabel(c.packageManager.getApplicationInfo(pkg, 0)).toString()
+    }.getOrDefault(pkg)
+
+    fun started(c: Context, mc: MediaController) {
+        val pkg = mc.packageName ?: return
+        if (pkg == c.packageName) return
+        if (isRemote(mc)) {
+            if (due("annen:$pkg")) Notify.show(remotePlaybackMessage(pkg, label(c, pkg)), long = true)
+            return
+        }
+        if (shouldYieldRadio(RadioGuard.looksLikeRadio(pkg), HwRadio.isEngine(pkg), HwRadio.wanted, HwRadio.msSinceOn())) HwRadio.yieldTo(c, pkg)
+        val am = c.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+        val level = runCatching { am.getStreamVolume(AudioManager.STREAM_MUSIC) }.getOrDefault(-1)
+        val muted = runCatching { am.isStreamMute(AudioManager.STREAM_MUSIC) }.getOrDefault(false)
+        val fixed = runCatching { am.isVolumeFixed }.getOrDefault(false)
+        volumeOffNotice(level, muted, fixed)?.let { if (due("volum")) Notify.show(it, long = true) }
+    }
+}
+
+/** Melding når appen spiller på en annen enhet. Testes i BtLogicTest. */
+internal fun remotePlaybackMessage(pkg: String, label: String): String =
+    if (pkg == "com.spotify.music" || label.equals("Spotify", true))
+        "Spotify spiller på en annen enhet. Åpne Spotify → Enheter-ikonet → velg denne stereoen."
+    else "$label spiller på en annen enhet. Velg denne stereoen som avspiller i $label."
+
+/** Melding når musikken starter med volumet av (null = volumet er greit, eller stereoen styrer det selv). Testes i BtLogicTest. */
+internal fun volumeOffNotice(level: Int, muted: Boolean, fixed: Boolean): String? =
+    if (!fixed && (muted || level == 0)) "Volumet er av. Skru opp med volumknappen." else null
+
+/**
+ * FM-radioen (slått på i T'OS) skal slippe lydkanalen når en annen app begynner å spille – men ikke i de første
+ * sekundene etter at radioen ble slått på (gamle økter kan melde «spiller» et øyeblikk). Testes i BtLogicTest.
+ */
+internal fun shouldYieldRadio(isRadio: Boolean, isEngine: Boolean, radioWanted: Boolean, msSinceOn: Long): Boolean =
+    radioWanted && !isRadio && !isEngine && msSinceOn > 3000
+
 /* ======================= Varseltjenesten ======================= */
 
 /**
@@ -351,6 +442,8 @@ class MediaListener : NotificationListenerService() {
     /** Appene som har mediaøkt nå. Tilbakekallene leser denne, så de aldri bruker en gammel liste. */
     private var controllers: List<MediaController> = emptyList()
     private val sessionsListener = MediaSessionManager.OnActiveSessionsChangedListener { list -> pick(list.orEmpty()) }
+    /** Spilte appen sist vi så (pakke → spiller)? For å merke når noe *begynner* å spille ([PlaybackWatch]). */
+    private val wasPlaying = mutableMapOf<String, Boolean>()
 
     override fun onListenerConnected() {
         // Det som var vist før en frakobling kan være utdatert – leses på nytt fra varslene under
@@ -370,6 +463,8 @@ class MediaListener : NotificationListenerService() {
         callbacks.clear()
         controllers = emptyList()
         NowPlaying.sessions = emptyList()
+        wasPlaying.clear()
+        BtLink.clearNotes()
         // Ingen gammel spiller igjen: musikkknappene bruker da vanlige mediaknapper i stedet for en død økt
         NowPlaying.read(null)
         // Uten varseltilgang får vi ikke vite når sving/samtale er over – ikke vis gamle ting
@@ -383,10 +478,18 @@ class MediaListener : NotificationListenerService() {
         controllers = list
         NowPlaying.sessions = list
         list.forEach { c ->
+            watch(c)
             val cb = object : MediaController.Callback() {
-                override fun onPlaybackStateChanged(state: PlaybackState?) { choose() }
+                override fun onPlaybackStateChanged(state: PlaybackState?) { watch(c); choose() }
+                // Spotify byttet avspiller (Spotify Connect) mens musikken spiller: si fra med en gang
+                override fun onAudioInfoChanged(info: MediaController.PlaybackInfo?) {
+                    if (isRemote(c) && isPlayingState(runCatching { c.playbackState?.state }.getOrNull()))
+                        runCatching { PlaybackWatch.started(applicationContext, c) }
+                    choose()
+                }
                 override fun onMetadataChanged(metadata: MediaMetadata?) { choose() }
                 override fun onSessionDestroyed() {
+                    c.packageName?.let { wasPlaying.remove(it) }
                     controllers = controllers.filter { it !== c }
                     NowPlaying.sessions = controllers
                     callbacks.remove(c)?.let { runCatching { c.unregisterCallback(it) } }
@@ -396,6 +499,14 @@ class MediaListener : NotificationListenerService() {
             c.registerCallback(cb); callbacks[c] = cb
         }
         choose()
+    }
+
+    /** Begynte [c] å spille nå? Da sjekkes lyden (annen enhet, volum av, FM-radio som fortsatt har kanalen). */
+    private fun watch(c: MediaController) {
+        val p = c.packageName ?: return
+        val now = isPlayingState(runCatching { c.playbackState?.state }.getOrNull())
+        val before = wasPlaying.put(p, now) ?: false
+        if (now && !before) runCatching { PlaybackWatch.started(applicationContext, c) }
     }
 
     /**
@@ -415,6 +526,8 @@ class MediaListener : NotificationListenerService() {
         val ex = n.extras
         val title = ex.getCharSequence(Notification.EXTRA_TITLE)?.toString()
         val text = ex.getCharSequence(Notification.EXTRA_TEXT)?.toString()
+        // Stereoens BT-app sier ofte «Tilkoblet: iPhone» i et varsel – det er der T'OS ser telefonen
+        runCatching { BtLink.onNotification(sbn.packageName, sbn.key, title, text) }
         when {
             sbn.packageName in navApps && sbn.isOngoing -> { NavInfo.title = title; NavInfo.text = text }
             n.category == Notification.CATEGORY_CALL -> {
@@ -430,6 +543,7 @@ class MediaListener : NotificationListenerService() {
     }
 
     override fun onNotificationRemoved(sbn: StatusBarNotification) {
+        runCatching { BtLink.onNotificationRemoved(sbn.key) }
         if (sbn.packageName in navApps && sbn.isOngoing) { NavInfo.title = null; NavInfo.text = null }
         if (sbn.key == Call.key || (Call.key == null && sbn.notification?.category == Notification.CATEGORY_CALL)) Call.clear()
     }

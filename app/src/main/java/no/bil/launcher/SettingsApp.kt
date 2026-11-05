@@ -562,6 +562,9 @@ private fun MusicSettings() {
     ToggleRow("FM-radio i bakgrunnen (radiomotor)", "radio_engine", true,
         "Starter stereoens radio et øyeblikk bak T'OS hvis radioen ikke kom i gang av seg selv")
     ToggleRow("Skjul stereoens radio-app", "hide_stock_radio", true, "Viser T'OS sin radio-side når stereoens radio-app dukker opp")
+    Section("Bluetooth-lyd")
+    ToggleRow("Bluetooth-lyd i bakgrunnen (BT-motor)", "bt_engine", true,
+        "Starter stereoens Bluetooth-musikk et øyeblikk bak T'OS, så lyden fra telefonen kommer ut av høyttalerne")
 }
 
 @Composable

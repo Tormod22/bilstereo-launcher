@@ -128,17 +128,20 @@ fun NoticeHost(modifier: Modifier = Modifier) {
 
 /* ======================= Statuslinje ======================= */
 
-enum class BtState { NONE, OFF, ON, CONNECTED }
+/** [VENDOR]: Android ser ingen telefon, men stereoens egen BT-app styrer Bluetooth – kan være tilkoblet. */
+enum class BtState { NONE, OFF, ON, CONNECTED, VENDOR }
 
 /** Det T'OS sin statuslinje viser. Bluetooth leses jevnlig av Root. */
 object TosStatus {
     var bt by mutableStateOf(BtState.NONE)
 }
 
+/** Tilkoblet telefon vinner (også når Androids Bluetooth er av – stereoens egen BT-brikke kan ha den). Testes i BtLogicTest. */
 internal fun btState(s: BtStatus): BtState = when {
+    s.phone != null -> BtState.CONNECTED
+    s.vendorPkg != null -> BtState.VENDOR
     !s.available -> BtState.NONE
     !s.on -> BtState.OFF
-    s.devices.any { it.connected } -> BtState.CONNECTED
     else -> BtState.ON
 }
 
@@ -157,6 +160,7 @@ fun StatusIcons(full: Boolean, modifier: Modifier = Modifier) {
             BtState.CONNECTED -> StatusIcon(Icons.Default.BluetoothConnected, "Telefon tilkoblet")
             BtState.ON -> if (full) StatusIcon(Icons.Default.Bluetooth, "Bluetooth på, ingen tilkoblet")
             BtState.OFF -> if (full) StatusIcon(Icons.Default.BluetoothDisabled, "Bluetooth av")
+            BtState.VENDOR -> if (full) StatusIcon(Icons.Default.Bluetooth, "Bluetooth styres av stereoen")
             BtState.NONE -> {}
         }
         if (!Hub.online) StatusIcon(Icons.Default.WifiOff, "Ikke internett")

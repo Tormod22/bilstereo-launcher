@@ -86,7 +86,7 @@ object NetRadio {
     private fun start(c: Context, s: Station, retry: Boolean) {
         stop(c)
         // Nettradio i stedet for FM: slå av stereoens radio, så de ikke spiller oppå hverandre
-        if (HwRadio.wanted) HwRadio.powerOff(c)
+        if (HwRadio.wanted) HwRadio.powerOff(c, keep = Media.NET_RADIO)   // nettradioen tar lyden selv
         audio = am(c)
         current = s; buffering = false; error = null; prepared = false; preparedAt = 0L
         Prefs.set("radio_last", s.name)
@@ -278,6 +278,10 @@ object HwRadio {
     /** Når T'OS sist startet radio-appen som motor (0 = ikke). Står i oppsettrapporten. */
     var engineAt = 0L
         private set
+    /** Når radioen sist ble slått på (elapsedRealtime). */
+    private var wantedAt = 0L
+    /** Hvor lenge siden radioen ble slått på (stort tall når den ikke er på). */
+    fun msSinceOn(): Long = if (wantedAt == 0L) Long.MAX_VALUE else android.os.SystemClock.elapsedRealtime() - wantedAt
     private val handler = android.os.Handler(android.os.Looper.getMainLooper())
 
     /** Stereoens FM/AM-radio-app: brukerens valg, ellers kjente pakkenavn, ellers navnesøk. */
@@ -307,6 +311,7 @@ object HwRadio {
         handler.removeCallbacksAndMessages(null)
         NetRadio.stop(a)
         wanted = true
+        wantedAt = android.os.SystemClock.elapsedRealtime()
         val pkg = radioPackage(a)
         enginePkg = pkg
         val mcuOk = hasMcu(a)
@@ -339,6 +344,7 @@ object HwRadio {
         RadioGuard.cancel()
         NetRadio.stop(a)
         wanted = true
+        wantedAt = android.os.SystemClock.elapsedRealtime()
         enginePkg = pkg
         engineAt = android.os.SystemClock.elapsedRealtime()
         TosOverlay.cover(a)
@@ -347,14 +353,35 @@ object HwRadio {
         handler.postDelayed({ MediaListener.sessionsOf(a, pkg).firstOrNull()?.let { runCatching { it.transportControls.play() } } }, 800)
     }
 
-    /** Slå av FM/AM-radioen (mediaøkt, MCU, lydfokus). Radio-appen lukkes også når den ligger i bakgrunnen. */
-    fun powerOff(c: Context) {
+    /**
+     * Slå av FM/AM-radioen (mediaøkt, MCU, lydfokus). Radio-appen lukkes også når den ligger i bakgrunnen.
+     * [keep]: kilden brukeren bytter til – den stoppes aldri (noen stereoer har radio og BT-musikk i samme app),
+     * og lydfokus-trikset hoppes over (det ville pauset nettopp den kilden).
+     */
+    fun powerOff(c: Context, keep: String? = null) {
         val a = c.applicationContext
         handler.removeCallbacksAndMessages(null)
         val pkg = enginePkg ?: radioPackage(a)
         wanted = false
-        engineAt = 0L
-        if (pkg != null) RadioGuard.silence(a, pkg, resumePkg = null)
+        engineAt = 0L; wantedAt = 0L
+        if (pkg != null) RadioGuard.silence(a, pkg, resumePkg = null, keep = keep)
+        else if (hasMcu(a)) stopMcu()
+    }
+
+    /**
+     * En annen app (Spotify, YouTube, telefonen over Bluetooth …) begynte å spille mens FM-radioen var slått på i T'OS:
+     * radioen slås av uten å ta lydfokus (musikken som startet skal ikke pauses), og på MCU-stereoer gis
+     * lydkanalen tilbake til Android – ellers kunne radioen holdt kanalen og musikken blitt stille.
+     */
+    fun yieldTo(c: Context, musicPkg: String) {
+        if (!wanted) return
+        val a = c.applicationContext
+        handler.removeCallbacksAndMessages(null)
+        val pkg = enginePkg ?: radioPackage(a)
+        wanted = false
+        engineAt = 0L; wantedAt = 0L
+        if (NowPlaying.preferredPkg == pkg) NowPlaying.preferredPkg = null
+        if (pkg != null && pkg != musicPkg) RadioGuard.silence(a, pkg, resumePkg = null, keep = musicPkg)
         else if (hasMcu(a)) stopMcu()
     }
 
@@ -403,6 +430,7 @@ object HwRadio {
         if (hasMcu(c)) send(byteArrayOf(0x01, 0x01))
         NetRadio.stop(c)
         wanted = true
+        wantedAt = android.os.SystemClock.elapsedRealtime()
         enginePkg = radioPackage(c)
         AppRepository.launchTile(c, Tiles.byPrefix("Rad"))
         sessionControls()?.play()
@@ -445,27 +473,34 @@ object RadioGuard {
      * [mayClose]: appen kan lukkes helt (bare når den ser ut som en radio-app og ikke er stereoens startskjerm –
      * på noen stereoer ligger radioen inne i hovedappen, og den skal ikke lukkes).
      */
-    fun silence(c: Context, pkg: String, resumePkg: String?, mayClose: Boolean = looksLikeRadio(pkg)) {
+    fun silence(c: Context, pkg: String, resumePkg: String?, mayClose: Boolean = looksLikeRadio(pkg), keep: String? = null) {
         cancel()
         val app = c.applicationContext
         val am = app.getSystemService(Context.AUDIO_SERVICE) as android.media.AudioManager
         val req = android.media.AudioFocusRequest.Builder(android.media.AudioManager.AUDIOFOCUS_GAIN)
             .setAudioAttributes(android.media.AudioAttributes.Builder().setUsage(android.media.AudioAttributes.USAGE_MEDIA).build())
             .build()
+        // Har radio-appen også BT-musikk/musikk (samme app), og det er den brukeren bytter til: ikke stopp den
+        val stopSessions = pkg != keep
         fun hush() {
-            MediaListener.stopSessionsOf(app, pkg)
+            if (stopSessions) MediaListener.stopSessionsOf(app, pkg)
             if (HwRadio.hasMcu(app)) HwRadio.stopMcu()
         }
         hush()
-        // Spiller T'OS sin egen nettradio, skal den ikke miste lyden – da hoppes lydfokus-trikset over
-        val grabbed = !NetRadio.active &&
+        // Lydfokus-trikset (Spotify o.l. ville pauset): ikke når T'OS sin nettradio spiller, når brukeren bytter til
+        // en annen kilde, eller når en annen app (ikke radio) allerede spiller – den skal fortsette
+        val othersPlaying = NowPlaying.sessions.any { s ->
+            val p = s.packageName
+            p != null && p != pkg && !looksLikeRadio(p) && isPlayingState(runCatching { s.playbackState?.state }.getOrNull())
+        }
+        val grabbed = !NetRadio.active && keep == null && !othersPlaying &&
             runCatching { am.requestAudioFocus(req) }.getOrDefault(0) == android.media.AudioManager.AUDIOFOCUS_REQUEST_GRANTED
         // Radio-appen kan bruke litt tid på å starte – gjenta etter at den er ferdig
         handler.postDelayed({ hush() }, 600)
         handler.postDelayed({
             hush()
             if (grabbed) runCatching { am.abandonAudioFocusRequest(req) }
-            if (mayClose) runCatching { (app.getSystemService(Context.ACTIVITY_SERVICE) as android.app.ActivityManager).killBackgroundProcesses(pkg) }
+            if (mayClose && stopSessions) runCatching { (app.getSystemService(Context.ACTIVITY_SERVICE) as android.app.ActivityManager).killBackgroundProcesses(pkg) }
             if (resumePkg != null && !NetRadio.active) MediaListener.playSessionOf(app, resumePkg)
         }, 1500)
     }

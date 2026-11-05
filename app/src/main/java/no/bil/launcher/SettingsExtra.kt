@@ -270,7 +270,9 @@ private fun connectWifiLegacy(wm: WifiManager, ssid: String, pass: String?): Str
 fun BtPanel() {
     val context = LocalContext.current
     val adapter = remember { (context.getSystemService(Context.BLUETOOTH_SERVICE) as? BluetoothManager)?.adapter }
-    val status by produceState(initialValue = remember { btStatus(context) }, Prefs.version) { while (true) { value = btStatus(context); delay(3000) } }
+    val status by produceState(initialValue = BtLink.current, Prefs.version, BtLink.version) {
+        while (true) { value = withContext(Dispatchers.IO) { btStatus(context) }; delay(3000) }
+    }
     val found = remember { mutableStateListOf<BluetoothDevice>() }
     var scanning by remember { mutableStateOf(false) }
     var msg by remember { mutableStateOf<String?>(null) }
@@ -308,7 +310,7 @@ fun BtPanel() {
 
     SettingRow(
         when { adapter == null || !status.available -> "Bluetooth styres av stereoen"; status.on -> "Bluetooth er på"; else -> "Bluetooth er av" },
-        status.devices.firstOrNull { it.connected }?.let { "Tilkoblet: ${it.name}" } ?: "Ingen enhet tilkoblet",
+        btShortText(status),
     ) {
         if (adapter != null && !status.on) Pill("Slå på", strong = true) {
             @Suppress("DEPRECATION")
@@ -324,7 +326,9 @@ fun BtPanel() {
     if (status.devices.isNotEmpty()) {
         Section("Kjente enheter")
         status.devices.forEach { d ->
-            SettingRow(d.name, if (d.connected) "Tilkoblet" + (if (d.battery in 0..100) " · ${d.battery} %" else "") else "Ikke tilkoblet") {
+            // Styrer stereoens egen BT-app tilkoblingen, vet ikke Android om telefonen er tilkoblet – da bare «Paret»
+            val off = if (status.vendorPkg != null) "Paret" else "Ikke tilkoblet"
+            SettingRow(d.name, if (d.connected) "Tilkoblet" + (if (d.battery in 0..100) " · ${d.battery} %" else "") else off) {
                 Text("Glem", color = TextPrimary, fontSize = 14.sp, modifier = Modifier.clip(RoundedCornerShape(14.dp)).background(Line).clickable {
                     val ok = runCatching {
                         val dev = adapter?.bondedDevices?.firstOrNull { it.address == d.address } ?: error("ikke funnet")

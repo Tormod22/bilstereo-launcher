@@ -17,8 +17,20 @@ Snakk norsk med brukeren. Han er ikke utvikler – forklar enkelt, ikke bruk fag
 - Løsningen han godkjente: **tre ting** – (1) bilkort med klokke, stort bilbilde og fart som stort tall, (2) ekte kart, (3) én rad nederst: musikk/telefon/apper. Ingen kalender, ingen vær.
 - Kalkulator skal være skjult i app-skuffen (`HiddenApps` i `Apps.kt`).
 
-## Nåværende tilstand (v5.0)
+## Nåværende tilstand (v5.1)
 - `MainActivity.kt`: Compose-UI med de tre tingene + app-skuff + oppdateringsknapp. Skjermvalg via `Nav.screen` (DASH/APPS/BT/KEYS).
+- v5.1 (brukeren meldte: «ingen lyd på Spotify, YouTube virket» + «T'OS sier telefonen ikke er tilkoblet, iPhonen sier den er det»):
+  `BtLink.kt` – Bluetooth i lag: profiler (A2DP/HEADSET + bil-profilene A2DP_SINK 11, HFP-klient 16, AVRCP 12), parede
+  isConnected, ACL-/tilkoblingsmeldinger (registrert fra Hub), stereoens egen BT-app (varsel «Tilkoblet»/mediaøkt).
+  Finnes egen BT-app og Android ser ingenting → BtState.VENDOR «Bluetooth styres av stereoen – sjekk telefonen» (aldri
+  «ikke tilkoblet»). OBD-brikka regnes ikke som telefonen. `BtAudio` («Bluetooth-lyd fra telefonen», musikksiden/BT-siden/
+  kildelista): BT-økt «spill» → mediatjeneste/medieknapp → BT-musikk-tjeneste → «BT-motor» (stereoens BT-musikk bak svart
+  teppe, Prefs «bt_engine», bryter i Innstillinger → Musikk). `PlaybackWatch` (MediaListener.kt): app begynner å spille →
+  Spotify Connect/annen enhet (playbackType REMOTE) gir melding + linje på musikksiden, FM-radio slått på i T'OS slipper
+  kanalen (`HwRadio.yieldTo`, uten lydfokus), «Volumet er av». `pauseOthers` pauser aldri REMOTE-økter (ville stoppet
+  telefonen) eller BT-økter når Bluetooth velges; RadioGuard tar ikke lydfokus når annen musikk spiller / brukeren bytter
+  kilde (`powerOff(keep=)`). Oppsettrapporten har ny del «Bluetooth og lyd» – BE BRUKEREN SENDE DEN. Tester totalt 117
+  (BtLogicTest 13). Alt UVERIFISERT på enheten.
 - v3.0 «stor oppdatering» – alle 50 punktene i `docs/IDEER.md` (se Begrensninger der). Nye filer:
   `Prefs.kt` (TosApp, innstillinger m/ Compose-reaktivitet via Prefs.version, sikkerhetskopi JSON, CrashLog),
   `Theme.kt` (palett som getters – dag/natt; Sun-beregning), `Hub.kt` (GPS-singleton, Trip, Parking, SpeedLimit/Overpass,
