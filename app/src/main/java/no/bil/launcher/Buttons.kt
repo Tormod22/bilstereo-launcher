@@ -268,3 +268,40 @@ object Learn {
         return true
     }
 }
+
+/**
+ * «Fikk signal»-lampe på Knapper-siden: hver gang T'OS kjenner igjen en knapp på stereoen (tastekode eller
+ * appen knappen åpner), lyser en grønn prikk på akkurat den raden et øyeblikk. Da ser man at riktig knapp er lært –
+ * og ikke en annen. Ukjente koder vises også, så man ser at knappen sender noe T'OS ikke har lært ennå.
+ */
+object KeyPing {
+    const val LIT_MS = 1500L
+    var key by androidx.compose.runtime.mutableStateOf<PanelKey?>(null)
+        private set
+    /** Hvordan knappen ble kjent igjen: «kode 21» / «åpnet Maps». */
+    var how by androidx.compose.runtime.mutableStateOf("")
+        private set
+    var unknownCode by androidx.compose.runtime.mutableIntStateOf(0)
+        private set
+    var lit by androidx.compose.runtime.mutableStateOf(false)
+        private set
+    private var seq = 0
+    private val main = android.os.Handler(android.os.Looper.getMainLooper())
+
+    fun hit(k: PanelKey, how: String) = main.post { key = k; this.how = how; unknownCode = 0; light() }
+
+    /** En knapp T'OS ikke kjenner (ikke volum, ikke under læring). */
+    fun unknown(code: Int) = main.post { if (code > 0) { key = null; how = ""; unknownCode = code; light() } }
+
+    private fun light() {
+        lit = true
+        val mine = ++seq
+        main.postDelayed({ if (seq == mine) lit = false }, LIT_MS)
+    }
+
+    /** Rene regler (testbare): hvilke koder skal vises som «ukjent knapp». Volum/tilbake/hjem er vanlige systemknapper. */
+    internal fun reportUnknown(code: Int): Boolean = code > 0 && code !in setOf(
+        android.view.KeyEvent.KEYCODE_VOLUME_UP, android.view.KeyEvent.KEYCODE_VOLUME_DOWN, android.view.KeyEvent.KEYCODE_VOLUME_MUTE,
+        android.view.KeyEvent.KEYCODE_BACK, android.view.KeyEvent.KEYCODE_HOME,
+    )
+}

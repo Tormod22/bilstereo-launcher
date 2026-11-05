@@ -180,6 +180,10 @@ class MainActivity : ComponentActivity() {
             if (Learn.offerKey(this, code)) { swallowUp += code; return true }
         }
         val key = Buttons.keyForCode(this, code)
+        // Grønn prikk på Knapper-siden (knappestyringen kan være av – da kommer knappene hit når T'OS er framme)
+        if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0 && KeyService.instance == null) {
+            if (key != null) KeyPing.hit(key, "kode $code") else if (KeyPing.reportUnknown(code)) KeyPing.unknown(code)
+        }
         if (key != null && Buttons.shouldIntercept(this, key, code)) {
             KeyService.handlePress(this, key, event, downAt, longDone)
             return true

@@ -1,5 +1,8 @@
 package no.bil.launcher
 
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.graphics.Color
 import android.content.Context
 import android.content.Intent
 import android.provider.Settings
@@ -216,13 +219,27 @@ fun KeysScreen(onClose: () -> Unit) {
             Spacer(Modifier.width(12.dp))
         }
 
-        Text(
-            Learn.target?.let { "Trykk ${it.label}-knappen på stereoen nå …" }
-                ?: Learn.message
-                ?: "Trykk «Lær» og så knappen på stereoen. Velg deretter hva knappen skal gjøre.",
-            color = if (Learn.target != null) TextPrimary else TextMuted, fontSize = 15.sp,
-            modifier = Modifier.padding(bottom = 12.dp),
-        )
+        Row(Modifier.padding(bottom = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                Learn.target?.let { "Trykk ${it.label}-knappen på stereoen nå …" }
+                    ?: Learn.message
+                    ?: "Trykk en knapp på stereoen: riktig rad får en grønn prikk. «Lær» kobler en knapp til raden.",
+                color = if (Learn.target != null) TextPrimary else TextMuted, fontSize = 15.sp,
+                maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f),
+            )
+            // Siste signal: hvilken knapp T'OS kjente igjen, eller en ukjent kode
+            val pinged = KeyPing.key
+            if (KeyPing.lit && Learn.target == null) {
+                Spacer(Modifier.width(12.dp))
+                PingDot()
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    if (pinged != null) "${pinged.label} (${KeyPing.how})" else "Ukjent knapp (kode ${KeyPing.unknownCode})",
+                    color = TextPrimary, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.widthIn(max = 320.dp),
+                )
+            }
+        }
 
         // Lista leser Buttons.version selv, så den oppdateres uten å hoppe til toppen
         LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -230,6 +247,14 @@ fun KeysScreen(onClose: () -> Unit) {
         }
     }
 }
+
+/** Liten grønn «fikk signal»-prikk (brukerens ønske – eneste farge på siden). */
+@Composable
+private fun PingDot() {
+    Box(Modifier.size(12.dp).clip(CircleShape).background(PingGreen).semantics { contentDescription = "Knappen er kjent igjen" })
+}
+
+private val PingGreen = Color(0xFF3DDC84)
 
 @Composable
 private fun KeyRow(k: PanelKey, onChanged: () -> Unit) {
@@ -244,6 +269,10 @@ private fun KeyRow(k: PanelKey, onChanged: () -> Unit) {
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(14.dp),
     ) {
+        // Grønn prikk når T'OS akkurat kjente igjen denne knappen (ellers en tom plass, så teksten ikke hopper)
+        Box(Modifier.size(14.dp), contentAlignment = Alignment.Center) {
+            if (KeyPing.lit && KeyPing.key == k) PingDot()
+        }
         Text(k.label, color = TextPrimary, fontSize = 17.sp, fontWeight = FontWeight.Medium, modifier = Modifier.width(72.dp))
 
         // Hva knappen gjør: kort trykk og langt trykk (trykk for å endre)

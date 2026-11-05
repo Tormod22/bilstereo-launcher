@@ -171,7 +171,12 @@ class KeyService : AccessibilityService() {
             swallowUp = code
             return true
         }
-        val key = Buttons.keyForCode(this, code) ?: return false
+        val key = Buttons.keyForCode(this, code)
+        // Grønn prikk på Knapper-siden: viser hvilken knapp T'OS kjente igjen (også når T'OS lar stereoen ta den)
+        if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0) {
+            if (key != null) KeyPing.hit(key, "kode $code") else if (KeyPing.reportUnknown(code)) KeyPing.unknown(code)
+        }
+        if (key == null) return false
         // Under en samtale skal svar/legg på (og mediaknappene, som telefonen bruker til det) gå til telefonen
         if (passToCall(code) && Buttons.inCall(this)) return false
         if (!Buttons.shouldIntercept(this, key, code)) return false
@@ -261,6 +266,7 @@ class KeyService : AccessibilityService() {
 
         val now = SystemClock.elapsedRealtime()
         val key = Buttons.keyForPkg(this, pkg)
+        if (key != null && state.newlyFront) KeyPing.hit(key, "åpnet ${label(pkg).ifBlank { pkg.substringAfterLast('.') }}")
 
         // Hold T'OS som startskjerm: dukker stereoens originale startskjerm (eller app-lista/hovedmenyen dens) opp,
         // f.eks. etter «fjern alle faner», vises T'OS i stedet – raskt og bak et svart teppe, så den ikke blinker fram.
