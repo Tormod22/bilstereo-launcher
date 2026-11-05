@@ -284,6 +284,7 @@ object AppRepository {
         val intent = launchIntent(context, packageName)
         if (intent != null) {
             markLaunched(packageName)
+            RecentApps.record(context, packageName)
             intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             runCatching { context.startActivity(intent) }.onFailure { selfLaunched.remove(packageName); Notify.show("Fikk ikke åpnet appen") }
         } else {

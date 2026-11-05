@@ -39,6 +39,7 @@ adb shell appops set no.bil.launcher SYSTEM_ALERT_WINDOW allow
 adb shell appops set no.bil.launcher WRITE_SETTINGS allow
 adb shell appops set no.bil.launcher REQUEST_INSTALL_PACKAGES allow
 adb shell appops set no.bil.launcher ACCESS_RESTRICTED_SETTINGS allow
+adb shell appops set no.bil.launcher GET_USAGE_STATS allow
 adb shell pm grant no.bil.launcher android.permission.ACCESS_FINE_LOCATION
 adb shell pm grant no.bil.launcher android.permission.ACCESS_COARSE_LOCATION
 adb shell pm grant no.bil.launcher android.permission.BLUETOOTH_CONNECT

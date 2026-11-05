@@ -489,6 +489,7 @@ internal fun adbSetupCommands(pkg: String, accessibility: String = "$pkg/$pkg.Ke
         AdbStep("adb shell appops set $pkg WRITE_SETTINGS allow", "Lysstyrke, tastelyd og 24-timers klokke"),
         AdbStep("adb shell appops set $pkg REQUEST_INSTALL_PACKAGES allow", "Installere oppdateringer av T'OS"),
         AdbStep("adb shell appops set $pkg ACCESS_RESTRICTED_SETTINGS allow", "Android 13: «begrensede innstillinger»"),
+        AdbStep("adb shell appops set $pkg GET_USAGE_STATS allow", "Siste apper: se hvilke apper som er brukt"),
     ) + perms.map { (p, what) -> AdbStep("adb shell pm grant $pkg android.permission.$p", what.replaceFirstChar { it.uppercase() }) } + listOf(
         AdbStep("adb shell cmd wifi network-suggestions-set-user-approved $pkg yes", "Wi-Fi uten spørsmål (Android 11+)"),
         AdbStep("adb shell dumpsys deviceidle whitelist +$pkg", "Ikke stoppet av batterisparing"),
@@ -575,6 +576,8 @@ fun SetupScreen(onClose: () -> Unit) {
             }
             Step(Icons.Default.SystemUpdate, "Installere oppdateringer", "Oppdateringsknappen i T'OS. Første oppdatering ber om ett «Installer»-trykk, senere går det av seg selv.",
                 remember(tick) { Updater.canInstall(context) }, optional = true) { Updater.openInstallPermission(context) }
+            Step(Icons.Default.History, "Siste apper", "Full liste i «Siste apper» (apper du har brukt). Uten dette viser T'OS bare apper den selv har sett.",
+                remember(tick) { RecentApps.hasUsageAccess(context) }, optional = true) { RecentApps.openUsageAccess(context) }
             Step(Icons.Default.Layers, "Vis over andre apper", "Reserve for Waze-popupen hvis knappestyring er av.", remember(tick) { Settings.canDrawOverlays(context) }, optional = true) {
                 context.go(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:${context.packageName}")))
             }

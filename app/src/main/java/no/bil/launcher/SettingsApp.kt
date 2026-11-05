@@ -56,7 +56,7 @@ enum class SetCat(val label: String, val icon: ImageVector, val group: String, v
     BT("Bluetooth", Icons.Default.Bluetooth, "Stereoen", "bluetooth telefon paring pare obd brikke"),
     SOUND("Lyd", Icons.AutoMirrored.Filled.VolumeUp, "Stereoen", "lyd volum volumlinje equalizer eq bass diskant varsel ringelyd tastelyd alarm"),
     SCREEN("Skjerm", Icons.Default.LightMode, "Stereoen", "skjerm lysstyrke lys natt nattmodus dag ikoner tekst størrelse bilbilde skjermsparer klokke statuslinje"),
-    APPS("Apper", Icons.Default.Apps, "Stereoen", "apper app skjul vis startskjerm carplay car link radio kamera systemapper avinstaller"),
+    APPS("Apper", Icons.Default.Apps, "Stereoen", "apper app skjul vis startskjerm carplay car link radio kamera systemapper avinstaller siste nylige bakgrunn lukk"),
     STORAGE("Lagring", Icons.Default.Storage, "Stereoen", "lagring plass minne cache tøm kart minnepinne"),
     TIME("Dato, tid og språk", Icons.Default.Schedule, "Stereoen", "dato tid klokke tidssone 24 timer språk tastatur norsk"),
     ABOUT("Om stereoen", Icons.Default.Info, "Stereoen", "om versjon oppdatering oppdater stereo android prosessor minne oppsett tillatelser adb pc avansert"),
@@ -288,6 +288,7 @@ private fun AppsSettings() {
         context.open(Intent(Settings.ACTION_HOME_SETTINGS)) || context.open(Intent(Settings.ACTION_MANAGE_DEFAULT_APPS_SETTINGS))
     }) { Chevron() }
     ToggleRow("Hold T'OS som startskjerm", "keep_home", true, "Viser T'OS i stedet hvis den originale startskjermen dukker opp (krever knappestyring)")
+    ToggleRow("Siste apper i T'OS-stil", "tos_recents", true, "Knappen for nylige apper viser T'OS sin egen «Siste apper» i stedet for stereoens (krever knappestyring)")
     ToggleRow("Vis systemapper", "show_system_apps", false, "Viser også stereoens innebygde apper i app-lista")
     Section("Hvilke apper T'OS bruker")
     AppChoiceRow("CarPlay-app (f.eks. Car link 2.0)", "carplay_pkg", "Car")

@@ -1,5 +1,9 @@
 package no.bil.launcher
 
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import org.junit.After
@@ -71,5 +75,41 @@ class ScreensSmokeTest2 {
         rule.runOnUiThread { Prefs.set("text_scale_s", "1.3"); NowPlaying.title = long }
         settle()
         for (s in listOf(Screen.DASH, Screen.MUSIC, Screen.PHONE, Screen.SETTINGS, Screen.APPS, Screen.CAR)) show(s)
+    }
+}
+
+/** «Siste apper» tegnet alene: med apper (lange navn, uten tilgang til appbruk), tom, og mens den henter. */
+@RunWith(AndroidJUnit4::class)
+@Config(sdk = [33], qualifiers = "w1024dp-h600dp-land-mdpi")
+class RecentsSmokeTest {
+    @get:Rule val rule = androidx.compose.ui.test.junit4.createComposeRule()
+
+    private fun settle() {
+        rule.mainClock.advanceTimeBy(500); rule.waitForIdle()
+        rule.mainClock.advanceTimeBy(500); rule.waitForIdle()
+    }
+
+    @Test fun sisteApperAlleTilstander() {
+        rule.mainClock.autoAdvance = false
+        val now = System.currentTimeMillis()
+        val icon = android.graphics.drawable.ColorDrawable(android.graphics.Color.GRAY)
+        val apps = (1..8).map { RecentItem("com.test.app$it", if (it == 1) "Veldig langt appnavn ".repeat(6) else "App $it", icon, now - it * 400_000L) }
+        var state by androidx.compose.runtime.mutableStateOf(Triple(apps, true, false))
+        var closedAll = false
+        rule.setContent {
+            RecentsContent(state.first, state.second, state.third, onClose = {}, onOpen = {}, onCloseApp = {}, onCloseAll = { closedAll = true }, onAskAccess = {})
+        }
+        settle()
+        // «Lukk alle» spør først («Trykk igjen»), så lukkes alt
+        rule.onNodeWithText("Lukk alle").performClick()
+        settle()
+        rule.onNodeWithText("Trykk igjen for å lukke alle").performClick()
+        settle()
+        check(closedAll) { "«Lukk alle» skal lukke etter andre trykk" }
+        rule.runOnUiThread { state = Triple(emptyList(), true, true) }
+        settle()
+        rule.onNodeWithText("Ingen apper i bakgrunnen").assertExists()
+        rule.runOnUiThread { state = Triple(emptyList(), false, true) }
+        settle()
     }
 }

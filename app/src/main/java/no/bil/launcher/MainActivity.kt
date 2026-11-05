@@ -325,6 +325,7 @@ fun Root() {
                         Screen.SETTINGS -> SettingsScreen(home)
                         Screen.TUNING -> TuningScreen(home)
                         Screen.SETUP -> SetupScreen(home)
+                        Screen.RECENTS -> RecentsScreen(home)
                         Screen.CLOCK -> {}
                     }
                 }
@@ -790,7 +791,8 @@ fun ActionRow(onApps: () -> Unit, onPickSlot: () -> Unit, modifier: Modifier) {
             Spacer(Modifier.height(6.dp))
             Text(slotApp?.first ?: "Telefon", color = TextMuted, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(horizontal = 8.dp))
         }
-        ActionTile(Icons.Default.Apps, "Apper", Modifier.weight(0.8f)) { onApps() }
+        // Langt trykk: «Siste apper»
+        ActionTile(Icons.Default.Apps, "Apper", Modifier.weight(0.8f), onLongClick = { Nav.screen = Screen.RECENTS }) { onApps() }
     }
 }
 
@@ -825,10 +827,11 @@ fun AppPicker(title: String, defaultLabel: String, onPick: (String) -> Unit, onC
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun ActionTile(icon: ImageVector, label: String, modifier: Modifier, onClick: () -> Unit) {
+fun ActionTile(icon: ImageVector, label: String, modifier: Modifier, onLongClick: (() -> Unit)? = null, onClick: () -> Unit) {
     Column(
-        modifier.fillMaxHeight().clip(Shape).background(Panel).clickable(onClick = onClick),
+        modifier.fillMaxHeight().clip(Shape).background(Panel).combinedClickable(onClick = onClick, onLongClick = onLongClick),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
@@ -966,6 +969,7 @@ fun AppDrawer(onClose: () -> Unit) {
                 horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.End),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
+                PillButton(Icons.Default.History, "Siste") { Nav.screen = Screen.RECENTS }
                 PillButton(Icons.Default.Settings, "Innstillinger") { Nav.screen = Screen.SETTINGS }
                 PillButton(Icons.Default.Tune, "Knapper") { Nav.screen = Screen.KEYS }
                 UpdateButton()

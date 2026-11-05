@@ -13,7 +13,7 @@ import androidx.compose.runtime.setValue
 
 /* ======================= Skjermene i T'OS ======================= */
 
-enum class Screen { DASH, APPS, BT, KEYS, MUSIC, MAP, NAV, RADIO, CAR, PHONE, SETTINGS, CLOCK, TUNING, SETUP }
+enum class Screen { DASH, APPS, BT, KEYS, MUSIC, MAP, NAV, RADIO, CAR, PHONE, SETTINGS, CLOCK, TUNING, SETUP, RECENTS }
 
 /** Hvilken skjerm som vises. Kan settes fra knappetjenesten, derfor et globalt objekt. */
 object Nav {
@@ -37,6 +37,7 @@ enum class Action(val label: String) {
     PHONE("Telefon-side (favoritter)"),
     CARPLAY("CarPlay"),
     APPS("Apper"),
+    RECENTS("Siste apper"),
     PLAY_PAUSE("Spill / pause"),
     NEXT_TRACK("Neste sang"),
     PREV_TRACK("Forrige sang"),
@@ -130,7 +131,7 @@ object Buttons {
         fun tile(p: String) = Tiles.byPrefix(p).let { t -> t.candidates + listOfNotNull(AppRepository.tilePackage(c, t)) }
         return when (a) {
             // RADIO: radioen startes i bakgrunnen og T'OS sin radio-side vises (stereoens radio-app tas hånd om i KeyService)
-            Action.HOME, Action.BT, Action.APPS, Action.RADIO, Action.RADIO_PAGE, Action.PHONE, Action.MAP_FULL, Action.CAR, Action.QUICK, Action.TUNING, Action.SETTINGS -> listOf(c.packageName)
+            Action.HOME, Action.BT, Action.APPS, Action.RECENTS, Action.RADIO, Action.RADIO_PAGE, Action.PHONE, Action.MAP_FULL, Action.CAR, Action.QUICK, Action.TUNING, Action.SETTINGS -> listOf(c.packageName)
             Action.NAVI -> tile("Nav") + listOf(Prefs.str("nav_app"))
             Action.MUSIC -> tile("Mus")
             Action.CARPLAY -> tile("Car")
@@ -149,6 +150,7 @@ object Buttons {
             Action.HOME -> show(c, Screen.DASH)
             Action.BT -> show(c, Screen.BT)
             Action.APPS -> show(c, Screen.APPS)
+            Action.RECENTS -> show(c, Screen.RECENTS)
             Action.NAVI -> openMaps(c)
             Action.MUSIC -> openMusic(c)
             // Stereoens FM/AM-radio uten radio-appens skjermbilde (se HwRadio.powerOn)
