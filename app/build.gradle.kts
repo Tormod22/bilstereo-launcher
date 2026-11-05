@@ -51,7 +51,12 @@ android {
     kotlinOptions { jvmTarget = "17" }
     buildFeatures { compose = true }
     // Testene bruker Android-klasser bare indirekte; tomme svar i stedet for krasj
-    testOptions { unitTests.isReturnDefaultValues = true }
+    testOptions {
+        unitTests.isReturnDefaultValues = true
+        // Robolectric (ScreensSmokeTest): ekte Android-ressurser og manifest i JVM-testene
+        unitTests.isIncludeAndroidResources = true
+        unitTests.all { it.maxHeapSize = "2g" }
+    }
 }
 
 dependencies {
@@ -67,4 +72,11 @@ dependencies {
     implementation("com.google.zxing:core:3.5.3")   // QR-kode for parkeringsplassen
     implementation("org.maplibre.gl:android-sdk:11.8.0")   // kart uten nett (PMTiles fra OpenStreetMap)
     testImplementation("junit:junit:4.13.2")
+    // «Alle skjermer åpner uten krasj»: Compose-UI kjøres i Robolectric (ingen stereo/emulator nødvendig)
+    testImplementation("org.robolectric:robolectric:4.13")
+    testImplementation(bom)
+    testImplementation("androidx.compose.ui:ui-test-junit4")
+    testImplementation("androidx.test:core:1.6.1")
+    testImplementation("androidx.test.ext:junit:1.2.1")
+    debugImplementation("androidx.compose.ui:ui-test-manifest")
 }

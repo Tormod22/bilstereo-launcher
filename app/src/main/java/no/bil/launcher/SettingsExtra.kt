@@ -110,8 +110,9 @@ fun WifiPanel() {
     val nets by produceState(emptyList<ScanResult>()) {
         while (true) {
             runCatching { wm.startScan() }
-            value = runCatching { wm.scanResults }.getOrDefault(emptyList())
-                .filter { it.SSID.isNotBlank() }.sortedByDescending { it.level }.distinctBy { it.SSID }
+            // Noen stereoer svarer null i stedet for en tom liste
+            value = runCatching { wm.scanResults }.getOrNull().orEmpty()
+                .filter { !it.SSID.isNullOrBlank() }.sortedByDescending { it.level }.distinctBy { it.SSID }
             delay(30_000)   // Android tillater bare noen få søk per 2 min
         }
     }
@@ -222,7 +223,7 @@ fun WifiPanel() {
     }
     // Nett T'OS har lagt inn (Android 11+ kan liste dem)
     if (Build.VERSION.SDK_INT >= 30) {
-        val mine = remember(tick / 15) { runCatching { wm.networkSuggestions }.getOrDefault(emptyList()) }
+        val mine = remember(tick / 15) { runCatching { wm.networkSuggestions }.getOrNull().orEmpty() }
         if (mine.isNotEmpty()) {
             var ask by remember { mutableStateOf(false) }
             LaunchedEffect(ask) { if (ask) { delay(4000); ask = false } }
