@@ -17,8 +17,13 @@ Snakk norsk med brukeren. Han er ikke utvikler – forklar enkelt, ikke bruk fag
 - Løsningen han godkjente: **tre ting** – (1) bilkort med klokke, stort bilbilde og fart som stort tall, (2) ekte kart, (3) én rad nederst: musikk/telefon/apper. Ingen kalender, ingen vær.
 - Kalkulator skal være skjult i app-skuffen (`HiddenApps` i `Apps.kt`).
 
-## Nåværende tilstand (v5.1)
+## Nåværende tilstand (v5.2)
 - `MainActivity.kt`: Compose-UI med de tre tingene + app-skuff + oppdateringsknapp. Skjermvalg via `Nav.screen` (DASH/APPS/BT/KEYS).
+- v5.2: brukeren: «Spotify virker nå» + «NAVI-knappen har fortsatt bare den originale funksjonen». Årsak: stereoen åpner
+  Google Maps selv; var NAVI lært til Maps, stoppet KeyService på «pkg in targets» (ville gått i ring) → ingenting skjedde.
+  `NaviKey.kt`: når kartapp kommer fram uten at T'OS åpnet den (lært NAVI eller ikke) → Waze/Maps-popup (maks 1/min);
+  stereoens egen navi-systemapp (navi/nav/gps/导航 i navn) eller lært ikke-kartapp → T'OS sin NAVI (openMaps). Prefs «navi_detect»
+  (Innstillinger → Navigasjon). Test NaviKeyTest (3).
 - v5.1 (brukeren meldte: «ingen lyd på Spotify, YouTube virket» + «T'OS sier telefonen ikke er tilkoblet, iPhonen sier den er det»):
   `BtLink.kt` – Bluetooth i lag: profiler (A2DP/HEADSET + bil-profilene A2DP_SINK 11, HFP-klient 16, AVRCP 12), parede
   isConnected, ACL-/tilkoblingsmeldinger (registrert fra Hub), stereoens egen BT-app (varsel «Tilkoblet»/mediaøkt).

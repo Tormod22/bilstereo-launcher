@@ -534,6 +534,8 @@ private fun MapSettings() {
     PrefField("Hjem-adresse", "addr_home", "Gate og sted")
     PrefField("Jobb-adresse", "addr_work", "Gate og sted")
     ChoiceRow("Kartapp", "nav_app", listOf("com.google.android.apps.maps" to "Google Maps", "com.waze" to "Waze"), "com.google.android.apps.maps")
+    ToggleRow("NAVI-knappen styres av T'OS", "navi_detect", true,
+        "Når stereoen åpner kartet selv: tilbyr den andre kartappen (Waze/Google Maps). Stereoens egen navigasjonsapp byttes ut med kartappen din (krever knappestyring)")
     ToggleRow("Tilby den andre kartappen", "navi_popup", true, "Popup øverst til høyre i 5 sekunder: «Åpne heller Waze»")
     if (Prefs.bool("navi_popup", true) && !NaviPopup.possible(LocalContext.current)) {
         val ctx = LocalContext.current
