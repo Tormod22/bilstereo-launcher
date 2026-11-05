@@ -51,6 +51,17 @@ data class Gps(
     val speed: Int? get() = if (stale || !hasSpeed) null else speedKmh
 }
 
+/** Farten slik den vises: «–» når den er ukjent (ingen GPS, tunnel), aldri et falskt «0». */
+internal fun speedText(g: Gps?): String = g?.speed?.toString() ?: "–"
+
+/** Den lille teksten ved farten: søker / mistet GPS, ellers kjøreretningen når bilen ruller. */
+internal fun gpsCaption(g: Gps?): String = when {
+    g == null -> "Søker GPS"
+    g.stale -> "Mistet GPS"
+    (g.speed ?: 0) > 3 -> compassName(g.bearing)
+    else -> "GPS"
+}
+
 /** Hvor lenge en måling regnes som «nå» (fart vises), og hvor gammel «siste kjente posisjon» kan være. */
 const val GPS_STALE_NANOS = 3_000_000_000L
 const val GPS_LAST_KNOWN_MAX_NANOS = 30_000_000_000L

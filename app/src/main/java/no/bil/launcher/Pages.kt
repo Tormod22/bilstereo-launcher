@@ -453,7 +453,7 @@ private fun MapButton(icon: androidx.compose.ui.graphics.vector.ImageVector, des
 fun SpeedBadge(modifier: Modifier) {
     Row(modifier.clip(Small).background(Card.copy(alpha = 0.92f)).padding(horizontal = 18.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-        Text("${Hub.gps?.speedKmh ?: 0}", color = TextPrimary, fontSize = 34.sp, fontWeight = FontWeight.Medium)
+        Text(speedText(Hub.gps), color = TextPrimary, fontSize = 34.sp, fontWeight = FontWeight.Medium)
         Text("km/t", color = TextMuted, fontSize = 14.sp)
         LimitSign(40)
     }
