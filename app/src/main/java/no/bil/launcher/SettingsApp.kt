@@ -241,6 +241,21 @@ private fun ScreenSettings() {
         }) { Chevron() }
     }
     ToggleRow("Skjul stereoens statuslinje", "hide_system_bars", true, "T'OS viser klokke og status selv. Sveip fra kanten viser linja et øyeblikk.")
+    // FYT-stereoer: stereoens egen linje (hjem, klokke, volum, «siste apper») kan skjules i alle apper
+    var fytBar by remember { mutableStateOf(FytBars.current(context)) }
+    fytBar?.let { cur ->
+        var adb by remember { mutableStateOf(false) }
+        SettingRow("Skjul stereoens statuslinje overalt (FYT)",
+            when {
+                adb -> "Android lar ikke T'OS endre dette selv. Med PC: ${if (cur == 0) FytBars.ADB_SHOW else FytBars.ADB_HIDE}" +
+                    (if (cur == 0) "" else "  (angre: ${FytBars.ADB_SHOW})")
+                cur == 0 -> "Skjult i alle apper. Trykk for å vise den igjen."
+                else -> "Linja øverst vises i andre apper. Trykk for å skjule den overalt."
+            }, onClick = {
+                if (FytBars.set(context, show = cur == 0)) { fytBar = FytBars.current(context); adb = false; say(if (cur == 0) "Statuslinja vises igjen" else "Statuslinja er skjult") }
+                else adb = true
+            }) { Toggle(cur == 0) }
+    }
     ToggleRow("Nedtrekksmeny i T'OS-stil", "tos_shade", true,
         "Sveip ned fra toppen viser T'OS sitt panel med varsler, lys og volum i stedet for stereoens")
     ChoiceRow("Nattmodus", "night_mode", listOf("AUTO" to "Automatisk (etter sola)", "DAY" to "Alltid dag", "NIGHT" to "Alltid natt"), "AUTO")
@@ -564,10 +579,14 @@ private fun MusicSettings() {
     ToggleRow("Fortsett musikken når bilen starter", "resume_music", true, "Ikke hvis noe annet allerede spiller, f.eks. CarPlay eller radio")
     ToggleRow("Åpne siste app når bilen starter", "resume_last_app", false, "Appen du brukte sist før bilen ble slått av")
     Section("Radio")
+    if (Fyt.connected) ToggleRow("FM-radio direkte via stereoen (FYT)", "fyt_radio", true,
+        "T'OS styrer stereoens radio selv – stereoens radio-app trengs ikke. Av = som før (radio-appen i bakgrunnen).")
     ToggleRow("FM-radio i bakgrunnen (radiomotor)", "radio_engine", true,
         "Starter stereoens radio et øyeblikk bak T'OS hvis radioen ikke kom i gang av seg selv")
     ToggleRow("Skjul stereoens radio-app", "hide_stock_radio", true, "Viser T'OS sin radio-side når stereoens radio-app dukker opp")
     Section("Bluetooth-lyd")
+    if (Fyt.connected) ToggleRow("Bluetooth-lyd direkte via stereoen (FYT)", "fyt_bt", true,
+        "T'OS slår på BT-musikken fra telefonen selv – stereoens BT-app trengs ikke. Av = som før.")
     ToggleRow("Bluetooth-lyd i bakgrunnen (BT-motor)", "bt_engine", true,
         "Starter stereoens Bluetooth-musikk et øyeblikk bak T'OS, så lyden fra telefonen kommer ut av høyttalerne")
 }

@@ -53,6 +53,8 @@ adb shell cmd wifi network-suggestions-set-user-approved no.bil.launcher yes
 adb shell dumpsys deviceidle whitelist +no.bil.launcher
 adb shell cmd package set-home-activity no.bil.launcher/.MainActivity
 adb shell cmd role add-role-holder android.app.role.DIALER no.bil.launcher
+rem Valgfritt (bare FYT-stereoer): skjul stereoens statuslinje i alle apper. Angre: samme linje med 1 i stedet for 0
+adb shell settings put system show_navigationbar 0
 echo.
 echo  Ferdig! Feilmeldinger som "Unknown permission" eller "Unknown operation" kan overses
 echo  (de gjelder andre Android-versjoner).

@@ -25,3 +25,12 @@ DEALINGS IN THE SOFTWARE.
 
 ## Kartdata
 © OpenStreetMap-bidragsytere (ODbL), bygget av Protomaps. Skrift: Noto Sans (SIL Open Font License).
+
+## FYT-protokollen (com.syu.ms) – v5.6
+T'OS sin `Fyt.kt` er skrevet fra bunnen av, men protokollen (Binder-beskrivere, transaksjonskoder, modulnumre og
+kommando-/meldingskoder) er hentet fra disse åpne prosjektene, som har kartlagt FYT sine egne apper:
+- PimpinPumpkin/FytRadio – https://github.com/PimpinPumpkin/FytRadio (radio, lydkilde, FM-enhet)
+- Pacjonek/fyt-dialer – https://github.com/Pacjonek/fyt-dialer, Apache-2.0 (BT-telefon: ringe, svare, legge på, telefonens navn)
+- vasyl91/FYT-Launcher-Mod – https://github.com/vasyl91/FYT-Launcher-Mod (FinalBt, FinalRadio, FinalSound, FinalMain)
+- AxesOfEvil/FYTCanbusMonitor – https://github.com/AxesOfEvil/FYTCanbusMonitor (modulnumrene)
+Ingen kode er kopiert; bare tallene og formatet.

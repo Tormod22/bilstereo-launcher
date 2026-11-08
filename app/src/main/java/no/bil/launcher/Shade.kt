@@ -86,6 +86,20 @@ internal object ShadeLogic {
     private val notShade = listOf("volume", "volum", "recent", "overview", "oversikt", "globalaction", "global action", "power", "strøm",
         "screenshot", "skjermbilde", "keyguard", "lock screen", "låseskjerm", "navigation bar", "navigasjonsrad", "navigationbar")
 
+    /** Vindustittelen til statuslinja på Android 10 og eldre (uten mellomrom, små bokstaver). */
+    private val statusBarTitles = setOf("statusbar", "notificationshadewindow")
+
+    enum class CloseWay { DISMISS_SHADE, COLLAPSE_OR_BACK }
+
+    /** Uten hint fra menyen selv, og et varsel kom for under 2,5 s siden: trolig et varsel øverst (heads-up), ikke menyen. */
+    fun maybeHeadsUp(hint: Boolean, msSinceNotification: Long): Boolean = !hint && msSinceNotification in 0..2500
+
+    /**
+     * Hvordan stereoens meny lukkes. Android 12+: egen handling. Eldre (brukerens stereo er Android 10, SDK 29, selv om den
+     * sier «Android 16»): StatusBarManager.collapsePanels (skjult, krever EXPAND_STATUS_BAR), ellers tilbake-knappen.
+     */
+    fun closeWay(sdk: Int): CloseWay = if (sdk >= 31) CloseWay.DISMISS_SHADE else CloseWay.COLLAPSE_OR_BACK
+
     /** SystemUI (Androids statuslinje/nedtrekksmeny), også stereoprodusentens egen variant. */
     fun isSystemUi(pkg: String?): Boolean {
         val p = pkg?.lowercase() ?: return false
@@ -115,6 +129,9 @@ internal object ShadeLogic {
         if (notShade.any { it in title }) return false
         val titled = phrases.any { it in title } || classWords.any { it in squash(title) }
         if (titled) return w.height >= screenH * 0.3f
+        // Android 10 (brukerens stereo): nedtrekksmenyen er selve «StatusBar»-vinduet, som vokser fra en smal linje til hele
+        // skjermen. Tittelen viser at det er SystemUI, også når pakkenavnet ikke kunne leses.
+        if (squash(title) in statusBarTitles) return w.height >= screenH * 0.6f && w.width >= screenW * 0.5f
         // Uten kjent tittel: bare når vi vet at det er SystemUI, og vinduet dekker det meste av skjermen
         return w.pkg != null && w.height >= screenH * 0.6f && w.width >= screenW * 0.5f
     }

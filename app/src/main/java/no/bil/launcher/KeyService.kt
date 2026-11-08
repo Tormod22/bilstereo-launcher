@@ -287,6 +287,9 @@ class KeyService : AccessibilityService() {
         handler.postDelayed(shadeCheck, 80)
     }
 
+    /** Når et varsel sist kom (elapsedRealtime). */
+    @Volatile private var lastNoteAt = 0L
+
     private fun checkShade() {
         val hint = shadeHint; val info = shadeHintInfo
         shadeHint = false
@@ -294,8 +297,9 @@ class KeyService : AccessibilityService() {
         // Pakkenavn hentes bare for systemvinduene (SystemUI svarer raskt; en travel app kunne ellers holdt T'OS igjen)
         val snaps = runCatching { windowSnaps(rootOf = { it == ShadeLogic.TYPE_SYSTEM }) }.getOrNull()
         val dm = resources.displayMetrics
-        val shade = ShadeLogic.decide(hint, snaps, dm.widthPixels, dm.heightPixels)
         val now = SystemClock.elapsedRealtime()
+        // Android 10: et innkommende varsel øverst (heads-up) gjør også statuslinja like stor som skjermen – ikke ta det for menyen
+        val shade = ShadeLogic.decide(hint, snaps, dm.widthPixels, dm.heightPixels) && !ShadeLogic.maybeHeadsUp(hint, now - lastNoteAt)
         if (!shadeEdge.fire(shade, now, windowsKnown = !snaps.isNullOrEmpty())) return
         // Ikke under en samtale (svar-knappen kan ligge der), og aldri over tillatelses-/installasjonsvinduer
         if (Buttons.inCall(this) || dialogFront || ShadeLogic.dialogOpen(snaps) || !shadeLimiter.allow(now)) return
@@ -303,16 +307,27 @@ class KeyService : AccessibilityService() {
         val win = snaps?.firstOrNull { ShadeLogic.isShadeWindow(it, dm.widthPixels, dm.heightPixels) }
         Prefs.setQuiet("shade_seen", win?.let { "${it.pkg}/«${it.title.orEmpty()}» ${it.width}x${it.height}" } ?: info)
         // Lukk stereoens meny (Android 12+), og vis T'OS sitt panel
-        if (Build.VERSION.SDK_INT >= 31) performGlobalAction(GLOBAL_ACTION_DISMISS_NOTIFICATION_SHADE)
-        else performGlobalAction(GLOBAL_ACTION_BACK)
+        when (ShadeLogic.closeWay(Build.VERSION.SDK_INT)) {
+            ShadeLogic.CloseWay.DISMISS_SHADE -> if (Build.VERSION.SDK_INT >= 31) performGlobalAction(GLOBAL_ACTION_DISMISS_NOTIFICATION_SHADE)
+            ShadeLogic.CloseWay.COLLAPSE_OR_BACK -> if (!collapseStatusBar()) performGlobalAction(GLOBAL_ACTION_BACK)
+        }
         if (TosOverlay.appShown) { Nav.quick = true; return }
         if (!ShadePanel.show(this)) ShadePanel.openInTos(this, front.current?.takeIf { it !in homePkgs })
     }
+
+    /** Android 10/11: lukk nedtrekksmenyen med StatusBarManager.collapsePanels (skjult funksjon). false = gikk ikke. */
+    @SuppressLint("WrongConstant")
+    private fun collapseStatusBar(): Boolean = runCatching {
+        val sb = getSystemService("statusbar") ?: return false
+        sb.javaClass.getMethod("collapsePanels").invoke(sb)
+        true
+    }.getOrDefault(false)
 
     override fun onAccessibilityEvent(event: AccessibilityEvent) {
         // Opptak (Kartlegg stereoen): skriv ned alt, og la stereoen være i fred
         if (SurveyRecorder.active) { SurveyRecorder.event(this, event); return }
         val type = event.eventType
+        if (type == AccessibilityEvent.TYPE_NOTIFICATION_STATE_CHANGED) lastNoteAt = SystemClock.elapsedRealtime()
         if (type == AccessibilityEvent.TYPE_WINDOWS_CHANGED || type == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) noteShade(event)
         if (type != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) return
         val pkg = event.packageName?.toString() ?: return

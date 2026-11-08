@@ -7,7 +7,21 @@ Snakk norsk med brukeren. Han er ikke utvikler – forklar enkelt, ikke bruk fag
 
 ## Enheten
 - LEHX L6 Pro, 7" Android-bilstereo (4 GB RAM / 64 GB, åttekjerners, CarPlay/Android Auto). Levert og i bruk. T'OS er installert via Google Drive.
-- Kjører sannsynligvis Android 12–13 på Unisoc (UIS7862/UIS8581) eller Allwinner. Pakkenavn for innebygd radio/BT-telefon/CarPlay er UKJENT inntil enheten kommer – se `Tiles.defaults` i `Apps.kt`, der ligger gjetninger. Be brukeren kjøre `adb shell pm list packages` når den kommer, og juster.
+- BEKREFTET (kartleggingen 8. nov 2026): **FYT-stereo** (com.syu.*-apper, ro.fyt.*, sys.fyt.platform=6315) på **Unisoc UIS7862
+  (ums512_1h10_Natv)**. **Ekte Android-versjon er 10 (SDK 29, QP1A.190711.020, sikkerhetsoppdatering 2020-02)** selv om den sier
+  «Android 16» – all kode for API ≥ 30/31 tar reserveveien (sjekk den!). Skjerm 1024×600, 160 dpi, tekstskala 1.25.
+  T'OS ER standard startskjerm og standard telefon-app. Andre startskjermer: com.android.launcher9 (ro.fyt.launcher)/4/24/35/36,
+  com.android.launcher3 (Quickstep, gir «siste apper»).
+- FYT-pakker: com.syu.ms (MainServer – sentralen: MCU, radio, BT, lyd; har åpen `app.ToolkitService` «com.syu.ms.toolkit», se
+  `Fyt.kt`), com.syu.ss/us/ps (hjelpetjenester; us = «UI Server», trolig FYT sitt volum-/popupvindu), com.syu.radio (FM/AM, brikke
+  tda7708; com.syu.carradio er slått av), com.syu.bt (BT-telefon/-musikk, egen BT-brikke – Android ser bare iPhonen som paret,
+  ikke tilkoblet), com.syu.carlink («Car Link 2.0» = CarPlay), com.syu.music, com.syu.video, com.syu.av (AUX), com.syu.eq,
+  com.syu.canbus, com.syu.steer (rattknapper, «Control»), com.syu.settings, com.syu.onekeynavi («Navi», det NAVI-knappen åpner),
+  com.fyt.hidebutton, com.fyt.screenbutton (flytende knapp), com.txznet.* (Toppal-stemme, har et 1×1-vindu).
+- Panel-/rattknapper kommer IKKE som Android-tastekoder (bare VOLUME/POWER/HEADSETHOOK finnes); MCU → com.syu.ms åpner apper.
+  T'OS ser dem bare som «en app kom fram».
+- FYT sin statuslinje (øverst: hjem til venstre; BT/Wi-Fi/klokke/volum/siste apper/tilbake til høyre) styres av
+  Settings.System `show_navigationbar` (1). Andre FYT-nøkler: navigationbar_config=0, home_recent_key_enabled=1, car_mode=1.
 - Bilen: svart Toyota Avensis.
 
 ## Hva brukeren vil ha (viktig – dette er fasiten)
@@ -17,7 +31,27 @@ Snakk norsk med brukeren. Han er ikke utvikler – forklar enkelt, ikke bruk fag
 - Løsningen han godkjente: **tre ting** – (1) bilkort med klokke, stort bilbilde og fart som stort tall, (2) ekte kart, (3) én rad nederst: musikk/telefon/apper. Ingen kalender, ingen vær.
 - Kalkulator skal være skjult i app-skuffen (`HiddenApps` i `Apps.kt`).
 
-## Nåværende tilstand (v5.5)
+## Nåværende tilstand (v5.6)
+- v5.6: brukeren kjørte «Kartlegg stereoen» (fila: FYT, UIS7862, ekte Android 10 – se «Enheten»). (1) Opptaket stoppet etter 1,1 s:
+  `RecordGuide`-kortet dukket opp der fingeren var (over «Start opptak»), så trykk nr. 2 traff «Stopp nå». Nå: kortet nede til
+  VENSTRE, trykk de første 3 s teller ikke, og «Stopp nå» må trykkes to ganger (`RecordStop`, «Trykk igjen for å stoppe»).
+  Kartleggingen har nye deler: «FYT-tjenesten» (tilkobling, moduler, alle meldinger fra stereoen, get(0..3)), «FYT-statuslinjen»
+  (show_navigationbar + skrivetest) og «Vinduer på skjermen nå» (tittel/pakke, f.eks. com.syu.us sine vinduer). FYT-meldinger
+  skrives også inn i opptaket. (2) `Fyt.kt`: rå Binder mot com.syu.ms («com.syu.ipc.IRemoteToolkit/IRemoteModule/IModuleCallback»,
+  moduler 0 hoved/1 radio/2 BT/4 lyd; kilder i fila: FytRadio, fyt-dialer, FYT-Launcher-Mod, FYTCanbusMonitor). Alt i try/catch, gjør
+  ingenting uten com.syu.ms (Robolectric). Brukes til: radio-siden (frekvens/RDS, søk, trinn ±, FM/AM, Start = C_APP_ID 11+1,
+  Stopp = 0 – ingen radio-app/radiomotor; bryter «fyt_radio»), BtLink (FYT sier tilkoblet → telefonen vises som tilkoblet),
+  samtale (Svar/Avvis/Legg på + banner for samtaler bare FYT vet om, ring via C_DIAL når Android ikke har telefonkonto),
+  BT-musikk (C_APP_ID 3 + spill, neste/forrige; bryter «fyt_bt»). Volum fra lydmodulen leses (Fyt.volume) men vises ikke som
+  egen T'OS-volumlinje ennå (FYT tegner sin egen – to linjer ville vært verre). UVERIFISERT på enheten: alt FYT-svar –
+  BE BRUKEREN KJØRE KARTLEGGINGEN PÅ NYTT (med opptak) og sende fila; delen «FYT-tjenesten» viser om stereoen svarer.
+  (3) Android 10: nedtrekksmenyen lukkes med StatusBarManager.collapsePanels (refleksjon, ny tillatelse EXPAND_STATUS_BAR), ellers
+  BACK; «StatusBar»-vinduet som vokser til hele skjermen regnes som menyen; varsel øverst (heads-up, < 2,5 s etter et varsel, uten
+  hint) regnes ikke. (4) Innstillinger → Skjerm: «Skjul stereoens statuslinje overalt (FYT)» (prøver show_navigationbar=0; Android
+  sier trolig nei → viser ADB-linja; angre med 1). Linja ligger også (valgfri, merket) i ADB-lista/ADB-OPPSETT.md/tos-oppsett.bat.
+  (5) Apps.kt: FYT-pakkene først i flisene (radio/telefon/BT-musikk/CarPlay), FYT-skallapper skjult i app-skuffen (launcher4/9/24/
+  35/36, guide, market, onekeynavi, settings, av, eq, tv, canbus, traceur, com.fyt.*, com.sprd.*, com.unisoc.*, com.txznet.*).
+  NaviKey: com.syu.onekeynavi = STOCK_NAV (test). Tester: FytLogicTest (9) + FytSmokeTest (1). Tester totalt 162.
 - v5.5: brukeren: «når jeg drar ned fra toppen kommer det originale UI-et (nedtrekksmeny/hurtiginnstillinger)» + «studer
   hvordan originalsystemet virker i detalj så vi kan erstatte 100 %». (1) «Kartlegg stereoen» (`SystemSurvey.kt`,
   Innstillinger → Sikkerhetskopi og hjelp, under «Send oppsettrapport»): Build-felt, utvalgte systemegenskaper
@@ -29,7 +63,7 @@ Snakk norsk med brukeren. Han er ikke utvikler – forklar enkelt, ikke bruk fag
   (`external-files-path` i file_paths.xml) når >100 KB, ellers som tekst. «Start opptak (2 min)» (`SurveyRecorder`):
   KeyService blir HELT passiv (knapper/volum/vinduer går til stereoen som original) og skriver ned alle
   WINDOW_STATE/WINDOWS_CHANGED/NOTIFICATION-hendelser, vindusliste (type, lag, tittel, pakke, størrelse), alle KeyEvent
-  (kode, skankode, enhet) og volum-meldinger; `RecordGuide` = lite T'OS-kort nede til høyre med instruksjoner, nedtelling,
+  (kode, skankode, enhet) og volum-meldinger; `RecordGuide` = lite T'OS-kort (nede til venstre fra v5.6) med instruksjoner, nedtelling,
   «Stopp nå». Etterpå: T'OS fram (Innstillinger), fila lages og «Send» åpnes. BE BRUKEREN KJØRE OPPTAKET OG SENDE FILA.
   (2) Nedtrekksmenyen i T'OS-stil (`Shade.kt`, bryter «Nedtrekksmeny i T'OS-stil», `tos_shade`, på, Innstillinger →
   Skjerm): i T'OS åpner sveip ned fra øverste kant (28 dp) hurtigpanelet med en gang (Root). Systemvidt: KeyService

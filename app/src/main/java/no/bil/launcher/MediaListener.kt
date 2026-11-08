@@ -95,26 +95,34 @@ object Call {
     internal var answerAction: PendingIntent? = null
     internal var declineAction: PendingIntent? = null
     /** Kan T'OS svare/avvise selv (varselet har knapper for det)? */
-    var canAnswer by mutableStateOf(false)
+    var canAnswerNote by mutableStateOf(false)
         private set
+    /** Kan T'OS svare/avvise selv (varselet har knapper, eller FYT-stereoen ringer)? */
+    val canAnswer get() = canAnswerNote || (Fyt.btReady && Fyt.ringing)
 
     fun openCall() { runCatching { open?.send() } }
 
-    /** Svar på samtalen med knappen i varselet; finnes den ikke, åpnes telefonappen. */
-    fun answer() { val a = answerAction; if (a == null || runCatching { a.send() }.isFailure) openCall() }
+    /** Svar på samtalen med knappen i varselet; ellers via FYT-stereoen; ellers åpnes telefonappen. */
+    fun answer() {
+        val a = answerAction
+        if (a != null && runCatching { a.send() }.isSuccess) return
+        if (Fyt.btReady && Fyt.ringing && Fyt.answer()) return
+        openCall()
+    }
 
-    /** Avvis samtalen (gir false hvis telefonappens varsel ikke har en avvis-knapp). */
-    fun decline(): Boolean = declineAction?.let { runCatching { it.send() }.isSuccess } == true
+    /** Avvis samtalen (gir false hvis verken varselet eller FYT-stereoen kan avvise). */
+    fun decline(): Boolean = declineAction?.let { runCatching { it.send() }.isSuccess } == true ||
+        (Fyt.btReady && Fyt.inCall && Fyt.reject())
 
     internal fun setActions(n: Notification) {
         val acts = n.actions.orEmpty()
         val titles = acts.map { it.title?.toString().orEmpty() }
         answerAction = acts.getOrNull(callActionIndex(titles, answer = true))?.actionIntent
         declineAction = acts.getOrNull(callActionIndex(titles, answer = false))?.actionIntent
-        canAnswer = answerAction != null
+        canAnswerNote = answerAction != null
     }
 
-    internal fun clear() { name = null; open = null; key = null; answerAction = null; declineAction = null; canAnswer = false }
+    internal fun clear() { name = null; open = null; key = null; answerAction = null; declineAction = null; canAnswerNote = false }
 }
 
 private val answerWords = listOf("answer", "svar", "besvar", "accept", "pick up", "ta imot", "接听", "接受", "接聽")
@@ -345,7 +353,7 @@ object Media {
     }
 
     /** Neste/forrige på FM-radioen når den styres via MCU (uten mediaøkt). */
-    private fun fmWithoutSession() = HwRadio.wanted && HwRadio.mcuActive && NowPlaying.pkg != HwRadio.enginePkg
+    private fun fmWithoutSession() = HwRadio.wanted && (HwRadio.mcuActive || HwRadio.fyt) && NowPlaying.pkg != HwRadio.enginePkg
 
     private fun key(context: Context, code: Int) {
         val am = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
@@ -356,19 +364,25 @@ object Media {
     fun playPause(c: Context) {
         if (NetRadio.active) { NetRadio.toggle(c); return }
         val t = NowPlaying.controller?.transportControls
+        if (t == null && fytBtMusic()) { Fyt.btavPlayPause(); return }
         if (t != null) { if (NowPlaying.playing) t.pause() else t.play() } else key(c, KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE)
     }
+    /** FYT-stereo med BT-musikk som lydkilde (styres via com.syu.ms, ikke via en mediaøkt). */
+    private fun fytBtMusic() = Fyt.btReady && Fyt.appId == 3
+
     fun play(c: Context) {
         NowPlaying.controller?.transportControls?.play() ?: key(c, KeyEvent.KEYCODE_MEDIA_PLAY)
     }
     fun next(c: Context) {
         if (NetRadio.active) { NetRadio.step(c, 1); return }
         if (fmWithoutSession()) { HwRadio.seekUp(); return }
+        if (NowPlaying.controller == null && fytBtMusic()) { Fyt.btavNext(); return }
         NowPlaying.controller?.transportControls?.skipToNext() ?: key(c, KeyEvent.KEYCODE_MEDIA_NEXT)
     }
     fun previous(c: Context) {
         if (NetRadio.active) { NetRadio.step(c, -1); return }
         if (fmWithoutSession()) { HwRadio.seekDown(); return }
+        if (NowPlaying.controller == null && fytBtMusic()) { Fyt.btavPrev(); return }
         NowPlaying.controller?.transportControls?.skipToPrevious() ?: key(c, KeyEvent.KEYCODE_MEDIA_PREVIOUS)
     }
 }

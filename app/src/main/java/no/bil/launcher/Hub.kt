@@ -61,6 +61,7 @@ object Hub {
         CarBattery.start(app)
         HwRadio.start(app)
         BtLink.start(app)                       // Bluetooth-hendelser og profiler (er telefonen tilkoblet?)
+        Fyt.start(app)                          // FYT-stereoen: radio, BT-telefon, lydkilde direkte (gjør ingenting andre steder)
         Updater.announceIfUpdated(app)          // «Oppdatert til …» etter en oppdatering
         // Equalizeren (lydtjenesten) settes etter at første skjermbilde er tegnet – den kan ta litt tid å koble til
         scope.launch { delay(1500); Eq.restore() }
