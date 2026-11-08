@@ -26,8 +26,9 @@ import java.util.concurrent.atomic.AtomicBoolean
  *  2. Knappen åpner stereoens egen app direkte → vi ser at appen kom fram og bytter til valgt handling.
  * I tillegg: husker siste app, starter CarPlay når iPhonen kobles til, og musikk når skjermen våkner.
  * Holder stereoens eget UI unna: volumknappene gir T'OS sin volumlinje (ikke Androids), T'OS sine meldinger vises
- * over andre apper, og stereoens originale startskjerm/app-liste/radio-app byttes ut med T'OS når de dukker opp.
- * Leser ikke innholdet på skjermen, bare hvilken app som er framme.
+ * over andre apper, og stereoens originale startskjerm/app-liste/radio-app/fanevisning/nedtrekksmeny byttes ut med
+ * T'OS når de dukker opp. Ser hvilken app og hvilke vinduer som er framme (navn, plass på skjermen) – ikke det du skriver.
+ * Under «Start opptak» (SystemSurvey.kt) holder tjenesten seg unna og tar bare opp hva stereoen selv gjør.
  */
 class KeyService : AccessibilityService() {
     private var swallowUp = -1
@@ -54,6 +55,15 @@ class KeyService : AccessibilityService() {
     }
     /** Hindrer at T'OS og stereoens startskjerm sender hverandre fram og tilbake i det uendelige. */
     private val redirects = RedirectLimiter()
+
+    // Stereoens nedtrekksmeny (varsler/hurtiginnstillinger): T'OS sitt panel i stedet
+    private val shadeEdge = ShadeEdge()
+    private val shadeLimiter = RedirectLimiter(minGapMs = 800, maxInWindow = 5, windowMs = 20_000, pauseMs = 30_000)
+    private var shadeHint = false
+    private var shadeHintInfo = ""
+    /** Et tillatelses-/installasjonsvindu er framme (da rører T'OS ikke nedtrekksmenyen). */
+    private var dialogFront = false
+    private val shadeCheck = Runnable { checkShade() }
     private val handler = Handler(Looper.getMainLooper())
 
     // Volumknappene: hvilke trykk T'OS tok (slippet svelges bare da), og når siste steg ble gjort ved holdt knapp
@@ -68,6 +78,11 @@ class KeyService : AccessibilityService() {
     /** Volumet ble endret av noe annet enn volumknappene (f.eks. volumhjulet via stereoens MCU): vis T'OS sin linje. */
     private val volumeReceiver = object : BroadcastReceiver() {
         override fun onReceive(c: Context, i: Intent) {
+            if (SurveyRecorder.active) {
+                SurveyRecorder.note("VOLUM  ${i.action?.substringAfterLast('.')}  strøm=${i.getIntExtra(EXTRA_VOLUME_STREAM_TYPE, -1)}  " +
+                    "${i.getIntExtra(EXTRA_PREV_VOLUME_STREAM_VALUE, -1)} → ${i.getIntExtra(EXTRA_VOLUME_STREAM_VALUE, -1)}")
+                return
+            }
             if (!HwVolume.enabled || HwVolume.ownRecently()) return
             val active = HwVolume.activeStream(c)
             val stream = i.getIntExtra(EXTRA_VOLUME_STREAM_TYPE, -1)
@@ -148,6 +163,8 @@ class KeyService : AccessibilityService() {
     override fun onDestroy() {
         NaviPopup.hide()
         TosOverlay.hideAll()
+        ShadePanel.hide()
+        RecordGuide.hide()
         if (instance === this) instance = null
         writeObserver?.dispose(); writeObserver = null
         handler.removeCallbacksAndMessages(null)
@@ -159,7 +176,14 @@ class KeyService : AccessibilityService() {
     }
 
     override fun onKeyEvent(event: KeyEvent): Boolean {
+        // Opptak (Kartlegg stereoen): bare skriv ned knappen, og la stereoen gjøre det den pleier
+        if (SurveyRecorder.active) { SurveyRecorder.key(event); return false }
         val code = event.keyCode
+        // T'OS-panelet over en annen app: BACK lukker det
+        if (code == KeyEvent.KEYCODE_BACK && ShadePanel.shown) {
+            if (event.action == KeyEvent.ACTION_UP) ShadePanel.hide()
+            return true
+        }
         if (event.action == KeyEvent.ACTION_UP && code == swallowUp) { swallowUp = -1; return true }
         // Nytt trykk på samme knapp: slippet fra læringen kom aldri – ikke svelg slippet til dette trykket
         if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0 && code == swallowUp && Learn.target == null) swallowUp = -1
@@ -246,8 +270,51 @@ class KeyService : AccessibilityService() {
         return isShellWindow(pkg, cls, home, isSystemPkg(pkg))
     }
 
+    /**
+     * Stereoens nedtrekksmeny kan ha kommet fram: sjekk litt etter (vinduene må rekke å legge seg). Hendelser fra
+     * SystemUI med riktig tittel/klasse gir et hint; vinduslista avgjør (se [ShadeLogic]).
+     */
+    private fun noteShade(e: AccessibilityEvent) {
+        if (ShadePanel.shown || !Prefs.bool("tos_shade", true)) return
+        val pkg = e.packageName?.toString()
+        if (e.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
+            if (!ShadeLogic.isSystemUi(pkg)) return
+            val cls = e.className?.toString()
+            val texts = runCatching { e.text.mapNotNull { it?.toString() } + listOfNotNull(e.contentDescription?.toString()) }.getOrDefault(emptyList())
+            if (ShadeLogic.isShadeEvent(pkg, cls, texts)) { shadeHint = true; shadeHintInfo = "$pkg/${cls.orEmpty()} «${SurveyText.clip(texts.joinToString(" | "), 60)}»" }
+        }
+        handler.removeCallbacks(shadeCheck)
+        handler.postDelayed(shadeCheck, 80)
+    }
+
+    private fun checkShade() {
+        val hint = shadeHint; val info = shadeHintInfo
+        shadeHint = false
+        if (!Prefs.bool("tos_shade", true) || SurveyRecorder.active || ShadePanel.shown) return
+        // Pakkenavn hentes bare for systemvinduene (SystemUI svarer raskt; en travel app kunne ellers holdt T'OS igjen)
+        val snaps = runCatching { windowSnaps(rootOf = { it == ShadeLogic.TYPE_SYSTEM }) }.getOrNull()
+        val dm = resources.displayMetrics
+        val shade = ShadeLogic.decide(hint, snaps, dm.widthPixels, dm.heightPixels)
+        val now = SystemClock.elapsedRealtime()
+        if (!shadeEdge.fire(shade, now, windowsKnown = !snaps.isNullOrEmpty())) return
+        // Ikke under en samtale (svar-knappen kan ligge der), og aldri over tillatelses-/installasjonsvinduer
+        if (Buttons.inCall(this) || dialogFront || ShadeLogic.dialogOpen(snaps) || !shadeLimiter.allow(now)) return
+        // Til oppsettrapporten/kartleggingen: hvordan stereoens nedtrekksmeny ser ut
+        val win = snaps?.firstOrNull { ShadeLogic.isShadeWindow(it, dm.widthPixels, dm.heightPixels) }
+        Prefs.setQuiet("shade_seen", win?.let { "${it.pkg}/«${it.title.orEmpty()}» ${it.width}x${it.height}" } ?: info)
+        // Lukk stereoens meny (Android 12+), og vis T'OS sitt panel
+        if (Build.VERSION.SDK_INT >= 31) performGlobalAction(GLOBAL_ACTION_DISMISS_NOTIFICATION_SHADE)
+        else performGlobalAction(GLOBAL_ACTION_BACK)
+        if (TosOverlay.appShown) { Nav.quick = true; return }
+        if (!ShadePanel.show(this)) ShadePanel.openInTos(this, front.current?.takeIf { it !in homePkgs })
+    }
+
     override fun onAccessibilityEvent(event: AccessibilityEvent) {
-        if (event.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) return
+        // Opptak (Kartlegg stereoen): skriv ned alt, og la stereoen være i fred
+        if (SurveyRecorder.active) { SurveyRecorder.event(this, event); return }
+        val type = event.eventType
+        if (type == AccessibilityEvent.TYPE_WINDOWS_CHANGED || type == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) noteShade(event)
+        if (type != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) return
         val pkg = event.packageName?.toString() ?: return
         val cls = event.className?.toString()
         // Androids fanevisning (nylige apper, «No recent items») kom fram: vis T'OS sin «Siste apper» i stedet.
@@ -260,11 +327,14 @@ class KeyService : AccessibilityService() {
         }
         // Systemvinduer og tastatur legger seg bare over appen som er framme – de bytter ikke app
         if (pkg in ignored || "inputmethod" in pkg || "keyboard" in pkg) return
+        dialogFront = pkg.endsWith(".permissioncontroller") || pkg.endsWith(".packageinstaller")
         // Fanelista og tillatelsesvinduer er bare innom: appen under er fortsatt «framme» (og fortsatt T'OS sin)
         if (isPassingWindow(pkg, cls)) return
         if (pkg == packageName) {
             // Bare T'OS sine egne skjermer teller (ikke Waze-popupen o.l. som legges over andre apper)
             if (cls == null || cls.startsWith("$packageName.")) {
+                // T'OS sin skjerm (en aktivitet) er framme: panelet over andre apper trengs ikke
+                if (cls != null && ShadePanel.shown) ShadePanel.hide()
                 front.update(pkg, launchedByUs = false)
                 TosOverlay.tosFront = true
                 // T'OS er framme: den viser volum og meldinger selv, og teppet kan tas bort
@@ -275,6 +345,8 @@ class KeyService : AccessibilityService() {
         TosOverlay.tosFront = false
         val byUs = AppRepository.launchedByUs(pkg)
         val state = front.update(pkg, byUs)
+        // En annen app kom fram (f.eks. fra et varsel): T'OS-panelet over den forrige lukkes
+        if (state.newlyFront && ShadePanel.shown) ShadePanel.hide()
         // T'OS sin egen liste til «Siste apper» (brukes når Android ikke deler appbruken). Ikke startskjermer.
         if (state.newlyFront && pkg !in homePkgs) RecentApps.record(this, pkg)
         // Merket er brukt opp: neste gang appen åpnes (f.eks. med knappen på stereoen) er det ikke T'OS som åpnet den

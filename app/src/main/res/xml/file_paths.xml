@@ -1,4 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <paths>
     <cache-path name="apk" path="apk/" />
+    <!-- «Kartlegg stereoen»: fila som sendes (Android/data/no.bil.launcher/files, ellers T'OS sin egen mappe) -->
+    <external-files-path name="kartlegging" path="." />
+    <files-path name="kartlegging_intern" path="kartlegging/" />
 </paths>

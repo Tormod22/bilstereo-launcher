@@ -157,8 +157,10 @@ class MainActivity : ComponentActivity() {
     private fun handle(intent: Intent?) {
         val s = intent?.getStringExtra(Nav.EXTRA)
         val next = Screen.entries.firstOrNull { it.name == s } ?: Screen.DASH
-        // Hjem lukker alt som ligger oppå (hurtigpanel, app-velgere)
-        Nav.quick = false; Nav.pick = null; Ui.pickSlot = false; TosKeyboard.close()
+        // Hjem lukker alt som ligger oppå (hurtigpanel, app-velgere) – unntatt når T'OS ble hentet fram for hurtigpanelet
+        val quick = intent?.getBooleanExtra(Nav.EXTRA_QUICK, false) == true
+        if (!quick) ShadePanel.forgetReturn()
+        Nav.quick = quick; Nav.pick = null; Ui.pickSlot = false; TosKeyboard.close()
         // Førstegangsoppsettet blir stående til det er fullført
         Nav.screen = if (next == Screen.DASH && !Prefs.bool("setup_done")) Screen.SETUP else next
         // Læring av en knapp gjelder bare mens Knapper-siden er åpen
@@ -280,6 +282,8 @@ fun Root() {
 
     // Trykk utenfor tastaturet lukker det (etter at trykket er levert, så et annet felt eller «Lagre» virker med én gang)
     val main = remember { Handler(Looper.getMainLooper()) }
+    // Hurtigpanelet lukkes: ble T'OS hentet fram for det (nedtrekksmenyen i en annen app), åpnes den appen igjen
+    val closeQuick = { Nav.quick = false; ShadePanel.returnAfterClose(context) }
 
     val d = LocalDensity.current
     CompositionLocalProvider(LocalDensity provides Density(d.density, d.fontScale * Theme.textScale)) {
@@ -288,6 +292,9 @@ fun Root() {
                 .pointerInput(Unit) {
                     awaitPointerEventScope {
                         var atPress: KbBinding? = null
+                        // Sveip ned fra øverste kant: T'OS sitt panel med en gang (før stereoens nedtrekksmeny rekker å komme)
+                        var edgeStart: Offset? = null
+                        val edgePx = 28.dp.toPx(); val pullPx = 48.dp.toPx()
                         while (true) {
                             val ev = awaitPointerEvent(PointerEventPass.Initial)
                             lastTouch = SystemClock.elapsedRealtime()
@@ -296,9 +303,19 @@ fun Root() {
                             if (ev.type == PointerEventType.Press) {
                                 val r = TosKeyboard.bounds
                                 atPress = if (b != null && p != null && r != null && !r.contains(p)) b else null
-                            } else if (ev.type == PointerEventType.Release && atPress != null) {
-                                val was = atPress; atPress = null
-                                main.post { if (TosKeyboard.binding === was) TosKeyboard.close() }
+                                edgeStart = p?.takeIf { ev.changes.size == 1 && it.y <= edgePx }
+                            } else if (ev.type == PointerEventType.Move) {
+                                val s = edgeStart
+                                if (s != null && p != null && ShadeLogic.topEdgePull(s.y, p.x - s.x, p.y - s.y, edgePx, pullPx)) {
+                                    edgeStart = null
+                                    if (!Nav.quick && Nav.pick == null && !Ui.pickSlot && Prefs.bool("tos_shade", true)) main.post { Nav.quick = true }
+                                }
+                            } else if (ev.type == PointerEventType.Release) {
+                                edgeStart = null
+                                if (atPress != null) {
+                                    val was = atPress; atPress = null
+                                    main.post { if (TosKeyboard.binding === was) TosKeyboard.close() }
+                                }
                             }
                         }
                     }
@@ -331,7 +348,10 @@ fun Root() {
                 }
             }
             if (Nav.screen == Screen.CLOCK) ClockScreen(home)
-            if (Nav.quick) { BackHandler { Nav.quick = false }; QuickPanel { Nav.quick = false } }
+            if (Nav.quick) {
+                BackHandler { closeQuick() }
+                QuickPanel(onClose = closeQuick, onGo = { s -> Nav.quick = false; ShadePanel.forgetReturn(); if (s != null) Nav.screen = s })
+            }
             Nav.pick?.let { (title, key) -> BackHandler { Nav.pick = null }; AppPicker(title, "Automatisk", { Prefs.set(key, it) }) { Nav.pick = null } }
             if (Ui.pickSlot) { BackHandler { Ui.pickSlot = false }; AppPicker("Velg app for midtflisa", "Telefon (standard)", { Prefs.set("slot_pkg", it) }) { Ui.pickSlot = false } }
             VolumeHost(Modifier.align(Alignment.Center))

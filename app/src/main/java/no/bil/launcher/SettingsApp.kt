@@ -55,7 +55,7 @@ enum class SetCat(val label: String, val icon: ImageVector, val group: String, v
     NET("Wi-Fi og internett", Icons.Default.Wifi, "Stereoen", "wifi wlan nett internett hotspot iphone passord"),
     BT("Bluetooth", Icons.Default.Bluetooth, "Stereoen", "bluetooth telefon paring pare obd brikke"),
     SOUND("Lyd", Icons.AutoMirrored.Filled.VolumeUp, "Stereoen", "lyd volum volumlinje equalizer eq bass diskant varsel ringelyd tastelyd alarm"),
-    SCREEN("Skjerm", Icons.Default.LightMode, "Stereoen", "skjerm lysstyrke lys natt nattmodus dag ikoner tekst størrelse bilbilde skjermsparer klokke statuslinje"),
+    SCREEN("Skjerm", Icons.Default.LightMode, "Stereoen", "skjerm lysstyrke lys natt nattmodus dag ikoner tekst størrelse bilbilde skjermsparer klokke statuslinje nedtrekksmeny varsler sveip"),
     APPS("Apper", Icons.Default.Apps, "Stereoen", "apper app skjul vis startskjerm carplay car link radio kamera systemapper avinstaller siste nylige bakgrunn lukk"),
     STORAGE("Lagring", Icons.Default.Storage, "Stereoen", "lagring plass minne cache tøm kart minnepinne"),
     TIME("Dato, tid og språk", Icons.Default.Schedule, "Stereoen", "dato tid klokke tidssone 24 timer språk tastatur norsk"),
@@ -65,7 +65,7 @@ enum class SetCat(val label: String, val icon: ImageVector, val group: String, v
     PHONE("Telefon", Icons.Default.Phone, "T'OS", "telefon favoritter carplay ring samtale"),
     CAR("Bil", Icons.Default.DirectionsCar, "T'OS", "bil batteri spenning obd eu-kontroll service dekk dekkskift tuning tur"),
     KEYS("Knapper", Icons.Default.Tune, "T'OS", "knapper ratt lær tast menu navi"),
-    BACKUP("Sikkerhetskopi og hjelp", Icons.Default.Backup, "T'OS", "sikkerhetskopi backup lagre hent fil rapport feil krasj sikker modus"),
+    BACKUP("Sikkerhetskopi og hjelp", Icons.Default.Backup, "T'OS", "sikkerhetskopi backup lagre hent fil rapport feil krasj sikker modus kartlegg kartlegging opptak"),
 }
 
 /** Kategoriene som passer søket (alle ord må finnes i navnet eller søkeordene). Ren logikk, testes. */
@@ -241,6 +241,8 @@ private fun ScreenSettings() {
         }) { Chevron() }
     }
     ToggleRow("Skjul stereoens statuslinje", "hide_system_bars", true, "T'OS viser klokke og status selv. Sveip fra kanten viser linja et øyeblikk.")
+    ToggleRow("Nedtrekksmeny i T'OS-stil", "tos_shade", true,
+        "Sveip ned fra toppen viser T'OS sitt panel med varsler, lys og volum i stedet for stereoens")
     ChoiceRow("Nattmodus", "night_mode", listOf("AUTO" to "Automatisk (etter sola)", "DAY" to "Alltid dag", "NIGHT" to "Alltid natt"), "AUTO")
     SettingRow("Demp hele stereoen om natten", if (canWrite) "Senker lysstyrken etter solnedgang" else "Krever at T'OS får styre lysstyrken (over)",
         onClick = { if (canWrite) Prefs.set("dim_system", !Prefs.bool("dim_system")) }) { Toggle(Prefs.bool("dim_system") && canWrite) }
@@ -647,6 +649,7 @@ private fun BackupSettings() {
             context.open(Intent.createChooser(i, "Send oppsettrapport"))
         }
     }) { Chevron() }
+    SurveyRows()
     SettingRow("Del feilrapport", "Send til deg selv og lim inn i Claude", onClick = {
         Hub.scope.launch {
             val text = withContext(Dispatchers.IO) { CrashLog.report(context) }
@@ -654,4 +657,32 @@ private fun BackupSettings() {
             context.open(Intent.createChooser(i, "Del feilrapport"))
         }
     }) { Chevron() }
+}
+
+/** «Kartlegg stereoen» og opptaket (se SystemSurvey.kt). */
+@Composable
+private fun SurveyRows() {
+    val context = LocalContext.current
+    val working = SystemSurvey.working
+    // Siste kartlegging fra før (kan sendes igjen)
+    LaunchedEffect(Unit) { withContext(Dispatchers.IO) { SystemSurvey.findLast(context.applicationContext) } }
+    SettingRow("Kartlegg stereoen",
+        if (working) "Lager filen … (kan ta et halvt minutt)"
+        else "Alt om stereoens egne apper, knapper, lyd og innstillinger i én fil – send den til Claude",
+        onClick = { if (!SystemSurvey.working) SystemSurvey.runAndShare(context.applicationContext, null) }) {
+        if (working) Text("Vent …", color = TextMuted, fontSize = 14.sp) else Chevron()
+    }
+    val svcOn = KeyService.instance != null
+    SettingRow("Start opptak (2 min)",
+        if (svcOn) "Tar opp hva stereoen selv gjør når du drar ned fra toppen og trykker på knappene. Filen sendes etterpå."
+        else "Krever at «T'OS knapper» er slått på under Tilgjengelighet",
+        onClick = {
+            if (SystemSurvey.working || SurveyRecorder.active) return@SettingRow
+            if (!SurveyRecorder.start()) say("Slå på «T'OS knapper» under Tilgjengelighet først")
+        }) { Icon(Icons.Default.FiberManualRecord, null, tint = TextMuted) }
+    SystemSurvey.last?.let { f ->
+        SettingRow("Send kartleggingen igjen", "${f.name} · ${(f.length() + 1023) / 1024} KB", onClick = { SystemSurvey.share(context, f) }) {
+            Icon(Icons.AutoMirrored.Filled.Send, null, tint = TextMuted)
+        }
+    }
 }

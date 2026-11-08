@@ -336,10 +336,10 @@ object SetupReport {
         appendLine()
         appendLine("--- Valg ---")
         // Standardverdi true for de som er på fra start
-        val onByDefault = setOf("keep_home", "tos_recents", "tos_volume", "radio_engine", "hide_stock_radio", "bt_engine")
-        listOf("keep_home", "tos_recents", "carplay_auto", "tos_volume", "radio_engine", "hide_stock_radio", "bt_engine", "show_system_apps")
+        val onByDefault = setOf("keep_home", "tos_recents", "tos_shade", "tos_volume", "radio_engine", "hide_stock_radio", "bt_engine")
+        listOf("keep_home", "tos_recents", "tos_shade", "carplay_auto", "tos_volume", "radio_engine", "hide_stock_radio", "bt_engine", "show_system_apps")
             .forEach { appendLine("$it: ${Prefs.bool(it, it in onByDefault)}") }
-        listOf("music_pkg", "carplay_pkg", "radio_pkg", "phone_pkg", "camera_pkg", "btmusic_pkg", "nav_app", "last_app", "last_player", "recents_seen")
+        listOf("music_pkg", "carplay_pkg", "radio_pkg", "phone_pkg", "camera_pkg", "btmusic_pkg", "nav_app", "last_app", "last_player", "recents_seen", "shade_seen")
             .forEach { appendLine("$it: ${Prefs.str(it)}") }
         val pw = c.getSystemService(Context.POWER_SERVICE) as? android.os.PowerManager
         appendLine("Unntatt batterisparing: ${runCatching { pw?.isIgnoringBatteryOptimizations(c.packageName) }.getOrNull()}")
