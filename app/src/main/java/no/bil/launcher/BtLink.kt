@@ -69,7 +69,7 @@ object BtLink {
     var current by mutableStateOf(BtStatus(false, false, emptyList()))
         private set
 
-    private fun bump() = main.post { version++ }
+    internal fun bump() = main.post { version++ }
 
     private fun permitted(c: Context) = Build.VERSION.SDK_INT < 31 || c.hasPermission(Manifest.permission.BLUETOOTH_CONNECT)
     private fun adapter(c: Context): BluetoothAdapter? = runCatching { (c.getSystemService(Context.BLUETOOTH_SERVICE) as? BluetoothManager)?.adapter }.getOrNull()
@@ -235,7 +235,8 @@ object BtLink {
         val ad = adapter(c)
         val vendorList = runCatching { vendorPackages(c) }.getOrDefault(emptyList())
         val vendorPkg = vendorList.firstOrNull()
-        val hint = vendorHint(vendorList)
+        // FYT-stereoen sier selv at telefonen er koblet til (egen BT-brikke som Android ikke ser)
+        val hint = (if (Fyt.phoneConnected == true) BtVendorHint(Fyt.PKG, Fyt.phoneName, "FYT-tjenesten") else null) ?: vendorHint(vendorList)
         val on = runCatching { ad?.isEnabled == true }.getOrDefault(false)
         val perm = permitted(c)
         var bonded = emptyList<BtDevice>()
@@ -461,6 +462,14 @@ object BtAudio {
         val btPkg = pkg ?: runCatching { Media.bluetoothPackage(a) }.getOrNull()
         val sessions = btSessions()
         var how = ""
+        // FYT-stereo: BT-musikken slås på direkte i stereoen (lydkilde BT-musikk + «spill») – uten stereoens BT-app
+        if (Fyt.btReady && Prefs.bool("fyt_bt", true) && Fyt.btavOn()) {
+            lastAttempt = "FYT-tjenesten (kilde BT-musikk + spill)"
+            handler.postDelayed({
+                if (!Fyt.btavPlaying && !btPlaying() && Fyt.phoneConnected != true) Notify.show(PHONE_BT_HINT, long = true)
+            }, CHECK_MS)
+            return
+        }
         val s = sessions.firstOrNull { it.packageName == btPkg } ?: sessions.firstOrNull()
         if (s != null) { NowPlaying.read(s); runCatching { s.transportControls.play() }; how += "mediaøkt ${s.packageName}; " }
         else if (btPkg != null) {

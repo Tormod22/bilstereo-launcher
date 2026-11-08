@@ -338,11 +338,14 @@ fun RadioScreen(onClose: () -> Unit) {
                         Text(hw.band, color = TextMuted, fontSize = 16.sp, modifier = Modifier.padding(bottom = 8.dp))
                     }
                     hw.station?.let { Text(it, color = TextMuted, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+                    hw.text?.let { Text(it, color = TextMuted, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis) }
                 } else Text("Trykk «Start radio». Frekvensen vises her når radioen spiller.", color = TextMuted, fontSize = 15.sp)
             }
             if (hw != null) {
+                if (hw.canStep) RoundIcon(Icons.Default.Remove, 52.dp, desc = "Ett trinn ned") { HwRadio.step(up = false) }
                 RoundIcon(Icons.Default.FastRewind, 52.dp, desc = "Søk ned") { HwRadio.seekDown() }
                 RoundIcon(Icons.Default.FastForward, 52.dp, desc = "Søk opp") { HwRadio.seekUp() }
+                if (hw.canStep) RoundIcon(Icons.Default.Add, 52.dp, desc = "Ett trinn opp") { HwRadio.step(up = true) }
                 if (hw.canTune) { Pill("FM") { HwRadio.cycleFm() }; Pill("AM") { HwRadio.am() } }
             }
             // På = T'OS styrer radioen (i bakgrunnen); stereoens radio-app vises ikke

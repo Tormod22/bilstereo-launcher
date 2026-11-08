@@ -68,7 +68,14 @@ internal val stockShellPackages = setOf(
     "com.android.music", "com.android.gallery3d", "com.android.documentsui", "com.android.deskclock", "com.android.soundrecorder",
     "com.ts.music", "com.ts.video", "com.ts.filemanager", "com.ts.launcher", "com.syu.music", "com.syu.video", "com.syu.launcher",
     "com.syu.filemanager", "com.syu.gallery", "com.fyt.launcher", "com.hzbhd.launcher", "com.android.car.launcher",
+    // FYT (bekreftet i kartleggingen 8. nov): startskjermene, hjelp, appbutikk, Navi-snarveien, innstillinger, AUX, EQ, TV, bil-innstillinger
+    "com.android.launcher4", "com.android.launcher9", "com.android.launcher24", "com.android.launcher35", "com.android.launcher36",
+    "com.syu.guide", "com.syu.market", "com.syu.onekeynavi", "com.syu.settings", "com.syu.av", "com.syu.eq", "com.syu.tv",
+    "com.syu.canbus", "com.android.traceur",
 )
+
+/** Pakkenavn-starter for stereoprodusentens egne hjelpeapper (FYT-knapper, Unisoc/Spreadtrum, Toppal-stemmen). */
+internal val stockShellPrefixes = listOf("com.fyt.", "com.sprd.", "com.unisoc.", "com.txznet.")
 
 /** CarPlay/Android Auto-apper (Car link, Zlink …): aldri skjult, og aldri byttet ut med T'OS. */
 internal val projectionWords = listOf("carlink", "car link", "carplay", "zlink", "autokit", "android auto", "gearhead", "projection",
@@ -104,7 +111,7 @@ internal fun isStockShellApp(pkg: String, label: String, isSystem: Boolean, isHo
     if (pkg == ownPkg || !isSystem) return false
     val hay = (label + " " + pkg).lowercase()
     if (keepWords.any { it in hay }) return false
-    if (pkg in stockShellPackages || isHome) return true
+    if (pkg in stockShellPackages || isHome || stockShellPrefixes.any { pkg.startsWith(it) }) return true
     // Nettradio-apper (NRK, TuneIn …) er ikke stereoens FM-radio
     if (internetRadioWords.any { it in pkg.lowercase() }) return false
     val tokens = hay.split(Regex("[^\\p{L}\\p{N}]+")).filter { it.isNotEmpty() }
@@ -134,13 +141,14 @@ object Tiles {
                 "com.google.android.apps.youtube.music",
                 "com.apple.android.music",
                 "com.android.music",
+                "com.syu.music",         // FYT sin musikkspiller (siste valg)
             ),
         ),
         QuickTile(
             "Radio",
             listOf(
+                "com.syu.radio",         // FYT (brukerens stereo – bekreftet 8. nov)
                 "com.ts.radio",          // vanlig på Unisoc-enheter
-                "com.syu.radio",         // FYT/Joying
                 "com.android.radio",
                 "com.hzbhd.radio",
             ),
@@ -148,8 +156,8 @@ object Tiles {
         QuickTile(
             "Telefon",
             listOf(
+                "com.syu.bt",            // FYT (bekreftet 8. nov)
                 "com.ts.bt",             // Bluetooth-telefon på Unisoc
-                "com.syu.bt",
                 "com.android.dialer",
                 "com.google.android.dialer",
             ),
@@ -157,9 +165,9 @@ object Tiles {
         ),
         QuickTile(
             "Bluetooth-musikk",
-            listOf(                      // gjetninger – sjekk med «adb shell pm list packages» / Lær-knappen
-                "com.ts.bt",
+            listOf(                      // com.syu.bt bekreftet (FYT); resten gjetninger
                 "com.syu.bt",
+                "com.ts.bt",
                 "com.microntek.btmusic",
                 "com.android.bluetooth",
             ),
@@ -167,6 +175,7 @@ object Tiles {
         QuickTile(
             "CarPlay / Android Auto",
             listOf(                      // + søk etter «Car link»/«CarPlay» i navnet (se AppRepository.tilePackage)
+                "com.syu.carlink",       // «Car Link 2.0» på FYT (brukerens CarPlay – bekreftet 8. nov)
                 "com.zjinnova.zlink",    // Zlink – det vanligste CarPlay-programmet på disse
                 "com.zjinnova.zlink5",
                 "com.autokit.carplay",

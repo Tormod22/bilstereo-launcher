@@ -357,7 +357,7 @@ fun Root() {
             VolumeHost(Modifier.align(Alignment.Center))
             // T'OS som telefon-app: egen samtalelinje. Ellers (stereoens egen BT-app) varselet fra MediaListener.
             if (Phone.calls.isNotEmpty()) PhoneCallBanner(Modifier.align(Alignment.TopCenter))
-            else Call.name?.let { CallBanner(it, Modifier.align(Alignment.TopCenter)) }
+            else (Call.name ?: fytCallName())?.let { CallBanner(it, Modifier.align(Alignment.TopCenter)) }
             // Meldinger: over bunnraden, eller øverst når tastaturet er oppe
             NoticeHost(
                 if (TosKeyboard.visible) Modifier.align(Alignment.TopCenter).padding(top = if (Call.name != null || Phone.calls.isNotEmpty()) 100.dp else 20.dp, start = 24.dp, end = 24.dp)
@@ -368,14 +368,26 @@ fun Root() {
     }
 }
 
+/** Samtale som bare FYT-stereoen vet om (BT-brikka): navn eller nummer, ellers null. */
+private fun fytCallName(): String? = if (Fyt.btReady && Fyt.inCall) (Fyt.phoneNumber ?: "Telefonen") else null
+
 @Composable
 private fun CallBanner(name: String, modifier: Modifier) {
-    Row(modifier.padding(top = 20.dp).clip(RoundedCornerShape(28.dp)).background(TextPrimary).clickable { Call.openCall() }
+    // Bare FYT-stereoen vet om samtalen (ingen varsel): vis også utgående samtale og samtale som er i gang
+    val fytOnly = Call.name == null
+    val st = Fyt.phoneState
+    Row(modifier.padding(top = 20.dp).clip(RoundedCornerShape(28.dp)).background(TextPrimary).clickable { if (!fytOnly) Call.openCall() }
         .padding(horizontal = 28.dp, vertical = 16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
         Icon(Icons.Default.Call, null, tint = Bg, modifier = Modifier.size(28.dp))
-        Text("$name ringer", color = Bg, fontSize = 22.sp, fontWeight = FontWeight.Medium, maxLines = 1,
+        Text(when {
+            fytOnly && st == FytLogic.PHONE_DIAL -> "Ringer $name …"
+            fytOnly && st == FytLogic.PHONE_TALK -> "Samtale: $name"
+            else -> "$name ringer"
+        }, color = Bg, fontSize = 22.sp, fontWeight = FontWeight.Medium, maxLines = 1,
             overflow = TextOverflow.Ellipsis, modifier = Modifier.widthIn(max = 460.dp))
-        if (Call.canAnswer) {
+        if (fytOnly && st != FytLogic.PHONE_RING) {
+            CallButton("Legg på", Icons.Default.CallEnd, filled = true) { if (!Fyt.hangUp()) Notify.show("Fikk ikke lagt på her – legg på på telefonen") }
+        } else if (Call.canAnswer) {
             // Svar/avvis rett her, så telefonappen til stereoen ikke må vises
             CallButton("Avvis", Icons.Default.CallEnd, filled = false) {
                 if (!Call.decline()) Notify.show("Fikk ikke avvist her – avvis på telefonen")

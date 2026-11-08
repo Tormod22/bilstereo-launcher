@@ -266,6 +266,17 @@ object SystemSurvey {
             }
         }
         part("Bluetooth") { append(BtLink.report(c)) }
+        part("FYT-tjenesten (com.syu.ms: radio, BT-telefon, lydkilde, volum)") { append(Fyt.report(c)) }
+        part("FYT-statuslinjen (show_navigationbar)") {
+            appendLine("show_navigationbar = ${FytBars.current(c)}  (1 = stereoens linje vises, 0 = skjult)")
+            appendLine("navigationbar_config = ${runCatching { Settings.System.getString(c.contentResolver, "navigationbar_config") }.getOrNull()}")
+            appendLine("T'OS kan skrive den: ${FytBars.writeTest(c)}")
+        }
+        part("Vinduer på skjermen nå") {
+            val svc = KeyService.instance
+            if (svc == null) appendLine("(knappestyringen kjører ikke)")
+            else runCatching { svc.windowSnaps() }.getOrDefault(emptyList()).forEach { appendLine(SurveyText.window(it)) }
+        }
         part("Tilgjengelighet og tillatelser") {
             appendLine("Knappestyring (T'OS knapper): ${Buttons.serviceEnabled(c)}, kjører: ${KeyService.instance != null}")
             appendLine("Tilgjengelighetstjenester på: ${Settings.Secure.getString(c.contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES)}")
@@ -536,14 +547,32 @@ object SurveyRecorder {
         if (c != null) stop(c) else { active = false; RecordGuide.hide() }
     }
 
+    /** Når brukeren sist trykket «Stopp nå» uten å stoppe (elapsedRealtime, 0 = ikke). */
+    private var askedAt = 0L
+
+    /**
+     * «Stopp nå» trykket. Første kartlegging (8. nov) stoppet etter 1,1 s: kortet dukket opp der fingeren var (rett over
+     * «Start opptak»-raden), så et trykk nummer to traff «Stopp nå». Nå: kortet ligger nede til venstre, trykk de første
+     * 3 sekundene teller ikke, og det må trykkes to ganger. Gir teksten knappen skal vise.
+     */
+    fun requestStop(c: Context): String? {
+        val now = SystemClock.elapsedRealtime()
+        return when (RecordStop.tap(now - startAt, if (askedAt == 0L) null else now - askedAt)) {
+            RecordStop.Tap.IGNORE -> null
+            RecordStop.Tap.ASK -> { askedAt = now; "Trykk igjen for å stoppe" }
+            RecordStop.Tap.STOP -> { askedAt = 0L; add("«Stopp nå» trykket"); stop(c); null }
+        }
+    }
+
     /** Start opptaket. false = knappestyringen kjører ikke. */
     fun start(): Boolean {
         val svc = KeyService.instance ?: return false
         if (active) return true
         synchronized(lines) { lines.clear() }
-        startAt = SystemClock.elapsedRealtime(); endsAt = startAt + DURATION_MS; lastWindows = ""
+        startAt = SystemClock.elapsedRealtime(); endsAt = startAt + DURATION_MS; lastWindows = ""; askedAt = 0L
         active = true
         add("Opptak startet ${Date()}")
+        add("FYT-tjenesten: ${Fyt.status}")
         windows(svc)
         RecordGuide.show(svc)
         h.postDelayed(autoStop, DURATION_MS)
@@ -555,7 +584,7 @@ object SurveyRecorder {
         if (!active) return
         active = false
         h.removeCallbacks(autoStop)
-        add("Opptak stoppet")
+        add("Opptak stoppet etter ${(SystemClock.elapsedRealtime() - startAt) / 1000} s")
         RecordGuide.hide()
         val rec = synchronized(lines) { lines.toList() }
         Prefs.set("settings_cat", SetCat.BACKUP.name)
@@ -618,9 +647,23 @@ internal fun AccessibilityService.windowSnaps(rootOf: (Int) -> Boolean = { true 
         w.layer, w.isActive, w.isFocused)
 }
 
+/** Når «Stopp nå» faktisk stopper opptaket. Ren logikk, testes i FytLogicTest. */
+internal object RecordStop {
+    /** Trykk så tidlig teller ikke (kortet kan ha dukket opp under fingeren). */
+    const val ARM_MS = 3000L
+    /** Andre trykk må komme innen dette. */
+    const val CONFIRM_MS = 4000L
+    enum class Tap { IGNORE, ASK, STOP }
+    fun tap(sinceStartMs: Long, sinceAskMs: Long?): Tap = when {
+        sinceStartMs < ARM_MS -> Tap.IGNORE
+        sinceAskMs != null && sinceAskMs in 0..CONFIRM_MS -> Tap.STOP
+        else -> Tap.ASK
+    }
+}
+
 /* ======================= Veiledningen under opptaket ======================= */
 
-/** Lite T'OS-kort nede til høyre over alle apper mens opptaket går: hva du skal gjøre, tid igjen og «Stopp nå». */
+/** Lite T'OS-kort nede til venstre over alle apper mens opptaket går: hva du skal gjøre, tid igjen og «Stopp nå». */
 internal object RecordGuide {
     private val h = Handler(Looper.getMainLooper())
     private var view: WeakReference<View>? = null
@@ -661,7 +704,15 @@ internal object RecordGuide {
             body.visibility = if (hidden) View.GONE else View.VISIBLE
             toggle.text = if (hidden) "Vis tekst" else "Skjul tekst"
         }
-        val stop = button("Stopp nå", strong = true) { SurveyRecorder.stop(svc.applicationContext) }
+        lateinit var stop: TextView
+        val stopLabel = "Stopp nå"
+        stop = button(stopLabel, strong = true) {
+            val ask = SurveyRecorder.requestStop(svc.applicationContext)
+            if (ask != null) {
+                stop.text = ask
+                h.postDelayed({ if (SurveyRecorder.active) stop.text = stopLabel }, RecordStop.CONFIRM_MS)
+            }
+        }
         val buttons = LinearLayout(svc).apply {
             orientation = LinearLayout.HORIZONTAL; gravity = Gravity.END
             addView(toggle, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { marginEnd = dp(10f) })
@@ -682,7 +733,7 @@ internal object RecordGuide {
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
                 WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
             PixelFormat.TRANSLUCENT,
-        ).apply { gravity = Gravity.BOTTOM or Gravity.END; x = dp(16f); y = dp(16f) }
+        ).apply { gravity = Gravity.BOTTOM or Gravity.START; x = dp(16f); y = dp(16f) }
         if (runCatching { w.addView(card, lp) }.isFailure) return@post
         view = WeakReference(card); wm = w; title = WeakReference(t)
         h.removeCallbacks(tick); tick.run()

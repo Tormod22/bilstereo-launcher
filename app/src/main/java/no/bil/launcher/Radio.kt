@@ -167,7 +167,9 @@ internal fun shouldReconnect(prepared: Boolean, playedMs: Long): Boolean = prepa
  * MIT-lisens, © dw2lam og bidragsytere. Se docs/TREDJEPART.md.
  */
 object HwRadio {
-    data class State(val band: String, val freq: String, val station: String?, val canTune: Boolean) {
+    /** [text]: RDS-radiotekst. [canStep]: frekvensen kan flyttes ett trinn (FYT). */
+    data class State(val band: String, val freq: String, val station: String?, val canTune: Boolean,
+                     val text: String? = null, val canStep: Boolean = false) {
         val isAm get() = band.equals("AM", true)
     }
 
@@ -230,8 +232,19 @@ object HwRadio {
         return State(band, raw ?: "–", station, canTune = false)
     }
 
+    /** FYT-stereo: radioen styres direkte via com.syu.ms (bryter «fyt_radio», Innstillinger → Musikk). */
+    val fyt get() = Fyt.radioReady && Prefs.bool("fyt_radio", true)
+
+    /** Radioen ifølge FYT (bare når den er lydkilden, eller slått på i T'OS). */
+    private fun fytState(): State? {
+        if (!fyt || Fyt.radioFreqRaw <= 0 || !(Fyt.radioOnAir || wanted)) return null
+        val fm = Fyt.radioFm ?: return null
+        return State(if (fm) "FM" else "AM", FytLogic.freqText(Fyt.radioBandRaw, Fyt.radioFreqRaw), Fyt.radioPs, canTune = true,
+            text = Fyt.radioText, canStep = true)
+    }
+
     /** Det radioen viser nå (null = ingen ekte radio funnet). */
-    val state: State? get() = mcu ?: fromSession()
+    val state: State? get() = fytState() ?: mcu ?: fromSession()
     val active get() = state != null
     /** Radioen styres direkte via MCU (szchoiceway). */
     val mcuActive get() = mcu != null
@@ -245,10 +258,12 @@ object HwRadio {
 
     private fun sessionControls() = NowPlaying.controller?.takeIf { c -> c.packageName?.let { isRadioPkg(it) } == true }?.transportControls
 
-    fun seekUp() { if (mcu != null) send(byteArrayOf(0x02, 0x0f)) else sessionControls()?.skipToNext() }
-    fun seekDown() { if (mcu != null) send(byteArrayOf(0x02, 0x0e)) else sessionControls()?.skipToPrevious() }
-    fun cycleFm() { if (mcu != null) send(byteArrayOf(0x02, 0x1e)) }
-    fun am() { if (mcu != null) send(byteArrayOf(0x02, 0x1f)) }
+    fun seekUp() { if (fyt) Fyt.radioSeek(up = true) else if (mcu != null) send(byteArrayOf(0x02, 0x0f)) else sessionControls()?.skipToNext() }
+    fun seekDown() { if (fyt) Fyt.radioSeek(up = false) else if (mcu != null) send(byteArrayOf(0x02, 0x0e)) else sessionControls()?.skipToPrevious() }
+    fun cycleFm() { if (fyt) Fyt.radioBand(fm = true) else if (mcu != null) send(byteArrayOf(0x02, 0x1e)) }
+    fun am() { if (fyt) Fyt.radioBand(fm = false) else if (mcu != null) send(byteArrayOf(0x02, 0x1f)) }
+    /** Ett frekvenstrinn opp/ned (bare FYT). */
+    fun step(up: Boolean) { if (fyt) Fyt.radioStep(up) }
 
     /** Direkte frekvens (bare szchoiceway). Ramme: 5a a5 0d 91 bånd bank(2) … frekvens(ASCII) sjekksum. */
     fun tune(band: String, freq: Float) {
@@ -312,6 +327,12 @@ object HwRadio {
         NetRadio.stop(a)
         wanted = true
         wantedAt = android.os.SystemClock.elapsedRealtime()
+        // FYT: radioen slås på direkte i stereoen (lydkilden byttes til radio) – ingen radio-app, ingen radiomotor
+        if (fyt && Fyt.radioOn()) {
+            enginePkg = null
+            if (showPage) Buttons.show(a, Screen.RADIO, instant = true)
+            return
+        }
         val pkg = radioPackage(a)
         enginePkg = pkg
         val mcuOk = hasMcu(a)
@@ -361,9 +382,12 @@ object HwRadio {
     fun powerOff(c: Context, keep: String? = null) {
         val a = c.applicationContext
         handler.removeCallbacksAndMessages(null)
+        val viaFyt = fyt && enginePkg == null
         val pkg = enginePkg ?: radioPackage(a)
         wanted = false
         engineAt = 0L; wantedAt = 0L
+        // FYT: gi lydkilden tilbake (radioen er av); radio-appen er ikke startet og trenger ikke stoppes
+        if (viaFyt || (fyt && Fyt.radioOnAir)) { Fyt.radioOff(); if (viaFyt) return }
         if (pkg != null) RadioGuard.silence(a, pkg, resumePkg = null, keep = keep)
         else if (hasMcu(a)) stopMcu()
     }
@@ -377,9 +401,13 @@ object HwRadio {
         if (!wanted) return
         val a = c.applicationContext
         handler.removeCallbacksAndMessages(null)
+        val viaFyt = fyt && enginePkg == null
         val pkg = enginePkg ?: radioPackage(a)
         wanted = false
         engineAt = 0L; wantedAt = 0L
+        // FYT: slipp radioen som lydkilde bare hvis den fortsatt er det (stereoen bytter ofte selv når musikken starter)
+        if (fyt && Fyt.radioOnAir) Fyt.radioOff()
+        if (viaFyt) return
         if (NowPlaying.preferredPkg == pkg) NowPlaying.preferredPkg = null
         if (pkg != null && pkg != musicPkg) RadioGuard.silence(a, pkg, resumePkg = null, keep = musicPkg)
         else if (hasMcu(a)) stopMcu()

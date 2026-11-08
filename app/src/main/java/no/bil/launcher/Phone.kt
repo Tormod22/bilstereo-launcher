@@ -316,13 +316,19 @@ object Phone {
     fun call(c: Context, number: String) {
         val num = dialable(number)
         if (num.isEmpty() || num == "+") { Notify.show("Skriv inn et nummer først"); return }
+        // FYT-stereo med telefonen koblet til stereoens BT-brikke: Android ser ikke telefonen, så ring via stereoen
+        if (Fyt.btReady && Fyt.phoneConnected == true && Fyt.dial(num)) { Notify.show("Ringer $num …"); return }
         if (!granted(c, Manifest.permission.CALL_PHONE) || !granted(c, Manifest.permission.READ_PHONE_STATE)) {
             pendingDial = num; Nav.screen = Screen.PHONE
             Notify.show("T'OS trenger lov til å ringe. Trykk «Gi tilgang».", long = true)
             return
         }
         val accounts = callAccounts(c)
-        if (accounts.isEmpty()) { callWithStereoApp(c, num); return }
+        if (accounts.isEmpty()) {
+            // FYT-stereo: ring via stereoens BT-brikke direkte (telefonen må være koblet til stereoen)
+            if (Fyt.btReady && Fyt.phoneConnected != false && Fyt.dial(num)) { Notify.show("Ringer $num …"); return }
+            callWithStereoApp(c, num); return
+        }
         val extras = Bundle()
         if (accounts.size > 1) {
             val i = preferredAccount(accounts.map { it.componentName.packageName })

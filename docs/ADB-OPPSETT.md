@@ -101,6 +101,7 @@ adb shell cmd wifi network-suggestions-set-user-approved no.bil.launcher yes
 adb shell dumpsys deviceidle whitelist +no.bil.launcher
 adb shell cmd package set-home-activity no.bil.launcher/.MainActivity
 adb shell cmd role add-role-holder android.app.role.DIALER no.bil.launcher
+adb shell settings put system show_navigationbar 0
 ```
 
 Hva linjene gjør:
@@ -119,6 +120,7 @@ Hva linjene gjør:
 | `deviceidle whitelist` | Batterisparing stopper ikke T'OS |
 | `set-home-activity` | T'OS blir startskjermen |
 | `add-role-holder … DIALER` | T'OS blir telefon-appen (samtaler vises i T'OS) |
+| `show_navigationbar 0` | **Valgfritt, bare FYT-stereoer.** Skjuler stereoens egen statuslinje (hjem-knapp, klokke, volum, «siste apper») i *alle* apper, ikke bare i T'OS. Angre: `adb shell settings put system show_navigationbar 1` |
 
 **Feilmeldinger er ofte helt greit.** En linje som svarer f.eks. «Unknown permission», «Unknown operation»
 eller «not a changeable permission type» gjelder en annen Android-versjon enn stereoen har, og kan overses.
