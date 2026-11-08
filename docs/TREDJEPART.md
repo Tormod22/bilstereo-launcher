@@ -32,5 +32,11 @@ kommando-/meldingskoder) er hentet fra disse åpne prosjektene, som har kartlagt
 - PimpinPumpkin/FytRadio – https://github.com/PimpinPumpkin/FytRadio (radio, lydkilde, FM-enhet)
 - Pacjonek/fyt-dialer – https://github.com/Pacjonek/fyt-dialer, Apache-2.0 (BT-telefon: ringe, svare, legge på, telefonens navn)
 - vasyl91/FYT-Launcher-Mod – https://github.com/vasyl91/FYT-Launcher-Mod (FinalBt, FinalRadio, FinalSound, FinalMain)
-- AxesOfEvil/FYTCanbusMonitor – https://github.com/AxesOfEvil/FYTCanbusMonitor (modulnumrene)
+- AxesOfEvil/FYTCanbusMonitor – https://github.com/AxesOfEvil/FYTCanbusMonitor (modulnumrene, canbus-kodene)
+- v5.8 rattknappene: cssbruno/cabin – https://github.com/cssbruno/cabin, Unlicense (offentlig eie):
+  app/src/main/kotlin/com/cabin/platform/SyuSteeringProtocol.kt, SyuSteeringController.kt, SyuSteeringWire.kt og
+  documents/STEERING-MAPPINGS.md (rattmodulen 10: start/stopp læring, gi tallet til en funksjon, lagre, slett, og
+  tilbakemeldingene – verifisert der mot Joying com.syu.ms 2.23.0711.1001). FinalMain (FYT-Launcher-Mod): U_PLAYER_CMD 37.
+  andreknieriem/open-headunit – https://github.com/andreknieriem/open-headunit, AGPL-3.0: bare kunnskapen om at hoved u=133
+  er en knapp (fra com.syu.steer), ingen kode.
 Ingen kode er kopiert; bare tallene og formatet.

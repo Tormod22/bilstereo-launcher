@@ -13,7 +13,7 @@ import androidx.compose.runtime.setValue
 
 /* ======================= Skjermene i T'OS ======================= */
 
-enum class Screen { DASH, APPS, BT, KEYS, MUSIC, MAP, NAV, RADIO, CAR, PHONE, SETTINGS, CLOCK, TUNING, SETUP, RECENTS }
+enum class Screen { DASH, APPS, BT, KEYS, MUSIC, MAP, NAV, RADIO, CAR, PHONE, SETTINGS, CLOCK, TUNING, SETUP, RECENTS, STEER }
 
 /** Hvilken skjerm som vises. Kan settes fra knappetjenesten, derfor et globalt objekt. */
 object Nav {
@@ -109,15 +109,24 @@ object Buttons {
         version.let { _ -> prefs(c) }.getString("pkg_${k.name}", null) == null && pkg(c, k) != null
     /** Lær tastekoden. Hadde en annen knapp samme kode, glemmes den der (ellers ville bare den første virket). */
     fun learnCode(c: Context, k: PanelKey, code: Int) {
-        val e = prefs(c).edit().putInt("code_${k.name}", code).remove("pkg_${k.name}")
+        val e = prefs(c).edit().putInt("code_${k.name}", code).remove("pkg_${k.name}").remove("fyt_${k.name}")
         learnedConflicts(prefs(c).all, "code_", code, k).forEach { e.remove(it) }
         e.apply(); changed()
     }
     fun learnPkg(c: Context, k: PanelKey, pkg: String) {
-        val e = prefs(c).edit().putString("pkg_${k.name}", pkg).remove("code_${k.name}")
+        val e = prefs(c).edit().putString("pkg_${k.name}", pkg).remove("code_${k.name}").remove("fyt_${k.name}")
         learnedConflicts(prefs(c).all, "pkg_", pkg, k).forEach { e.remove(it) }
         e.apply(); changed()
     }
+
+    /** Rattknappen FYT-tjenesten meldte da knappen ble lært («modul/kode/verdi», se SteerLogic), null = ikke lært slik. */
+    fun fytId(c: Context, k: PanelKey): String? = version.let { _ -> prefs(c) }.getString("fyt_${k.name}", null)
+    fun learnFyt(c: Context, k: PanelKey, id: String) {
+        val e = prefs(c).edit().putString("fyt_${k.name}", id).remove("code_${k.name}").remove("pkg_${k.name}")
+        learnedConflicts(prefs(c).all, "fyt_", id, k).forEach { e.remove(it) }
+        e.apply(); changed()
+    }
+    fun keyForFyt(c: Context, id: String) = PanelKey.entries.firstOrNull { fytId(c, it) == id }
 
     /** Kode 0 (ukjent tast) og lavere teller ikke – ellers ville alle ukjente taster blitt tolket som en lært knapp. */
     fun keyForCode(c: Context, code: Int) = if (code <= 0) null else PanelKey.entries.firstOrNull { code(c, it) == code }
@@ -202,6 +211,8 @@ object Buttons {
     fun openMusic(c: Context) {
         // Musikk i stedet for FM-radioen: slå av radioen, så de ikke spiller oppå hverandre
         if (HwRadio.wanted) HwRadio.powerOff(c)
+        // FYT: Android-appen blir lydkilden (ellers går rattknappene til stereoens egen musikkspiller, som MUSIC-knappen valgte)
+        runCatching { Steer.claimSource(musicTarget(c)) }
         val pkg = Prefs.str("music_pkg")
         if (pkg.isNotBlank() && AppRepository.isInstalled(c, pkg)) AppRepository.launch(c, pkg)
         else AppRepository.launchTile(c, Tiles.byPrefix("Mus"))
@@ -283,6 +294,15 @@ object Learn {
         return true
     }
 
+    /** Rattknappen kom som en melding fra FYT-tjenesten ([id] = «modul/kode/verdi»). */
+    fun offerFyt(c: Context, id: String, label: String): Boolean {
+        val k = target ?: return false
+        if (timedOut()) return false
+        Buttons.learnFyt(c, k, id)
+        cancel("${k.label} er lært ($label).")
+        return true
+    }
+
     /** Knappen åpnet en app i stedet. Vi husker appen og går tilbake til Knapper-siden. */
     fun offerPackage(c: Context, pkg: String): Boolean {
         val k = target ?: return false
@@ -350,6 +370,7 @@ internal object FytKeys {
         val p = defaults[k] ?: return null
         if (stored["pkg_${k.name}"] != null) return null
         if ((stored["code_${k.name}"] as? Int ?: -1) > 0) return null
+        if (stored["fyt_${k.name}"] != null) return null
         if (PanelKey.entries.any { it != k && stored["pkg_${it.name}"] == p }) return null
         return p
     }

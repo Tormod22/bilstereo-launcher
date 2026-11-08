@@ -31,7 +31,31 @@ Snakk norsk med brukeren. Han er ikke utvikler – forklar enkelt, ikke bruk fag
 - Løsningen han godkjente: **tre ting** – (1) bilkort med klokke, stort bilbilde og fart som stort tall, (2) ekte kart, (3) én rad nederst: musikk/telefon/apper. Ingen kalender, ingen vær.
 - Kalkulator skal være skjult i app-skuffen (`HiddenApps` i `Apps.kt`).
 
-## Nåværende tilstand (v5.7)
+## Nåværende tilstand (v5.8)
+- v5.8: brukeren: «rattknappene gjør ingenting» (Avensis T27: venstre VOL −, demp, VOL +, ▼, ▲, MODE; høyre DISP – virket med
+  originalradioen). Han åpnet FYT «Control» (com.syu.steer): 6 tall øverst som endrer seg ved trykk, ALLE funksjoner «NULL» →
+  ÅRSAK (bekreftet av bildet): rattknappene er aldri lært i stereoen. Ekstra årsak (gjetning): etter MUSIC-knappen står FYT-kilden
+  på 8 (com.syu.music), så neste/forrige gikk til FYT sin spiller, ikke Spotify. (1) Ny side «Rattknapper» (Screen.STEER, `Steer.kt`
+  FytSteer/SteerAdc; fra Knapper-kortet «Lær rattknappene» og Innstillinger → Knapper): T'OS lærer knappene I STEREOEN via
+  rattmodulen 10 (protokoll fra github.com/cssbruno/cabin, Unlicense, verifisert der mot Joying com.syu.ms: cmd 2 [1]/[0] start/stopp,
+  1 [plass] gi tallet nå til funksjonen, 4 lagre, 3 slett alt; update 1 [plass, tall] lært, 2 [tall] fra rattet (50 = ingen),
+  3 [kanal, tall] (de 6 tallene), 4 lærer av/på). Plasser: 0 av/på, 1 MODE, 2 demp, 3 vol+, 4 vol−, 5 forrige, 6 neste,
+  7 navigasjon (DISP → kart via NAVI-logikken), 8 svar, 9 legg på, 10 spill/pause. Flis → «Hold inne rattknappen nå …» → tallet
+  fanges (nytt, ≠ 50, står 400 ms, stereoen sier «lærer») → cmd 1 → ✓ først når stereoen melder lært → «Lagre i stereoen»
+  (lagres også når siden lukkes / etter 1 min). Svarer ikke stereoen (15 s / 10 s): melding + «Åpne stereoens eget oppsett».
+  «Slett alle lærte» (Trykk igjen) – protokollen har ikke slett per knapp. Test: flis lyser (grønn kant/prikk) av tallet (hvis
+  rattet sender tall utenfor læringen) eller av virkningen (volum opp/ned, demp, kilde byttet, neste/forrige).
+  (2) Fyt.kt lytter nå også på hoved u=37 (U_PLAYER_CMD), 42, 60, 133 (knapp, open-headunit), ratt 0–40 og canbus 0–50/1000–1036
+  (bare logg; tette koder strupes). Nåverdier de første 2,5 s regnes ikke som trykk. Kartleggingen: «Rattknapper», «Rattknapp-læring
+  i stereoen», sys.carlink.type. (3) `Steer`: rattknapp fra FYT (u=37/133) → lært Ratt-rad (Buttons «fyt_<knapp>» = «modul/kode/verdi»,
+  Learn.offerFyt) ellers SteerLogic.route: radio/BT-musikk/FYT-spiller/u=37 med kilde 10 → stereoen selv; ellers → Media.next/previous/
+  playPause (Spotify); svar/legg på bare under samtale; volum/stemme → stereoen. `Steer.claimSource`: når en Android-musikkapp
+  spiller / velges / MUSIC åpner Spotify og FYT-kilden er 2/3/8/9 → C_APP_ID 10 (bryter «fyt_steer», Innstillinger → Musikk →
+  Rattknapper). KeyService: com.syu.steer/com.syu.canbus byttes aldri ut (SteerLogic.SETUP_PKGS); Android-medietaster vises som
+  «Siste rattknapp». Knapper-siden: kort «Rattknapper» (status, «Siste rattknapp», knapp). Tester: SteerLogicTest (9). Totalt 182.
+  UVERIFISERT: at UIS7862-firmwaren bruker samme plasser/koder som Joying (Control her viser flere funksjoner), at lagringen holder
+  etter omstart, om rattet sender tall utenfor læringen, om FYT sender u=37/133, at C_APP_ID 10 er trygt. BE BRUKEREN: Rattknapper →
+  lær alle 7 → Lagre → prøv knappene (også uten T'OS framme) → si hva som virket; ellers kartlegging med opptak.
 - v5.7: kartlegging nr. 2 (med opptak, 8. nov 21:58) BEKREFTET: FYT-tjenesten virker (tilkoblet, alle moduler 0–17, meldinger
   kommer). Hoved u=0 = lydkilde/app-id (10 ved start = Android-app, 1 radio, 8 musikkspiller com.syu.music, 2 BT com.syu.bt).
   BT: u=0/1 tittel/artist, u=6 MAC, u=7 «iPhone», u=9=2 tilkoblet (T'OS viser TILKOBLET). Radio: u=1 frekvens 522, u=2 bånd 0

@@ -304,6 +304,7 @@ object Media {
                 NetRadio.stop(a)
                 NowPlaying.preferredPkg = pkg
                 if (HwRadio.wanted) HwRadio.powerOff(a, keep = pkg)
+                runCatching { Steer.claimSource(pkg) }
                 pauseOthers(keep = pkg)
                 val s = NowPlaying.sessions.firstOrNull { it.packageName == pkg }
                 if (s != null) {
@@ -419,6 +420,8 @@ object PlaybackWatch {
             return
         }
         if (shouldYieldRadio(RadioGuard.looksLikeRadio(pkg), HwRadio.isEngine(pkg), HwRadio.wanted, HwRadio.msSinceOn())) HwRadio.yieldTo(c, pkg)
+        // FYT: appen som nå spiller blir stereoens lydkilde, så rattknappene (neste/forrige) går til den
+        if (!RadioGuard.looksLikeRadio(pkg)) runCatching { Steer.claimSource(pkg) }
         val am = c.getSystemService(Context.AUDIO_SERVICE) as AudioManager
         val level = runCatching { am.getStreamVolume(AudioManager.STREAM_MUSIC) }.getOrDefault(-1)
         val muted = runCatching { am.isStreamMute(AudioManager.STREAM_MUSIC) }.getOrDefault(false)

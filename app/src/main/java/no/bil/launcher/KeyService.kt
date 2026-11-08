@@ -181,6 +181,8 @@ class KeyService : AccessibilityService() {
         // Opptak (Kartlegg stereoen): bare skriv ned knappen, og la stereoen gjøre det den pleier
         if (SurveyRecorder.active) { SurveyRecorder.key(event); return false }
         val code = event.keyCode
+        // «Siste rattknapp» på Knapper-siden: neste/forrige/svar … (volum er panelknappen her og vises ikke)
+        if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0 && !isVolume(code)) Steer.noteKey(code)
         // T'OS-panelet over en annen app: BACK lukker det
         if (code == KeyEvent.KEYCODE_BACK && ShadePanel.shown) {
             if (event.action == KeyEvent.ACTION_UP) ShadePanel.hide()
@@ -396,6 +398,9 @@ class KeyService : AccessibilityService() {
         if (state.newlyFront && pkg !in homePkgs) RecentApps.record(this, pkg)
         // Merket er brukt opp: neste gang appen åpnes (f.eks. med knappen på stereoen) er det ikke T'OS som åpnet den
         if (byUs && state.newlyFront) AppRepository.forgetLaunched(pkg)
+        // Stereoens eget rattknapp-oppsett («Control») og bilens oppsett (canbus): aldri bytt dem ut, og lær ikke
+        // en knapp av dem (rattknappene læres der én gang)
+        if (pkg in SteerLogic.SETUP_PKGS) return
 
         // En app T'OS selv nettopp åpnet er ikke det knappen åpnet
         if (Learn.target != null && !byUs && Learn.offerPackage(this, pkg)) return

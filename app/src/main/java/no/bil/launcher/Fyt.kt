@@ -45,7 +45,9 @@ import java.util.concurrent.ConcurrentHashMap
  *    C_REDIAL 8, C_PICKUP 9, C_HANG 10, U_PHONE_NAME 7, U_PHONE_STATE 9, register-flagg 1; testet på UIS7862/UIS7870)
  *  - github.com/vasyl91/FYT-Launcher-Mod – app/src/main/java/com/syu/ipc/{FinalBt,FinalRadio,FinalMainServer,IRemoteModule}.java,
  *    com/syu/module/sound/FinalSound.java (U_VOL 2, U_MUTE 3), com/syu/module/main/FinalMain.java (U_APP_ID 0, APP_ID_*)
- *  - github.com/AxesOfEvil/FYTCanbusMonitor – ModuleCodes.kt (modulnumrene)
+ *  - github.com/AxesOfEvil/FYTCanbusMonitor – ModuleCodes.kt (modulnumrene), MainActivity.kt (canbus-kodene 0–50, 1000–1036)
+ *  - github.com/andreknieriem/open-headunit – connection/carkey/fyt/CarFYTReceiver.kt (hoved u=133 = knapp, fra com.syu.steer)
+ * Rattknappene: se Steer.kt / SteerLogic (v5.8).
  * UVERIFISERT på denne stereoen: alt over er bekreftet av andre på FYT-enheter, men ikke her ennå. Neste kartlegging
  * («FYT-tjenesten» i rapporten) viser hva stereoen faktisk svarer. Alt er pakket inn i try/catch – finnes ikke tjenesten
  * (andre stereoer, testene), gjør dette ingenting.
@@ -62,16 +64,22 @@ object Fyt {
     const val M_BT = 2
     const val M_SOUND = 4
     const val M_CANBUS = 7
+    const val M_STEER = 10
 
     /** Oppdateringskodene T'OS ber om per modul (resten logges bare når de kommer). */
     private val subscribe = mapOf(
-        M_MAIN to (0..20).toList(),
+        // + rattknappene: u=37 spillerkommando, 42 stemmekommando, 60 retningsknapp, 133 knapp (SteerLogic)
+        M_MAIN to (0..20).toList() + SteerLogic.MAIN_EVENT_CODES,
         // Radio: bånd, frekvens, kanal, PTY, RDS-tekst, stasjonsnavn, RDS av/på, frekvensområde, stereo, søk, PS-tekst
         M_RADIO to listOf(0, 1, 2, 3, 5, 13, 14, 15, 16, 21, 22, 26),
         // BT: ID3 tittel/artist, telefonens navn/nummer/tilstand, ringe-/taletid, BT-musikk spiller, HFP, PBAP
         M_BT to listOf(0, 1, 6, 7, 8, 9, 11, 12, 13, 18, 29, 31),
         // Lyd: volum, demping, modul
         M_SOUND to listOf(1, 2, 3),
+        // Ratt (10): ingen kjente koder – alt logges (kartleggingen viser om rattknappene sender noe her)
+        M_STEER to (0..40).toList(),
+        // Canbus (7): som FYTCanbusMonitor. Bare til kartleggingen (bil-data og ev. rattknapper fra canbus-boksen)
+        M_CANBUS to (0..50).toList() + (1000..1036).toList(),
     )
 
     private val main = Handler(Looper.getMainLooper())
@@ -80,6 +88,13 @@ object Fyt {
     private val modules = ConcurrentHashMap<Int, IBinder>()
     private val callbacks = ConcurrentHashMap<Int, Binder>()
     private var tries = 0
+    /** Når tilbakemeldingene ble registrert: det som kommer de første sekundene er nåverdier, ikke trykk. */
+    @Volatile private var setupAt = 0L
+    private val canbusNoteAt = HashMap<Int, Long>()
+    private var canbusLogLines = 0
+    /** Appens Context (satt i [start]) – til rattknappene, som kommer fra FYT-tjenesten uten en skjerm. */
+    @Volatile var appContext: Context? = null
+        private set
 
     /** Koblet til FYT-tjenesten (com.syu.ms). */
     var connected by mutableStateOf(false)
@@ -128,6 +143,7 @@ object Fyt {
     /** Koble til (kalles fra Hub.start). Gjør ingenting på stereoer uten com.syu.ms. */
     fun start(c: Context) {
         val a = c.applicationContext
+        appContext = a
         if (bound || connected) return
         if (!present(a)) { status = "com.syu.ms finnes ikke (ikke FYT-stereo)"; return }
         startedAt = SystemClock.elapsedRealtime()
@@ -167,6 +183,7 @@ object Fyt {
         }
         status = if (found.isEmpty()) "tilkoblet, men ingen moduler svarte (protokollen kan være annerledes)"
                  else "tilkoblet; moduler: ${found.joinToString { FytLogic.moduleName(it) }}"
+        setupAt = SystemClock.elapsedRealtime()
         for ((m, codes) in subscribe) {
             val b = modules[m] ?: continue
             val cb = callbacks.getOrPut(m) { callback(m) }
@@ -192,24 +209,45 @@ object Fyt {
     }
 
     private fun onUpdate(m: Int, u: Int, ints: IntArray?, flts: FloatArray?, strs: Array<String?>?) {
-        val line = FytLogic.describe(m, u, ints, flts, strs)
+        val now = SystemClock.elapsedRealtime()
+        val event = SteerLogic.isEventCode(m, u)
+        // Nåverdien som sendes med en gang ved registreringen er ikke et trykk
+        val initial = event && now - setupAt < 2500
+        val line = FytLogic.describe(m, u, ints, flts, strs) + (SteerLogic.note(m, u, ints)?.let { "  $it" } ?: "") +
+            if (initial) "  (nåverdi)" else ""
+        // Canbus og tallene fra rattet kan komme tett: høyst én linje per kode i sekundet i opptaket, og høyst 100 i loggen
+        val busy = m == M_CANBUS || (m == M_STEER && (u == 2 || u == 3))
+        val canbusDue = !busy || synchronized(canbusNoteAt) {
+            val k = m * 10_000 + u
+            val last = canbusNoteAt[k]
+            (last == null || now - last >= 1000).also { if (it) canbusNoteAt[k] = now }
+        }
         synchronized(log) {
             val key = "$m/$u"
-            if (lastByCode[key] != line) {
+            if (event || (lastByCode[key] != line && (!busy || canbusLogLines < 100))) {
                 lastByCode[key] = line
-                log.addLast(SurveyText.stamp(SystemClock.elapsedRealtime() - startedAt) + "  " + line)
-                while (log.size > 300) log.removeFirst()
+                if (busy) canbusLogLines++
+                log.addLast(SurveyText.stamp(now - startedAt) + "  " + line)
+                while (log.size > 500) log.removeFirst()
             }
         }
-        SurveyRecorder.note("FYT  $line")
-        main.post { apply(m, u, ints, strs) }
+        if (canbusDue) SurveyRecorder.note("FYT  $line")
+        val steer = if (initial) null else SteerLogic.fromFyt(m, u, ints)
+        main.post {
+            apply(m, u, ints, strs)
+            if (steer != null) runCatching { Steer.onFyt(steer) }
+        }
     }
 
     private fun apply(m: Int, u: Int, ints: IntArray?, strs: Array<String?>?) {
         val i0 = ints?.firstOrNull()
         val s0 = strs?.firstOrNull()?.trim()?.takeIf { it.isNotEmpty() }
         when (m) {
-            M_MAIN -> if (u == 0 && i0 != null) appId = i0
+            M_MAIN -> if (u == 0 && i0 != null) {
+                if (appId >= 0 && i0 != appId) FytSteer.flash(1)      // Test på Rattknapper-siden: MODE byttet kilde
+                appId = i0
+            }
+            M_STEER -> FytSteer.onFeedback(u, ints)
             M_RADIO -> when (u) {
                 0 -> if (i0 != null) radioBandRaw = i0
                 1 -> if (i0 != null) { if (i0 != radioFreqRaw) { radioPs = null; radioText = null }; radioFreqRaw = i0; radioSearching = false }
@@ -237,13 +275,14 @@ object Fyt {
             M_SOUND -> when (u) {
                 2 -> if (i0 != null) {
                     val changed = volume >= 0 && i0 != volume
-                    if (changed) volumeChangedAt = SystemClock.elapsedRealtime()
+                    if (changed) { volumeChangedAt = SystemClock.elapsedRealtime(); FytSteer.flash(if (i0 > volume) 3 else 4) }
                     volume = i0
                     runCatching { FytVolume.onFyt(KeyService.instance, i0, muted, changed) }
                 }
                 3 -> if (i0 != null) {
                     val m = i0 != 0
                     val changed = m != muted && volume >= 0
+                    if (changed) FytSteer.flash(2)
                     muted = m
                     if (volume >= 0) runCatching { FytVolume.onFyt(KeyService.instance, volume, m, changed) }
                 }
@@ -331,6 +370,19 @@ object Fyt {
     fun btavPrev() = cmd(M_BT, 0)
     /** BT-musikk som lydkilde (C_APP_ID = 3) og «spill». */
     fun btavOn(): Boolean { val a = cmd(M_MAIN, 0, intArrayOf(3)); val b = cmd(M_BT, 27); return a || b }
+    /**
+     * Android-app (f.eks. Spotify) som lydkilde (C_APP_ID = 10 = APP_ID_THIRD_PLAYER, det FYT selv viste da Spotify
+     * spilte i kartleggingen). Da sender ikke stereoen rattknappene til sin egen musikkspiller lenger. Se Steer.claimSource.
+     */
+    fun androidSource(): Boolean = cmd(M_MAIN, 0, intArrayOf(10))
+
+    /** Rattmodulen (10): læring av rattknappene i stereoen (se FytSteer). Tom liste sendes som tom (ikke null), som cabin. */
+    fun steerCmd(code: Int, ints: IntArray): Boolean = cmd(M_STEER, code, ints)
+
+    @android.annotation.SuppressLint("PrivateApi")
+    private fun prop(name: String): String = runCatching {
+        Class.forName("android.os.SystemProperties").getMethod("get", String::class.java).invoke(null, name) as? String
+    }.getOrNull().orEmpty()
 
     /* ---------- Kartleggingen ---------- */
 
@@ -344,12 +396,15 @@ object Fyt {
             appendLine("BT-musikk: spiller=$btavPlaying  «${btavTitle.orEmpty()}» – «${btavArtist.orEmpty()}»")
             appendLine("Forvalgte kanaler med frekvens/navn: ${radioPresets.size}" + radioPresets.take(12).joinToString("") { "  ${it.number}=${it.label}" })
             appendLine("Volum (lydmodul): $volume  dempet=$muted  høyeste sett=${Prefs.int("fyt_vol_seen", 0)}  T'OS regner med maks ${FytVolume.max}")
-            for (m in listOf(M_MAIN, M_RADIO, M_BT, M_SOUND)) if (modules.containsKey(m))
+            appendLine("Rattknapper: ${Steer.summary()}")
+            appendLine("Rattknapp-læring i stereoen (modul 10): ${FytSteer.summary()}")
+            appendLine("sys.carlink.type = «${prop("sys.carlink.type")}» (2 = en app har «knappefokus», se open-headunit)")
+            for (m in listOf(M_MAIN, M_RADIO, M_BT, M_SOUND, M_CANBUS, M_STEER)) if (modules.containsKey(m))
                 appendLine("get(0..3) ${FytLogic.moduleName(m)}: " + (0..3).joinToString("  ") { "$it=${get(m, it)}" })
         }
         val lines = synchronized(log) { log.toList() }
         appendLine("Meldinger fra stereoen (${lines.size}, nyeste nederst):")
-        lines.takeLast(200).forEach { appendLine("  $it") }
+        lines.takeLast(450).forEach { appendLine("  $it") }
     }
 }
 
