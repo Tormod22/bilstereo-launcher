@@ -57,7 +57,11 @@ fun rememberResumeTick(): Int {
     DisposableEffect(lc) {
         val o = androidx.lifecycle.LifecycleEventObserver { _, e -> if (e == androidx.lifecycle.Lifecycle.Event.ON_RESUME) t++ }
         lc.addObserver(o)
-        onDispose { lc.removeObserver(o) }
+        onDispose {
+            // Lifecycle krever hovedtråden (i røyktestene kan opprydding skje fra testtråden)
+            if (android.os.Looper.myLooper() == android.os.Looper.getMainLooper()) lc.removeObserver(o)
+            else android.os.Handler(android.os.Looper.getMainLooper()).post { lc.removeObserver(o) }
+        }
     }
     return t
 }

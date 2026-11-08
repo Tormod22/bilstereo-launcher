@@ -31,7 +31,40 @@ Snakk norsk med brukeren. Han er ikke utvikler – forklar enkelt, ikke bruk fag
 - Løsningen han godkjente: **tre ting** – (1) bilkort med klokke, stort bilbilde og fart som stort tall, (2) ekte kart, (3) én rad nederst: musikk/telefon/apper. Ingen kalender, ingen vær.
 - Kalkulator skal være skjult i app-skuffen (`HiddenApps` i `Apps.kt`).
 
-## Nåværende tilstand (v5.6)
+## Nåværende tilstand (v5.7)
+- v5.7: kartlegging nr. 2 (med opptak, 8. nov 21:58) BEKREFTET: FYT-tjenesten virker (tilkoblet, alle moduler 0–17, meldinger
+  kommer). Hoved u=0 = lydkilde/app-id (10 ved start = Android-app, 1 radio, 8 musikkspiller com.syu.music, 2 BT com.syu.bt).
+  BT: u=0/1 tittel/artist, u=6 MAC, u=7 «iPhone», u=9=2 tilkoblet (T'OS viser TILKOBLET). Radio: u=1 frekvens 522, u=2 bånd 0
+  (båndtallet stemmer ikke – frekvensen avgjør nå: < 2000 = AM kHz, ≥ 6000 = FM /100 → «87,50 MHz»), u=3 0/1 når radioen
+  starter, u=14 = forvalgte plasser (ints [nr] / [65536+nr], tomme navn – IKKE stasjonsnavn; vises bare med frekvens/navn,
+  `FytLogic.withPreset`, pills på radio-siden → radioPreset(nr), uverifisert), u=13/26 PS/RT tomme. Lyd(4): u=1=6, u=2 = volum
+  (15 → 14 … 3 med hjulet), u=3 = demp.
+  (1) VOLUM: hjulet endrer IKKE Androids strømmer (musikk 0/25 hele tiden), bare FYT-volumet; com.syu.ms viser eget vindu
+  («Popup Window», app-vindu, pakke com.syu.ms, 298,80 428×62, tekst = tallet, hendelser android.view.View + FrameLayout «13»,
+  borte etter 3–5 s). `FytVolume.kt`: T'OS-linje (tett mørkt kort, linje, stort tall, «Lyd av» ved demp) som
+  TYPE_ACCESSIBILITY_OVERLAY OVER FYT-vinduet (rect fra getWindows(), ellers standard 298,80 428×62 skalert; +6 dp, min 360×64 dp),
+  borte 2 s etter siste endring men aldri før FYT-vinduet er borte (WINDOWS_CHANGED, `KeyService.checkFytPopup`), maks 10 s.
+  Gjelder også når T'OS er framme. Maks = 40 / høyeste sett («fyt_vol_seen») / valg «fyt_vol_max» (Innstillinger → Lyd, bare FYT).
+  På FYT: volumtastene går til stereoen som før, og Androids VOLUME_CHANGED gir ingen T'OS-linje. com.syu.ms-hendelser regnes
+  ikke lenger som «app framme» (før: tosFront ble false, RecentApps/last_app). Bryter tos_volume. T'OS sine egne volumglidere
+  styrer fortsatt Androids strømmer (ikke FYT – ÅPENT).
+  (2) PANELKNAPPENE (bekreftet i opptaket): NAVI → iGO (com.nng.igo.primong.igoworld, = sys.navi.packagename), RADIO →
+  com.syu.radio/.act.ActRadio (+ kilde 1), MUSIC → com.syu.music/com.syu.app.Activity_All (+ 8), BT → com.syu.bt/.act.ActBt (+ 2),
+  MENU/HOME → T'OS. `FytKeys` (Buttons.kt): disse er standard-pakker når knappen ikke er lært (verken app/kode, ingen annen
+  knapp med samme app) – Buttons.pkg gir dem, Knapper-siden viser «Åpner Radio (FYT)», grønn prikk via keyForPkg.
+  Buttons.targets(MUSIC) = bare appen T'OS åpner (`musicTarget`; før lå com.syu.music i Musikk-flisa → ingen omdirigering).
+  RADIO på FYT (RADIO/RADIO_PAGE): `HwRadio.adopt` uten radiomotor/RadioGuard (kilden er allerede radio), T'OS radio-side.
+  BT: venter 400 ms (FYT kan vise samtalebildet i com.syu.bt), og `Buttons.inCall` teller nå også Fyt.inCall.
+  NAVI: `NaviKey.geoApps` (alle som åpner «geo:» – Maps, iGO, Waze, Yandex) = REAL_NAV; popupen tilbyr brukerens kartapp
+  (`NaviKey.offerFor`), Kartapp-valget lister alle kartapper (`NaviKey.choices`).
+  (3) NEDTREKKSMENYEN bekreftet: SystemUI FrameLayout «Notification shade.» (så «Notification shade. | 21:57 | iPhone | Eye
+  Comfort | Data | Airplane mode | Off…»), SystemUI-vinduet vokser 1024×60 → 1024×600 med fokus. isShadeEvent: tittelen avgjør
+  før «farlige» ord i hurtigknappene. Lukkes på SDK 29 med collapsePanels/BACK. FANEVISNINGEN bekreftet: com.android.launcher3 /
+  com.android.quickstep.RecentsActivity «Quickstep» (matcher). (4) FYT-linja: show_navigationbar kan IKKE skrives
+  («You cannot keep your settings in the secure settings») → ADB, eller ny knapp «Åpne FYT HideButton» (com.fyt.hidebutton/.Setting,
+  stereoens eget oppsett). (5) Kartleggingen: «→ kilde: Radio/Musikkspiller …» på hoved u=0, FYT-knappestandarder, geo-apper.
+  Tester: FytLogicTest2 (11). Tester totalt 173. UVERIFISERT: hvor full linja skal være (ekte maks), at kortet faktisk ligger over
+  FYT-vinduet, radioPreset-nummeret, om FYT-musikkspilleren (kilde 8) slipper lyden når Spotify åpnes etter MUSIC.
 - v5.6: brukeren kjørte «Kartlegg stereoen» (fila: FYT, UIS7862, ekte Android 10 – se «Enheten»). (1) Opptaket stoppet etter 1,1 s:
   `RecordGuide`-kortet dukket opp der fingeren var (over «Start opptak»), så trykk nr. 2 traff «Stopp nå». Nå: kortet nede til
   VENSTRE, trykk de første 3 s teller ikke, og «Stopp nå» må trykkes to ganger (`RecordStop`, «Trykk igjen for å stoppe»).

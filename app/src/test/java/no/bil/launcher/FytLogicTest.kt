@@ -12,9 +12,9 @@ import org.robolectric.annotation.Config
 /** FYT-stereoen (v5.6): tolking av meldingene fra com.syu.ms, kjente pakkenavn, nedtrekksmenyen på Android 10, opptaket. */
 class FytLogicTest {
     @Test fun frekvens_i_begge_enheter() {
-        assertEquals("101.7", FytLogic.freqText(0, 10170))        // Unisoc: 10 kHz-enheter
-        assertEquals("101.7", FytLogic.freqText(-3, 101700))      // PX: kHz
-        assertEquals("87.5", FytLogic.freqText(65536, 8750))
+        assertEquals("101,70", FytLogic.freqText(0, 10170))        // Unisoc: 10 kHz-enheter
+        assertEquals("101,70", FytLogic.freqText(-3, 101700))      // PX: kHz
+        assertEquals("87,50", FytLogic.freqText(65536, 8750))
         assertEquals("1080", FytLogic.freqText(1, 1080))          // AM i kHz
         assertEquals("–", FytLogic.freqText(0, -1))
         assertEquals("–", FytLogic.freqText(5, 0))

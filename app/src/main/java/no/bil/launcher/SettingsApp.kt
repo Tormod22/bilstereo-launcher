@@ -186,7 +186,13 @@ private fun SoundSettings() {
     EqPanel()
     Spacer(Modifier.height(8.dp))
     Section("Andre lyder")
-    ToggleRow("Volum i T'OS-stil", "tos_volume", true, "Volumknappene viser T'OS sin volumlinje i stedet for stereoens (krever knappestyring)")
+    ToggleRow("Volum i T'OS-stil", "tos_volume", true,
+        if (Fyt.connected) "Volumhjulet viser T'OS sin volumlinje oppå stereoens eget volumvindu (krever knappestyring)"
+        else "Volumknappene viser T'OS sin volumlinje i stedet for stereoens (krever knappestyring)")
+    // FYT: stereoens eget volum (0 til et ukjent høyeste tall). Linja regner med 40, eller det høyeste den har sett.
+    if (Fyt.connected) ChoiceRow("Stereoens høyeste volum", "fyt_vol_max",
+        listOf("0" to "Automatisk (${FytVolume.max})", "30" to "30", "35" to "35", "40" to "40", "45" to "45", "50" to "50", "60" to "60"), "0",
+        "Bare for hvor full volumlinja blir. Skru helt opp én gang, så finner T'OS det selv.")
     ToggleRow("Lyd når du er over fartsgrensen", "speed_beep", false, "Ett kort pip når du kjører mer enn 3 km/t over grensen")
     val tick = rememberResumeTick()
     val canWrite = remember(tick) { Settings.System.canWrite(context) }
@@ -255,6 +261,10 @@ private fun ScreenSettings() {
                 if (FytBars.set(context, show = cur == 0)) { fytBar = FytBars.current(context); adb = false; say(if (cur == 0) "Statuslinja vises igjen" else "Statuslinja er skjult") }
                 else adb = true
             }) { Toggle(cur == 0) }
+        // Reserve: stereoens eget oppsett for statuslinja/knappene (HideButton, en FYT-app). Åpnes bare når du trykker.
+        if (FytBars.hideButtonInstalled(context)) SettingRow("Åpne FYT HideButton",
+            "Stereoens eget oppsett (ikke T'OS) – kan skjule stereoens statuslinje uten PC. Trenger bare gjøres én gang.",
+            onClick = { if (!FytBars.openHideButton(context)) say("Fikk ikke åpnet HideButton") }) { Chevron() }
     }
     ToggleRow("Nedtrekksmeny i T'OS-stil", "tos_shade", true,
         "Sveip ned fra toppen viser T'OS sitt panel med varsler, lys og volum i stedet for stereoens")
@@ -551,7 +561,10 @@ private fun MapSettings() {
     }
     PrefField("Hjem-adresse", "addr_home", "Gate og sted")
     PrefField("Jobb-adresse", "addr_work", "Gate og sted")
-    ChoiceRow("Kartapp", "nav_app", listOf("com.google.android.apps.maps" to "Google Maps", "com.waze" to "Waze"), "com.google.android.apps.maps")
+    // Alle kartapper på stereoen (Google Maps, Waze, iGO, Yandex …): de som åpner en «geo:»-adresse
+    val navChoices = remember { NaviKey.choices(context) }
+    ChoiceRow("Kartapp", "nav_app", navChoices, NaviKey.MAPS,
+        "Åpnes av NAVI-knappen og kartet i T'OS. Åpner stereoen en annen kartapp (f.eks. iGO), tilbyr T'OS denne.")
     ToggleRow("NAVI-knappen styres av T'OS", "navi_detect", true,
         "Når stereoen åpner kartet selv: tilbyr den andre kartappen (Waze/Google Maps). Stereoens egen navigasjonsapp byttes ut med kartappen din (krever knappestyring)")
     ToggleRow("Tilby den andre kartappen", "navi_popup", true, "Popup øverst til høyre i 5 sekunder: «Åpne heller Waze»")
