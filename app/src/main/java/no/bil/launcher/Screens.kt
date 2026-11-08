@@ -13,6 +13,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -243,8 +245,158 @@ fun KeysScreen(onClose: () -> Unit) {
 
         // Lista leser Buttons.version selv, så den oppdateres uten å hoppe til toppen
         LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            items(PanelKey.entries.toList(), key = { it.name }) { k -> KeyRow(k) { } }
+            val keys = PanelKey.entries.toList()
+            val firstRatt = keys.indexOf(PanelKey.RATT1)
+            items(keys.take(firstRatt), key = { it.name }) { k -> KeyRow(k) { } }
+            item(key = "rattkort") { SteerCard() }
+            items(keys.drop(firstRatt), key = { it.name }) { k -> KeyRow(k) { } }
         }
+    }
+}
+
+/**
+ * «Rattknapper»: om stereoen har sendt noe fra rattknappene, siste rattknapp (så man ser om trykkene kommer fram),
+ * og stereoens eget rattknapp-oppsett («Control»), der knappene må læres én gang. Se Steer.kt.
+ */
+@Composable
+private fun SteerCard() {
+    val context = LocalContext.current
+    val seen = Steer.everSeen
+    val setup = remember { Steer.setupInstalled(context) }
+    val last = Steer.last
+    val clock = remember { java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.ROOT) }
+    Column(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(Card).padding(horizontal = 18.dp, vertical = 14.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Text("Rattknapper", color = TextPrimary, fontSize = 17.sp, fontWeight = FontWeight.Medium)
+        Text(
+            if (!seen) "Stereoen har ikke lært rattknappene ennå (derfor gjør de ingenting). Trykk «Lær rattknappene» – " +
+                "det tar et par minutter, og må bare gjøres én gang. Etterpå virker de også når T'OS ikke er framme."
+            else "Neste, forrige og pause på rattet går til musikken som spiller (f.eks. Spotify). Radioen og Bluetooth-musikken " +
+                "styrer stereoen selv. Skal en knapp gjøre noe annet: trykk «Lær» på en Ratt-rad og trykk knappen på rattet.",
+            color = TextMuted, fontSize = 14.sp,
+        )
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Box(Modifier.size(14.dp), contentAlignment = Alignment.Center) { if (Steer.lit) PingDot() }
+            Text(
+                if (last != null) "Siste rattknapp: $last (kl. ${clock.format(java.util.Date(Steer.lastAt))})"
+                else "Siste rattknapp: ingen ennå",
+                color = if (last != null) TextPrimary else TextMuted, fontSize = 15.sp, maxLines = 1,
+                overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f),
+            )
+            if (Fyt.connected) PillAction("Lær rattknappene", primary = !seen) { Nav.screen = Screen.STEER }
+            else if (setup) PillAction("Åpne stereoens rattknapp-oppsett", primary = !seen) { Steer.openSetup(context) }
+        }
+    }
+}
+
+@Composable
+private fun PillAction(text: String, modifier: Modifier = Modifier, primary: Boolean = false, onClick: () -> Unit) {
+    Box(
+        modifier.height(48.dp).clip(RoundedCornerShape(24.dp)).background(if (primary) TextPrimary else Line)
+            .clickable(onClick = onClick).padding(horizontal = 18.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(text, color = if (primary) Bg else TextPrimary, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+    }
+}
+
+/* ======================= Rattknapper: læring i stereoen ======================= */
+
+/**
+ * T'OS sin egen rattknapp-læring (i stedet for stereoens «Control»): trykk en flis, hold inne knappen på rattet til
+ * tallet vises, så lærer stereoen den (FytSteer). Lærte knapper gjør stereoen selv. Test: en lært knapp lyser når den
+ * trykkes. Finnes ikke FYT-tjenesten, eller svarer den ikke, vises stereoens eget oppsett som reserve.
+ */
+@Composable
+fun SteerScreen(onClose: () -> Unit) {
+    val context = LocalContext.current
+    DisposableEffect(Unit) {
+        FytSteer.pageOpen = true
+        onDispose { FytSteer.pageOpen = false; FytSteer.endSession() }
+    }
+    val setup = remember { Steer.setupInstalled(context) }
+    var confirmClear by remember { mutableStateOf(false) }
+    LaunchedEffect(confirmClear) { if (confirmClear) { delay(4000); confirmClear = false } }
+
+    Column(Modifier.fillMaxSize().clip(RoundedCornerShape(28.dp)).background(Panel).padding(24.dp)) {
+        PageHeader("Rattknapper", onClose)
+        Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+            // Venstre: tallet fra rattet, hva du gjør, og knappene
+            Column(
+                Modifier.weight(0.36f).fillMaxHeight().clip(RoundedCornerShape(22.dp)).background(Card).padding(18.dp)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                if (!Fyt.connected) {
+                    Text("Får ikke kontakt med stereoen", color = TextPrimary, fontSize = 18.sp, fontWeight = FontWeight.Medium)
+                    Text("Rattknappene læres i stereoen selv. Bruk stereoens eget oppsett: trykk en funksjon, hold inne " +
+                        "rattknappen til tallet endrer seg, og trykk ✓.", color = TextMuted, fontSize = 14.sp)
+                } else {
+                    Text("Tall fra rattet", color = TextMuted, fontSize = 13.sp)
+                    val adc = FytSteer.adc
+                    Text(adc?.takeIf { it != SteerAdc.NO_KEY }?.toString() ?: "–", color = TextPrimary, fontSize = 44.sp, fontWeight = FontWeight.Medium)
+                    val ch = FytSteer.channels
+                    if (ch.any { it != null }) Text(ch.joinToString("   ") { it?.toString() ?: "–" }, color = TextMuted, fontSize = 14.sp, maxLines = 1)
+                    Text(
+                        "1. Trykk en flis til høyre, f.eks. «Volum +».\n2. Hold inne samme knapp på rattet til tallet vises.\n" +
+                            "3. Når det står ✓, er den lært. Gjør det samme for de andre.\n4. Trykk «Lagre i stereoen».",
+                        color = TextMuted, fontSize = 14.sp,
+                    )
+                }
+                FytSteer.message?.let { Text(it, color = TextPrimary, fontSize = 15.sp) }
+                if (FytSteer.sessionActive) PillAction("Lagre i stereoen", Modifier.fillMaxWidth(), primary = true) { FytSteer.save() }
+                if (setup && (!Fyt.connected || FytSteer.noAnswer)) PillAction("Åpne stereoens eget oppsett", Modifier.fillMaxWidth(), primary = !Fyt.connected) { Steer.openSetup(context) }
+                if (Fyt.connected && FytSteer.learned.values.any { SteerAdc.isLearnedValue(it) }) {
+                    PillAction(if (confirmClear) "Trykk igjen for å slette alle" else "Slett alle lærte", Modifier.fillMaxWidth()) {
+                        if (confirmClear) { confirmClear = false; FytSteer.clearAll() } else confirmClear = true
+                    }
+                }
+            }
+            // Høyre: flisene (det rattet har først, så valgfrie)
+            Column(Modifier.weight(0.64f).fillMaxHeight().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                (SteerAdc.main + SteerAdc.extra).chunked(3).forEach { row ->
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        row.forEach { f -> SteerTile(f, Modifier.weight(1f)) }
+                        repeat(3 - row.size) { Spacer(Modifier.weight(1f)) }
+                    }
+                }
+                Text("«Kart» (DISP) åpner det samme som NAVI-knappen. «Bytt kilde» (MODE) bytter mellom radio, musikk og " +
+                    "Bluetooth – T'OS viser sin side for kilden. Neste/forrige går til musikken som spiller (f.eks. Spotify).",
+                    color = TextMuted, fontSize = 13.sp)
+            }
+        }
+    }
+}
+
+@Composable
+private fun SteerTile(f: SteerAdc.Fn, modifier: Modifier) {
+    val value = FytSteer.learned[f.slot]?.takeIf { SteerAdc.isLearnedValue(it) }
+    val waiting = FytSteer.waitingSlot == f.slot
+    val lit = FytSteer.flashSlot == f.slot
+    val sub = when {
+        waiting && FytSteer.captured != null -> "Fikk tallet ${FytSteer.captured} …"
+        waiting -> "Hold inne rattknappen nå …"
+        value != null -> "✓ Lært (tall $value)"
+        else -> "Ikke lært"
+    }
+    Column(
+        modifier.height(104.dp).clip(RoundedCornerShape(20.dp))
+            .background(if (waiting) TextPrimary else Card)
+            .then(if (lit) Modifier.border(2.dp, PingGreen, RoundedCornerShape(20.dp)) else Modifier)
+            .clickable { if (waiting) FytSteer.cancelWait() else FytSteer.learn(f.slot) }
+            .padding(14.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(f.label, color = if (waiting) Bg else TextPrimary, fontSize = 18.sp, fontWeight = FontWeight.Medium,
+                maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+            if (lit) PingDot()
+        }
+        if (f.wheel.isNotEmpty()) Text("Rattet: ${f.wheel}", color = if (waiting) Bg else TextMuted, fontSize = 13.sp, maxLines = 1)
+        Text(sub, color = if (waiting) Bg else if (value != null) TextPrimary else TextMuted, fontSize = 13.sp, maxLines = 1,
+            overflow = TextOverflow.Ellipsis)
     }
 }
 
@@ -261,6 +413,7 @@ private fun KeyRow(k: PanelKey, onChanged: () -> Unit) {
     val context = LocalContext.current
     val action = Buttons.action(context, k)
     val code = Buttons.code(context, k)
+    val fyt = Buttons.fytId(context, k)
     val pkg = Buttons.pkg(context, k)
     val fytDefault = pkg != null && Buttons.isFytDefault(context, k)
     // Appens navn («Radio», «Music Player», «Bluetooth»), ikke bare slutten av pakkenavnet
@@ -288,6 +441,7 @@ private fun KeyRow(k: PanelKey, onChanged: () -> Unit) {
             when {
                 learning -> "Venter …"
                 code > 0 -> "Kode $code"
+                fyt != null -> SteerLogic.describeId(fyt)
                 pkg != null -> "Åpner $pkgLabel" + if (fytDefault) " (FYT)" else ""
                 else -> "Ikke lært"
             },
@@ -301,7 +455,7 @@ private fun KeyRow(k: PanelKey, onChanged: () -> Unit) {
                 .padding(horizontal = 18.dp),
             contentAlignment = Alignment.Center,
         ) {
-            Text(if (learning) "Avbryt" else if (code > 0 || (pkg != null && !fytDefault)) "Lær på nytt" else "Lær",
+            Text(if (learning) "Avbryt" else if (code > 0 || fyt != null || (pkg != null && !fytDefault)) "Lær på nytt" else "Lær",
                 color = if (learning) Bg else TextPrimary, fontSize = 14.sp)
         }
     }

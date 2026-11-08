@@ -343,6 +343,7 @@ fun Root() {
                         Screen.TUNING -> TuningScreen(home)
                         Screen.SETUP -> SetupScreen(home)
                         Screen.RECENTS -> RecentsScreen(home)
+                        Screen.STEER -> SteerScreen(home)
                         Screen.CLOCK -> {}
                     }
                 }

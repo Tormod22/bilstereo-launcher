@@ -133,7 +133,10 @@ fun SettingsScreen(onClose: () -> Unit) {
                     SetCat.MUSIC -> MusicSettings()
                     SetCat.PHONE -> PhoneSettings()
                     SetCat.CAR -> CarSettings()
-                    SetCat.KEYS -> { SettingRow("Knapper på stereoen og rattet", "Lær knappene og velg hva de gjør", onClick = { Nav.screen = Screen.KEYS }) { Chevron() } }
+                    SetCat.KEYS -> {
+                        SettingRow("Knapper på stereoen og rattet", "Lær knappene og velg hva de gjør", onClick = { Nav.screen = Screen.KEYS }) { Chevron() }
+                        SettingRow("Rattknapper", "Lær rattknappene i stereoen (volum, neste, forrige, MODE …)", onClick = { Nav.screen = Screen.STEER }) { Chevron() }
+                    }
                     SetCat.BACKUP -> BackupSettings()
                 }
             }
@@ -597,6 +600,12 @@ private fun MusicSettings() {
     ToggleRow("FM-radio i bakgrunnen (radiomotor)", "radio_engine", true,
         "Starter stereoens radio et øyeblikk bak T'OS hvis radioen ikke kom i gang av seg selv")
     ToggleRow("Skjul stereoens radio-app", "hide_stock_radio", true, "Viser T'OS sin radio-side når stereoens radio-app dukker opp")
+    if (Fyt.connected) {
+        Section("Rattknapper")
+        ToggleRow("Rattknappene styrer musikkappen (FYT)", "fyt_steer", true,
+            "Neste/forrige/pause på rattet går til appen som spiller (f.eks. Spotify), ikke til stereoens egen musikkspiller. " +
+                "Av = stereoen bestemmer, som før.")
+    }
     Section("Bluetooth-lyd")
     if (Fyt.connected) ToggleRow("Bluetooth-lyd direkte via stereoen (FYT)", "fyt_bt", true,
         "T'OS slår på BT-musikken fra telefonen selv – stereoens BT-app trengs ikke. Av = som før.")
