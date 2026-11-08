@@ -366,6 +366,15 @@ object HwRadio {
         NetRadio.stop(a)
         wanted = true
         wantedAt = android.os.SystemClock.elapsedRealtime()
+        // FYT: stereoen har allerede gjort radioen til lydkilden (kilde 1) – T'OS viser radioen via FYT-tjenesten,
+        // uten radio-app og uten radiomotor (radio-appen blir liggende i bakgrunnen og slås ikke av)
+        if (fyt) {
+            enginePkg = null; engineAt = 0L
+            TosOverlay.cover(a)
+            Buttons.show(a, Screen.RADIO, instant = true)
+            TosOverlay.armUncover()
+            return
+        }
         enginePkg = pkg
         engineAt = android.os.SystemClock.elapsedRealtime()
         TosOverlay.cover(a)

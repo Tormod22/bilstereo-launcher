@@ -352,6 +352,14 @@ fun RadioScreen(onClose: () -> Unit) {
             if (HwRadio.wanted || hw != null) Pill("Stopp", Icons.Default.Stop) { HwRadio.powerOff(context) }
             else Pill("Start radio", Icons.Default.Radio, strong = true) { HwRadio.powerOn(context) }
         }
+        // FYT: forvalgte kanaler (bare de stereoen sender frekvens eller navn for)
+        val presets = if (HwRadio.fyt) Fyt.radioPresets else emptyList()
+        if (presets.isNotEmpty()) {
+            Spacer(Modifier.height(10.dp))
+            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                presets.forEach { p -> Pill(p.label) { Fyt.radioPreset(p.number) } }
+            }
+        }
         Section("Nettradio")
         NetRadio.error?.let { Text(it, color = TextMuted, fontSize = 15.sp, modifier = Modifier.padding(bottom = 10.dp)) }
         LazyVerticalGrid(GridCells.Fixed(4), verticalArrangement = Arrangement.spacedBy(12.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {

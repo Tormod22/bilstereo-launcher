@@ -262,6 +262,11 @@ private fun KeyRow(k: PanelKey, onChanged: () -> Unit) {
     val action = Buttons.action(context, k)
     val code = Buttons.code(context, k)
     val pkg = Buttons.pkg(context, k)
+    val fytDefault = pkg != null && Buttons.isFytDefault(context, k)
+    // Appens navn («Radio», «Music Player», «Bluetooth»), ikke bare slutten av pakkenavnet
+    val pkgLabel = remember(pkg) {
+        pkg?.let { p -> runCatching { context.packageManager.let { pm -> pm.getApplicationLabel(pm.getApplicationInfo(p, 0)).toString() } }.getOrNull()?.takeIf { it.isNotBlank() } ?: p.substringAfterLast('.') }
+    }
     val learning = Learn.target == k
 
     Row(
@@ -283,10 +288,10 @@ private fun KeyRow(k: PanelKey, onChanged: () -> Unit) {
             when {
                 learning -> "Venter …"
                 code > 0 -> "Kode $code"
-                pkg != null -> pkg.substringAfterLast('.').let { "Åpner $it" }
+                pkg != null -> "Åpner $pkgLabel" + if (fytDefault) " (FYT)" else ""
                 else -> "Ikke lært"
             },
-            color = TextMuted, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.widthIn(max = 130.dp),
+            color = TextMuted, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.widthIn(max = 180.dp),
         )
 
         Box(
@@ -296,7 +301,7 @@ private fun KeyRow(k: PanelKey, onChanged: () -> Unit) {
                 .padding(horizontal = 18.dp),
             contentAlignment = Alignment.Center,
         ) {
-            Text(if (learning) "Avbryt" else if (code > 0 || pkg != null) "Lær på nytt" else "Lær",
+            Text(if (learning) "Avbryt" else if (code > 0 || (pkg != null && !fytDefault)) "Lær på nytt" else "Lær",
                 color = if (learning) Bg else TextPrimary, fontSize = 14.sp)
         }
     }

@@ -113,9 +113,14 @@ internal object ShadeLogic {
         if (!isSystemUi(pkg)) return false
         val c = cls?.lowercase().orEmpty()
         val t = texts.map { it.trim().lowercase() }.filter { it.isNotEmpty() }
-        if (notShade.any { w -> w in c || t.any { w in it } }) return false
+        if (notShade.any { it in c }) return false
+        // Kartleggingen 8. nov (Android 10): FrameLayout med «Notification shade.», deretter «Notification shade.» + klokke og
+        // hurtigknappene («21:57», «iPhone», «Eye Comfort», «Airplane mode» …). Selve tittelen avgjør – en hurtigknapp som
+        // tilfeldigvis heter noe med «power»/«lock screen» skal ikke stoppe det.
+        if (t.any { line -> phrases.any { it in line } && notShade.none { it in line } }) return true
+        if (t.any { line -> notShade.any { it in line } }) return false
         if (classWords.any { it in squash(c) }) return true
-        return t.any { line -> phrases.any { it in line } || classWords.any { it in squash(line) } }
+        return t.any { line -> classWords.any { it in squash(line) } }
     }
 
     /**

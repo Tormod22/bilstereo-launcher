@@ -84,6 +84,8 @@ class KeyService : AccessibilityService() {
                 return
             }
             if (!HwVolume.enabled || HwVolume.ownRecently()) return
+            // FYT: Androids lydstrømmer er ikke det ekte volumet (volumhjulet endrer FYT sitt) – se FytVolume
+            if (FytVolume.active) return
             val active = HwVolume.activeStream(c)
             val stream = i.getIntExtra(EXTRA_VOLUME_STREAM_TYPE, -1)
             if (stream != -1 && stream != active) return
@@ -117,7 +119,7 @@ class KeyService : AccessibilityService() {
 
     /** En app ble installert, oppdatert eller fjernet: navnesøket (f.eks. «Car link 2.0») må leses på nytt. */
     private val pkgReceiver = object : BroadcastReceiver() {
-        override fun onReceive(c: Context, i: Intent) = AppRepository.invalidate(c)
+        override fun onReceive(c: Context, i: Intent) { AppRepository.invalidate(c); NaviKey.invalidate() }
     }
 
     override fun onServiceConnected() {
@@ -224,6 +226,8 @@ class KeyService : AccessibilityService() {
         when (e.action) {
             KeyEvent.ACTION_DOWN -> {
                 if (e.repeatCount == 0) volTaken.remove(code)
+                // FYT styrer volumet selv: knappen går til stereoen som før, og T'OS viser sin linje over FYT sitt vindu
+                if (e.repeatCount == 0 && FytVolume.active) return false
                 if (!HwVolume.enabled || (e.repeatCount == 0 && !HwVolume.controllable(this))) return false
                 if (e.repeatCount > 0 && code !in volTaken) return false
                 if (e.repeatCount > 0 && (code == KeyEvent.KEYCODE_VOLUME_MUTE || !volumeRepeatDue(e.eventTime, lastVolStep))) return true
@@ -255,7 +259,26 @@ class KeyService : AccessibilityService() {
     /** Stereoens «skall»: original startskjerm, app-liste/hovedmeny i startskjerm-appen, «car home»-apper. */
     /** Kartappene T'OS kjenner: valgt kartapp, Google Maps, Waze og Kart-flisa sine kandidater. */
     private fun navApps(): Set<String> =
-        (Buttons.targets(this, Action.NAVI) + listOf(NaviKey.MAPS, NaviKey.WAZE)).filter { it.isNotBlank() && it != packageName }.toSet()
+        (Buttons.targets(this, Action.NAVI) + listOf(NaviKey.MAPS, NaviKey.WAZE) + NaviKey.geoApps(this))
+            .filter { it.isNotBlank() && it != packageName }.toSet()
+
+    /** FYT sitt volumvindu: følg med på hvor det er og om det fortsatt finnes (bare mens T'OS-linja vises). */
+    fun checkFytPopup() {
+        if (!FytVolume.watching) return
+        val dm = resources.displayMetrics
+        val snaps = runCatching {
+            windows.orEmpty().filter { it.type == android.view.accessibility.AccessibilityWindowInfo.TYPE_APPLICATION }.map { w ->
+                val b = android.graphics.Rect(); w.getBoundsInScreen(b)
+                val small = b.height() <= dm.heightPixels / 2
+                // Pakkenavnet hentes bare for små vinduer (FYT-vinduet), ikke for appen som fyller skjermen
+                val root = if (small) runCatching { w.root }.getOrNull() else null
+                val pkg = root?.packageName?.toString()
+                @Suppress("DEPRECATION") if (root != null && Build.VERSION.SDK_INT < 33) runCatching { root.recycle() }
+                WinSnap(w.type, w.title?.toString(), pkg, b.left, b.top, b.right, b.bottom, w.layer, w.isActive, w.isFocused)
+            }
+        }.getOrNull()
+        FytVolume.onWindows(snaps, dm.widthPixels, dm.heightPixels)
+    }
 
     private val labels = HashMap<String, String>()
     private fun label(pkg: String): String = labels.getOrPut(pkg) {
@@ -328,10 +351,17 @@ class KeyService : AccessibilityService() {
         if (SurveyRecorder.active) { SurveyRecorder.event(this, event); return }
         val type = event.eventType
         if (type == AccessibilityEvent.TYPE_NOTIFICATION_STATE_CHANGED) lastNoteAt = SystemClock.elapsedRealtime()
+        if (type == AccessibilityEvent.TYPE_WINDOWS_CHANGED && FytVolume.watching) checkFytPopup()
         if (type == AccessibilityEvent.TYPE_WINDOWS_CHANGED || type == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) noteShade(event)
         if (type != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) return
         val pkg = event.packageName?.toString() ?: return
         val cls = event.className?.toString()
+        // FYT sitt volumvindu (com.syu.ms, «Popup Window» med tallet): T'OS-linja over det. Det er ikke en app som kom fram.
+        if (FytVolumeLogic.isPopupEvent(pkg, cls)) {
+            val texts = runCatching { event.text.mapNotNull { it?.toString() } }.getOrDefault(emptyList())
+            FytVolume.onPopupEvent(this, texts)
+            return
+        }
         // Androids fanevisning (nylige apper, «No recent items») kom fram: vis T'OS sin «Siste apper» i stedet.
         // Sjekkes før systemvinduene under, fordi den på eldre Android ligger i SystemUI. Av: fanelista er bare innom.
         if (pkg != packageName && Prefs.bool("tos_recents", true) && isStockRecentsEvent(pkg, cls, event)) {
@@ -424,11 +454,26 @@ class KeyService : AccessibilityService() {
         if (action == Action.NONE || action == Action.BACK) return
         if (Buttons.inCall(this)) return                          // ikke ta bort samtalebildet
         if (now - lastRedirect < 1500) return
-        // FM-radio: stereoen har allerede startet radio-appen – behold radioen, vis T'OS sin radio-side
-        if (action == Action.RADIO) { lastRedirect = now; HwRadio.adopt(this, pkg); return }
+        // FM-radio: stereoen har allerede startet radio-appen – behold radioen, vis T'OS sin radio-side.
+        // FYT: RADIO-knappen har allerede gjort radioen til lydkilden – vis den i T'OS (via FYT-tjenesten), også for «Radio-side»
+        if (action == Action.RADIO || (key == PanelKey.RADIO && action == Action.RADIO_PAGE && HwRadio.fyt)) {
+            lastRedirect = now; HwRadio.adopt(this, pkg); return
+        }
+        // FYT sin BT-app viser også samtalebildet: vent litt, så FYT rekker å si fra om en samtale før T'OS bytter bort
+        if (pkg == FytKeys.BT && Fyt.btReady) {
+            lastRedirect = now
+            handler.postDelayed({ if (front.current == pkg && !Buttons.inCall(this)) redirect(pkg, key, action) }, 400)
+            return
+        }
+        lastRedirect = now
+        redirect(pkg, key, action)
+    }
+
+    /** Knappen åpnet [pkg]: gjør handlingen brukeren har valgt i stedet. */
+    private fun redirect(pkg: String, key: PanelKey, action: Action) {
         val targets = Buttons.targets(this, action)
         if (pkg in targets) return                                // ville gått i ring
-        lastRedirect = now
+        lastRedirect = SystemClock.elapsedRealtime()
         // Det som spilte før knappen ble trykket (startes igjen hvis radioen tok over lyden)
         val resume = NowPlaying.recentMusic(exclude = pkg)
         // Til en T'OS-skjerm: svart teppe til T'OS er framme, så stereoens app ikke synes

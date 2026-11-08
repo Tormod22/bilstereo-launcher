@@ -156,7 +156,7 @@ internal object TosOverlay {
     private const val TITLE_MUTED = "Lyd av"
 
     /** Hvor vinduet kan tegnes: knappestyringen (ingen egen tillatelse), ellers «Vis over andre apper». */
-    private fun host(c: Context): Pair<Context, Int>? {
+    internal fun host(c: Context): Pair<Context, Int>? {
         val svc = KeyService.instance
         return when {
             svc != null -> svc to WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY
@@ -165,9 +165,9 @@ internal object TosOverlay {
         }
     }
 
-    private fun dp(c: Context, v: Float) = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, v, c.resources.displayMetrics).toInt()
+    internal fun dp(c: Context, v: Float) = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, v, c.resources.displayMetrics).toInt()
 
-    private fun card(ctx: Context, radius: Float) = GradientDrawable().apply {
+    internal fun card(ctx: Context, radius: Float) = GradientDrawable().apply {
         setColor(Card.copy(alpha = 0.96f).toArgb()); cornerRadius = dp(ctx, radius).toFloat(); setStroke(dp(ctx, 1f), Line.toArgb())
     }
 

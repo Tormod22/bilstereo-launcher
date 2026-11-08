@@ -103,6 +103,8 @@ object Fyt {
     var btavArtist by mutableStateOf<String?>(null); private set
     var btavPlaying by mutableStateOf(false); private set
     var volume by mutableIntStateOf(-1); private set
+    /** Forvalgte radiokanaler (radio kode 14). Bare de med frekvens eller navn – FYT sender ofte bare tomme plasser. */
+    internal var radioPresets by mutableStateOf<List<FytLogic.Preset>>(emptyList()); private set
     var muted by mutableStateOf(false); private set
     /** Når volumet sist endret seg (elapsedRealtime, 0 = aldri etter første verdi). */
     @Volatile var volumeChangedAt = 0L
@@ -212,7 +214,9 @@ object Fyt {
                 0 -> if (i0 != null) radioBandRaw = i0
                 1 -> if (i0 != null) { if (i0 != radioFreqRaw) { radioPs = null; radioText = null }; radioFreqRaw = i0; radioSearching = false }
                 13 -> radioText = s0
-                14, 26 -> if (s0 != null) radioPs = s0
+                // 14 = forvalgt kanal (plass, ev. frekvens og navn) – ikke stasjonsnavnet (kartleggingen 8. nov)
+                14 -> radioPresets = FytLogic.withPreset(radioPresets, ints, strs)
+                26 -> if (s0 != null) radioPs = s0
                 21 -> if (i0 != null) radioStereo = i0 != 0
                 22 -> if (i0 != null) radioSearching = i0 != 0
             }
@@ -228,12 +232,21 @@ object Fyt {
                 }
                 13 -> if (i0 != null) btavPlaying = i0 == 1
             }
+            // Volumhjulet endrer FYT sitt volum (ikke Androids): T'OS sin linje legges over FYT sitt volumvindu
+            // (via knappestyringen – bare et tilgjengelighetsvindu ligger over FYT-vinduet)
             M_SOUND -> when (u) {
                 2 -> if (i0 != null) {
-                    if (volume >= 0 && i0 != volume) volumeChangedAt = SystemClock.elapsedRealtime()
+                    val changed = volume >= 0 && i0 != volume
+                    if (changed) volumeChangedAt = SystemClock.elapsedRealtime()
                     volume = i0
+                    runCatching { FytVolume.onFyt(KeyService.instance, i0, muted, changed) }
                 }
-                3 -> if (i0 != null) muted = i0 != 0
+                3 -> if (i0 != null) {
+                    val m = i0 != 0
+                    val changed = m != muted && volume >= 0
+                    muted = m
+                    if (volume >= 0) runCatching { FytVolume.onFyt(KeyService.instance, volume, m, changed) }
+                }
             }
         }
     }
@@ -325,11 +338,12 @@ object Fyt {
         appendLine("FYT-stereo (com.syu.ms finnes): ${present(c)}")
         appendLine("Tilkobling: $status")
         if (connected) {
-            appendLine("Kilde (app-id): $appId ${FytLogic.appName(appId)}")
-            appendLine("Radio: bånd=$radioBandRaw frekvens=$radioFreqRaw → ${FytLogic.freqText(radioBandRaw, radioFreqRaw)}  PS=«${radioPs.orEmpty()}»  RT=«${radioText.orEmpty()}»  stereo=$radioStereo")
+            appendLine("Kilde (app-id): $appId = ${FytLogic.sourceName(appId)}")
+            appendLine("Radio: bånd=$radioBandRaw frekvens=$radioFreqRaw → ${FytLogic.freqLabel(radioBandRaw, radioFreqRaw)}  PS=«${radioPs.orEmpty()}»  RT=«${radioText.orEmpty()}»  stereo=$radioStereo")
             appendLine("BT-telefon: tilstand=$phoneState ${FytLogic.phoneStateName(phoneState)}  navn=«${phoneName.orEmpty()}»  nummer=«${phoneNumber.orEmpty()}»")
             appendLine("BT-musikk: spiller=$btavPlaying  «${btavTitle.orEmpty()}» – «${btavArtist.orEmpty()}»")
-            appendLine("Volum (lydmodul): $volume  dempet=$muted")
+            appendLine("Forvalgte kanaler med frekvens/navn: ${radioPresets.size}" + radioPresets.take(12).joinToString("") { "  ${it.number}=${it.label}" })
+            appendLine("Volum (lydmodul): $volume  dempet=$muted  høyeste sett=${Prefs.int("fyt_vol_seen", 0)}  T'OS regner med maks ${FytVolume.max}")
             for (m in listOf(M_MAIN, M_RADIO, M_BT, M_SOUND)) if (modules.containsKey(m))
                 appendLine("get(0..3) ${FytLogic.moduleName(m)}: " + (0..3).joinToString("  ") { "$it=${get(m, it)}" })
         }
@@ -389,12 +403,13 @@ internal object FytLogic {
     }
 
     /**
-     * FM eller AM? Frekvensen avgjør (FM ≥ 6400 i 10 kHz-enheter eller ≥ 64000 kHz; AM 150–1710 kHz), ellers båndet:
+     * FM eller AM? Frekvensen avgjør (kartleggingen 8. nov: 522 med bånd 0 – båndtallet kan ikke stoles på):
+     * ≥ 6000 = FM (10 kHz-enheter, f.eks. 8750, eller kHz, f.eks. 101700), 1–1999 = AM i kHz. Bare ellers båndet:
      * −3 = FM, −2 = AM (BAND_SWITCH_*), 65536+ = FM-bånd (BAND_FM_INDEX), 0 = FM / 1 = AM (FytRadio sine funn).
      */
     fun isFm(bandRaw: Int, freqRaw: Int): Boolean? = when {
-        freqRaw >= 6400 -> true
-        freqRaw in 100..1999 -> false
+        freqRaw >= 6000 -> true
+        freqRaw in 1..1999 -> false
         bandRaw == -3 || bandRaw >= 65536 -> true
         bandRaw == -2 -> false
         bandRaw == 0 -> true
@@ -405,12 +420,46 @@ internal object FytLogic {
     /** Frekvens i kHz: FM i 10 kHz-enheter (Unisoc, f.eks. 10170) eller kHz (PX, 101700); AM i kHz. */
     fun freqKhz(freqRaw: Int, fm: Boolean): Int = if (fm && freqRaw in 1..19_999) freqRaw * 10 else freqRaw
 
-    /** «101.7 MHz» / «1080 kHz» / «–». */
+    /** Tallet som vises: «87,50» (FM, MHz) / «522» (AM, kHz) / «–». */
     fun freqText(bandRaw: Int, freqRaw: Int): String {
         if (freqRaw <= 0) return "–"
         val fm = isFm(bandRaw, freqRaw) ?: return "–"
         val khz = freqKhz(freqRaw, fm)
-        return if (fm) String.format(Locale.US, "%.1f", khz / 1000.0) else khz.toString()
+        return if (fm) String.format(NO, "%.2f", khz / 1000.0) else khz.toString()
+    }
+
+    /** Med enhet: «87,50 MHz» / «522 kHz» / «–». */
+    fun freqLabel(bandRaw: Int, freqRaw: Int): String {
+        val t = freqText(bandRaw, freqRaw)
+        if (t == "–") return t
+        return t + if (isFm(bandRaw, freqRaw) == true) " MHz" else " kHz"
+    }
+
+    private val NO = Locale.forLanguageTag("nb-NO")
+
+    /** Forvalgt radiokanal: [slot] = plassen FYT sendte (bånd × 65536 + nummer), [freqRaw] ≤ 0 = ukjent. */
+    data class Preset(val slot: Int, val freqRaw: Int, val name: String?) {
+        val number get() = slot and 0xFFFF
+        val label get() = name ?: freqLabel(Int.MIN_VALUE, freqRaw)
+    }
+
+    /**
+     * Radio kode 14: ints[0] = plass, ints[1] = frekvens (hvis den sendes), strs[0] = navn. Plasser uten frekvens og
+     * navn (slik stereoen sendte dem 8. nov) vises ikke. Gir null for slike.
+     */
+    fun preset(ints: IntArray?, strs: Array<String?>?): Preset? {
+        val slot = ints?.firstOrNull() ?: return null
+        val f = ints.getOrNull(1)?.takeIf { it > 0 } ?: -1
+        val name = strs?.firstOrNull()?.trim()?.takeIf { it.isNotEmpty() }
+        if (f <= 0 && name == null) return null
+        return Preset(slot, f, name)
+    }
+
+    /** Lista med [ints]/[strs] lagt inn (samme plass byttes ut; tom plass fjernes). Sortert på plass. Høyst 40. */
+    fun withPreset(list: List<Preset>, ints: IntArray?, strs: Array<String?>?): List<Preset> {
+        val slot = ints?.firstOrNull() ?: return list
+        val p = preset(ints, strs)
+        return (list.filter { it.slot != slot } + listOfNotNull(p)).sortedBy { it.slot }.take(40)
     }
 
     /** MHz-tekst (FM) → råverdi i samme enhet som stereoen sender ([sample] = en frekvens den har sendt; 10 kHz som standard). */
@@ -422,8 +471,17 @@ internal object FytLogic {
         strs?.let { s -> append(" strs=").append(s.take(6).joinToString(",", "[", if (s.size > 6) ",…]" else "]") { "«${(it ?: "").take(60)}»" }) }
     }.trim().ifEmpty { "(tomt)" }
 
-    fun describe(m: Int, u: Int, ints: IntArray?, flts: FloatArray?, strs: Array<String?>?) =
-        "${moduleName(m)} u=$u ${payload(ints, flts, strs)}"
+    /** Lydkilden FYT sier er på (hovedmodul kode 0), med navn: 1 = Radio, 2 = BT, 8 = Musikkspiller … ukjent = tallet. */
+    private val sources = mapOf(0 to "ingen", 1 to "Radio", 2 to "Bluetooth (telefon)", 3 to "Bluetooth-musikk", 4 to "DVD", 5 to "AUX",
+        6 to "TV", 7 to "iPod", 8 to "Musikkspiller", 9 to "Videospiller", 10 to "Android-app", 11 to "Bilradio", 12 to "Bil-BT-telefon",
+        13 to "Bil-USB", 14 to "DVR")
+    fun sourceName(id: Int): String = sources[id] ?: id.toString()
+
+    fun describe(m: Int, u: Int, ints: IntArray?, flts: FloatArray?, strs: Array<String?>?): String {
+        val base = "${moduleName(m)} u=$u ${payload(ints, flts, strs)}"
+        val id = ints?.firstOrNull()
+        return if (m == 0 && u == 0 && id != null) "$base → kilde: ${sourceName(id)}" else base
+    }
 }
 
 /**
@@ -435,6 +493,21 @@ object FytBars {
     const val KEY = "show_navigationbar"
     const val ADB_HIDE = "adb shell settings put system show_navigationbar 0"
     const val ADB_SHOW = "adb shell settings put system show_navigationbar 1"
+
+    /** FYT sin egen «HideButton»-app (systemapp, kartleggingen 8. nov: com.fyt.hidebutton/.Setting). */
+    const val HIDE_PKG = "com.fyt.hidebutton"
+    private const val HIDE_CLS = "com.fyt.hidebutton.Setting"
+
+    fun hideButtonInstalled(c: Context): Boolean = runCatching { c.packageManager.getPackageInfo(HIDE_PKG, 0); true }.getOrDefault(false)
+
+    /** Åpne HideButton-oppsettet (stereoens eget). T'OS sier fra til knappestyringen at det er T'OS som åpnet det. */
+    fun openHideButton(c: Context): Boolean {
+        AppRepository.markLaunched(HIDE_PKG)
+        val i = Intent().setClassName(HIDE_PKG, HIDE_CLS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        if (runCatching { c.startActivity(i) }.isSuccess) return true
+        val l = c.packageManager.getLaunchIntentForPackage(HIDE_PKG)?.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) ?: return false
+        return runCatching { c.startActivity(l) }.isSuccess
+    }
 
     /** 1 = linja vises, 0 = skjult, null = ikke en FYT-stereo. */
     fun current(c: Context): Int? = runCatching { android.provider.Settings.System.getInt(c.contentResolver, KEY) }.getOrNull()

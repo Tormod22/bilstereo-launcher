@@ -100,7 +100,13 @@ object Buttons {
 
     /** Tastekoden knappen er lært med (-1 = ikke lært). */
     fun code(c: Context, k: PanelKey): Int = version.let { _ -> prefs(c) }.getInt("code_${k.name}", -1)
-    fun pkg(c: Context, k: PanelKey): String? = version.let { _ -> prefs(c) }.getString("pkg_${k.name}", null)
+    fun pkg(c: Context, k: PanelKey): String? {
+        val p = version.let { _ -> prefs(c) }
+        return p.getString("pkg_${k.name}", null) ?: FytKeys.defaultPkg(k, FytKeys.defaults(c), p.all)
+    }
+    /** Er pakken bare FYT-standarden (ikke lært av brukeren)? Vises som «Åpner Radio (FYT)» på Knapper-siden. */
+    fun isFytDefault(c: Context, k: PanelKey): Boolean =
+        version.let { _ -> prefs(c) }.getString("pkg_${k.name}", null) == null && pkg(c, k) != null
     /** Lær tastekoden. Hadde en annen knapp samme kode, glemmes den der (ellers ville bare den første virket). */
     fun learnCode(c: Context, k: PanelKey, code: Int) {
         val e = prefs(c).edit().putInt("code_${k.name}", code).remove("pkg_${k.name}")
@@ -135,7 +141,9 @@ object Buttons {
             // RADIO: radioen startes i bakgrunnen og T'OS sin radio-side vises (stereoens radio-app tas hånd om i KeyService)
             Action.HOME, Action.BT, Action.APPS, Action.RECENTS, Action.RADIO, Action.RADIO_PAGE, Action.PHONE, Action.MAP_FULL, Action.CAR, Action.QUICK, Action.TUNING, Action.SETTINGS -> listOf(c.packageName)
             Action.NAVI -> tile("Nav") + listOf(Prefs.str("nav_app"))
-            Action.MUSIC -> tile("Mus")
+            // Bare appen T'OS faktisk åpner (ikke hele lista): ellers ville FYT sin musikkspiller (som MUSIC-knappen åpner)
+            // regnes som «målet», og knappen ville aldri gått til Spotify
+            Action.MUSIC -> listOfNotNull(musicTarget(c))
             Action.CARPLAY -> tile("Car")
             Action.CAMERA -> tile("Rygg")
             // Disse åpner også apper: kartappen (naviger hjem, delt skjerm), musikkappen, CarPlay (Siri) –
@@ -186,6 +194,10 @@ object Buttons {
         }
     }
 
+    /** Appen MUSIC-handlingen åpner: brukerens valg, ellers første som finnes (Spotify først). */
+    fun musicTarget(c: Context): String? =
+        Prefs.str("music_pkg").takeIf { it.isNotBlank() && AppRepository.isInstalled(c, it) } ?: AppRepository.tilePackage(c, Tiles.byPrefix("Mus"))
+
     /** Musikkappen brukeren har valgt, ellers første som finnes (Spotify først). */
     fun openMusic(c: Context) {
         // Musikk i stedet for FM-radioen: slå av radioen, så de ikke spiller oppå hverandre
@@ -222,9 +234,12 @@ object Buttons {
         runCatching { c.startActivity(i) }
     }
 
-    /** Ikke overstyr noe mens det er en samtale (BT-appen viser da samtalebildet). */
+    /**
+     * Ikke overstyr noe mens det er en samtale (BT-appen viser da samtalebildet). FYT-stereoen har egen BT-brikke: der
+     * kan Android stå i vanlig lydmodus under samtalen, så FYT sin telefontilstand teller også.
+     */
     fun inCall(c: Context): Boolean =
-        (c.getSystemService(Context.AUDIO_SERVICE) as AudioManager).mode != AudioManager.MODE_NORMAL
+        (c.getSystemService(Context.AUDIO_SERVICE) as AudioManager).mode != AudioManager.MODE_NORMAL || (Fyt.btReady && Fyt.inCall)
 
     fun serviceEnabled(c: Context): Boolean =
         Settings.Secure.getString(c.contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES)
@@ -314,4 +329,57 @@ object KeyPing {
         android.view.KeyEvent.KEYCODE_VOLUME_UP, android.view.KeyEvent.KEYCODE_VOLUME_DOWN, android.view.KeyEvent.KEYCODE_VOLUME_MUTE,
         android.view.KeyEvent.KEYCODE_BACK, android.view.KeyEvent.KEYCODE_HOME,
     )
+}
+
+/**
+ * FYT-stereoen (kartleggingen 8. nov, opptaket): panelknappene sender ingen tastekoder – MCU-en ber com.syu.ms åpne en app:
+ * RADIO → com.syu.radio (ActRadio, kilde 1), MUSIC → com.syu.music (Activity_All, kilde 8), BT → com.syu.bt (ActBt, kilde 2),
+ * NAVI → navigasjonsappen som er valgt i FYT sitt oppsett (systemegenskapen sys.navi.packagename, her iGO).
+ * Da trenger brukeren ikke «lære» knappene: T'OS kjenner dem igjen på appen som kom fram. Bare når knappen ikke er lært
+ * (verken app eller tastekode), og ingen annen knapp er lært med samme app.
+ */
+internal object FytKeys {
+    const val RADIO = "com.syu.radio"
+    const val MUSIC = "com.syu.music"
+    const val BT = "com.syu.bt"
+    /** FYT sitt valg av navigasjonsapp (NAVI-knappen). */
+    private val naviProps = listOf("sys.navi.packagename", "persist.sys.navi.packagename")
+
+    /** Ren logikk (testbar): standardappen for [k], gitt FYT-standardene og det som er lagret («knapper»). */
+    fun defaultPkg(k: PanelKey, defaults: Map<PanelKey, String>, stored: Map<String, *>): String? {
+        val p = defaults[k] ?: return null
+        if (stored["pkg_${k.name}"] != null) return null
+        if ((stored["code_${k.name}"] as? Int ?: -1) > 0) return null
+        if (PanelKey.entries.any { it != k && stored["pkg_${it.name}"] == p }) return null
+        return p
+    }
+
+    /** FYT-standardene på en FYT-stereo (bare apper som finnes). [navi]: FYT sin navigasjonsapp. */
+    fun defaultsFor(installed: (String) -> Boolean, navi: String?, ownPkg: String): Map<PanelKey, String> = buildMap {
+        if (installed(RADIO)) put(PanelKey.RADIO, RADIO)
+        if (installed(MUSIC)) put(PanelKey.MUSIC, MUSIC)
+        if (installed(BT)) put(PanelKey.BT, BT)
+        navi?.trim()?.takeIf { it.isNotEmpty() && it != ownPkg && installed(it) }?.let { put(PanelKey.NAVI, it) }
+    }
+
+    @Volatile private var cached: Map<PanelKey, String>? = null
+    @Volatile private var cachedAt = 0L
+
+    /** Leses én gang per 10. minutt (FYT-oppsettet kan endre navigasjonsappen). Tomt på andre stereoer. */
+    fun defaults(c: Context): Map<PanelKey, String> {
+        val now = android.os.SystemClock.elapsedRealtime()
+        cached?.let { if (now - cachedAt < 600_000) return it }
+        val m = runCatching {
+            if (!Fyt.present(c)) emptyMap()
+            else defaultsFor({ AppRepository.isInstalled(c, it) }, naviPackage(), c.packageName)
+        }.getOrDefault(emptyMap())
+        cached = m; cachedAt = now
+        return m
+    }
+
+    @android.annotation.SuppressLint("PrivateApi")   // samme som kartleggingen: SystemProperties finnes på alle Android-versjoner her
+    fun naviPackage(): String? = runCatching {
+        val get = Class.forName("android.os.SystemProperties").getMethod("get", String::class.java)
+        naviProps.firstNotNullOfOrNull { (get.invoke(null, it) as? String)?.trim()?.takeIf { v -> v.isNotEmpty() } }
+    }.getOrNull()
 }
