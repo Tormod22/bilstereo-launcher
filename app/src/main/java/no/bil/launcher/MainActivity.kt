@@ -114,7 +114,19 @@ class MainActivity : ComponentActivity() {
         if (Startup.isFreshBoot(this) && !SafeMode.on) Startup.run(applicationContext)
         // Bilbildet leses i bakgrunnen mens skjermen bygges, så det er klart (nesten) med én gang
         if (CarArt.bitmap == null) Hub.scope.launch(Dispatchers.IO) { CarArt.load(applicationContext) }
+        Splash.onCreate()
         setContent { Root() }
+    }
+
+    override fun onStart() {
+        super.onStart()
+        Splash.onStart()
+    }
+
+    override fun onStop() {
+        // Skjermen av (tenning av): neste gang T'OS kommer fram etter en stund, vises oppstartsskjermen igjen
+        Splash.onStop(runCatching { (getSystemService(Context.POWER_SERVICE) as android.os.PowerManager).isInteractive }.getOrDefault(true))
+        super.onStop()
     }
 
     override fun onResume() {
@@ -345,11 +357,14 @@ fun Root() {
                         Screen.RECENTS -> RecentsScreen(home)
                         Screen.STEER -> SteerScreen(home)
                         Screen.SELFTEST -> SelfTestScreen(home)
+                        Screen.HELP -> HelpScreen(home)
                         Screen.CLOCK -> {}
                     }
                 }
             }
             if (Nav.screen == Screen.CLOCK) ClockScreen(home)
+            // Rolig oppstart (bare kald start / etter tenning): T'OS-merket på svart som tones bort
+            SplashHost()
             if (Nav.quick) {
                 BackHandler { closeQuick() }
                 QuickPanel(onClose = closeQuick, onGo = { s -> Nav.quick = false; ShadePanel.forgetReturn(); if (s != null) Nav.screen = s })

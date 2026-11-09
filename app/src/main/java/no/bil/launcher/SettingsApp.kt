@@ -60,13 +60,13 @@ enum class SetCat(val label: String, val icon: ImageVector, val group: String, v
     APPS("Apper", Icons.Default.Apps, "Stereoen", "apper app skjul vis startskjerm carplay car link radio kamera systemapper avinstaller siste nylige bakgrunn lukk"),
     STORAGE("Lagring", Icons.Default.Storage, "Stereoen", "lagring plass minne cache tøm kart minnepinne"),
     TIME("Dato, tid og språk", Icons.Default.Schedule, "Stereoen", "dato tid klokke tidssone 24 timer språk tastatur norsk"),
-    ABOUT("Om stereoen", Icons.Default.Info, "Stereoen", "om versjon oppdatering oppdater stereo android prosessor minne oppsett tillatelser adb pc avansert"),
+    ABOUT("Om stereoen", Icons.Default.Info, "Stereoen", "om versjon oppdatering oppdater stereo android prosessor minne oppsett tillatelser adb pc avansert bruksanvisning hjelp manual"),
     MAP("Kart og kjøring", Icons.Default.Map, "T'OS", "kart navigasjon adresse hjem jobb waze maps fart fartsgrense popup"),
     MUSIC("Musikk og oppstart", Icons.Default.MusicNote, "T'OS", "musikk spotify oppstart sangtittel cover varseltilgang radio fm radiomotor"),
     PHONE("Telefon", Icons.Default.Phone, "T'OS", "telefon favoritter carplay ring samtale"),
     CAR("Bil", Icons.Default.DirectionsCar, "T'OS", "bil batteri spenning obd eu-kontroll service dekk dekkskift tuning tur"),
     KEYS("Knapper", Icons.Default.Tune, "T'OS", "knapper ratt lær tast menu navi"),
-    BACKUP("Sikkerhetskopi og hjelp", Icons.Default.Backup, "T'OS", "sikkerhetskopi backup lagre hent fil rapport feil krasj sikker modus kartlegg kartlegging opptak"),
+    BACKUP("Sikkerhetskopi og hjelp", Icons.Default.Backup, "T'OS", "sikkerhetskopi backup lagre hent fil rapport feil krasj sikker modus kartlegg kartlegging opptak bruksanvisning"),
 }
 
 /** Kategoriene som passer søket (alle ord må finnes i navnet eller søkeordene). Ren logikk, testes. */
@@ -592,6 +592,7 @@ private fun AboutSettings() {
     SettingRow("Prosessor", "${Build.HARDWARE} · ${Runtime.getRuntime().availableProcessors()} kjerner · ${Hub.cpuTemp?.let { "$it °C" } ?: "temperatur ukjent"}")
     SettingRow("Minne", Hub.memText)
     SettingRow("Førstegangsoppsett", "Tillatelser – med stereoen eller med PC (uten Android-menyene)", onClick = { Nav.screen = Screen.SETUP }) { Chevron() }
+    SettingRow("Bruksanvisning", "Slik bruker du T'OS: knappene, rattet, radio, musikk, telefon og hva du gjør hvis noe er rart", onClick = { Nav.screen = Screen.HELP }) { Chevron() }
     SettingRow("Takk til", "Radiostyring og app-søk bygger på OpenLauncher (MIT). Kart © OpenStreetMap, Protomaps. Se docs/TREDJEPART.md.")
     Section("Avansert")
     var ask by remember { mutableStateOf(false) }
@@ -743,6 +744,7 @@ private fun BackupSettings() {
     SettingRow("Hent innstillinger fra fil", "Androids filvelger åpnes", onClick = { importFile.launch(arrayOf("application/json", "text/plain", "*/*")) }) { Chevron() }
 
     Section("Hjelp")
+    SettingRow("Bruksanvisning", "Slik bruker du T'OS – kort og enkelt", onClick = { Nav.screen = Screen.HELP }) { Chevron() }
     if (SafeMode.on) SettingRow("Sikker modus er på", "T'OS krasjet flere ganger og startet uten kart uten nett, bilbilde og oppstartsmusikk. Send feilrapporten under, og slå av når feilen er rettet.") {
         Pill("Slå av", strong = true) { SafeMode.turnOff(context) }
     }
