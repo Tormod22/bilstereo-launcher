@@ -268,6 +268,7 @@ object SystemSurvey {
         part("Bluetooth") { append(BtLink.report(c)) }
         part("FYT-tjenesten (com.syu.ms: radio, BT-telefon, lydkilde, volum)") {
             append(Fyt.report(c))
+            append(FytPhone.report())
             val d = FytKeys.defaults(c)
             appendLine("Knapper T'OS kjenner igjen uten læring (FYT): " + (if (d.isEmpty()) "ingen" else d.entries.joinToString { "${it.key.label} → ${it.value}" }))
             appendLine("FYT sin navigasjonsapp (sys.navi.packagename): ${FytKeys.naviPackage() ?: "ukjent"}")

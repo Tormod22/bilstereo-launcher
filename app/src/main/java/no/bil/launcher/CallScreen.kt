@@ -61,7 +61,7 @@ class CallActivity : ComponentActivity() {
         if (Build.VERSION.SDK_INT >= 27) { setShowWhenLocked(true); setTurnScreenOn(true) }
         else @Suppress("DEPRECATION") window.addFlags(WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-        setContent { CallScreen(onHide = { finish() }) }
+        setContent { CallScreen(onHide = { FytPhone.onUserHide(); finish() }) }
     }
 
     override fun onResume() { super.onResume(); Phone.callScreenVisible = true }
@@ -183,8 +183,10 @@ fun CallScreen(onHide: () -> Unit) {
 private fun ActiveButtons(call: PhoneCall, others: List<PhoneCall>, onKeypad: () -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
         Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-            CallButton(if (Phone.muted) "Mikrofon er av" else "Mikrofon av", if (Phone.muted) Icons.Default.MicOff else Icons.Default.Mic,
-                Modifier.weight(1f), on = Phone.muted) { Phone.setMuted(!Phone.muted) }
+            // FYT-samtaler (stereoens BT-brikke): ingen kjent kommando for «mikrofon av» – knappen vises ikke
+            if (call.id != FytPhone.CALL_ID)
+                CallButton(if (Phone.muted) "Mikrofon er av" else "Mikrofon av", if (Phone.muted) Icons.Default.MicOff else Icons.Default.Mic,
+                    Modifier.weight(1f), on = Phone.muted) { Phone.setMuted(!Phone.muted) }
             CallButton("Tastatur", Icons.Default.Dialpad, Modifier.weight(1f)) { onKeypad() }
             // Lydvalg bare når stereoen faktisk har mer enn én vei for lyden
             if (routesIn(Phone.routes).size > 1)

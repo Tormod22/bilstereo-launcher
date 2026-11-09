@@ -409,6 +409,9 @@ class KeyService : AccessibilityService() {
         // ikke send tilbake så lenge du er i den
         if (state.owned) { rememberLastApp(pkg); return }
 
+        // FYT: stereoens BT-app viser sitt eget samtalebilde – T'OS sin samtaleskjerm i stedet (FytPhone.kt)
+        if (FytPhone.shouldCover(pkg)) { Phone.openCallScreen(this); return }
+
         val now = SystemClock.elapsedRealtime()
         val key = Buttons.keyForPkg(this, pkg)
         if (key != null && state.newlyFront) KeyPing.hit(key, "åpnet ${label(pkg).ifBlank { pkg.substringAfterLast('.') }}")

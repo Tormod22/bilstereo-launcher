@@ -327,6 +327,15 @@ fun BtPanel() {
         }
     }
     msg?.let { Text(it, color = TextPrimary, fontSize = 14.sp, modifier = Modifier.padding(bottom = 8.dp)) }
+    if (Fyt.btReady) {
+        // FYT-stereoen: telefonen er koblet til stereoens egen BT-brikke (Android ser den bare som «paret»)
+        Section("Stereoens Bluetooth (FYT)")
+        FytBtCard(Modifier.padding(bottom = 8.dp))
+        ToggleRow("Telefonen i T'OS (FYT)", "fyt_phone", true,
+            "Ringe, kontakter og siste anrop via stereoens Bluetooth – stereoens telefon-app trengs ikke. Av = som før.")
+        ToggleRow("Samtaleskjermen i T'OS (FYT)", "fyt_call_screen", true,
+            "Når det ringer, eller du ringer ut, vises T'OS sin samtaleskjerm i stedet for stereoens egen.")
+    }
     if (status.devices.isNotEmpty()) {
         Section("Kjente enheter")
         status.devices.forEach { d ->
