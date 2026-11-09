@@ -91,6 +91,12 @@ Snakk norsk med brukeren. Han er ikke utvikler – forklar enkelt, ikke bruk fag
   `claimSource(explicit = true)` fra MUSIC tar også FYT-radioen, `FytMain.accKnown` krever tilkobling, tenning av stopper radiosøk,
   `Fyt.onWake` kobler til igjen etter dvale, hovedbryter av → dagnivå på lysstyrken tilbake, selvtestens radioprøve venter på samtale,
   volumprøven hoppes over ved rygging. Nettradio valgt mens FYT-radioen spiller: FytRadio.onRadioOff + Fyt.androidSource (NetRadio.start). Test IntegrationLogicTest (6).
+  (tester/CI) Røyktestene venter med `TestWait.kt` (`rule.awaitUntil/awaitText`: test-klokke + Robolectric-looper + litt ekte tid,
+  frist 20 virtuelle s/≥10 s ekte) i stedet for faste pauser – IO-lasting (assets, app-lister, bilde) kunne gi ustabile tester på
+  trege maskiner. build.yml: Robolectric-jar (sdk 33, android-all-instrumented 13-robolectric-9030017-i6) lagres med actions/cache og
+  hentes på forhånd med nye forsøk + SHA-512; «Kjør tester» prøver igjen (3×) BARE ved nett-/nedlastingsfeil (Python-sjekk av
+  testresultater + logg), aldri ved ekte testfeil; testrapport lastes opp ved feil. Ny Robolectric-versjon → oppdater «case» i
+  «Finn Robolectric-versjon». Tester totalt 261 (stresstestet 8× med CPU-last).
   (bruksanvisning) `docs/BRUKSANVISNING.md` (enkel norsk) + kopi i `app/src/main/assets/bruksanvisning.md` (HelpDocTest sjekker at de er
   like – HUSK å oppdatere begge) vist i T'OS som «Bruksanvisning» (Screen.HELP, `Help.kt`; Innstillinger → Om stereoen og Sikkerhetskopi
   og hjelp). Oppstartsskjerm (T'OS-merket på svart, 200 + 600 ms, `SplashHost`) ved kald start og etter ≥ 2 min med skjermen av.
