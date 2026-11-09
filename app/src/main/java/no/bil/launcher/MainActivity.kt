@@ -557,6 +557,7 @@ fun CarCard(modifier: Modifier) {
     var date by remember { mutableStateOf(dateFmt.format(Date()).replaceFirstChar { it.uppercase() }) }
     LaunchedEffect(Unit) {
         while (true) {
+            Power.awaitUi()                 // står stille mens skjermen er av / en annen app vises
             val now = Date()
             time = timeFmt.format(now); date = dateFmt.format(now).replaceFirstChar { it.uppercase() }
             delay(1000L - System.currentTimeMillis() % 1000L)
@@ -690,6 +691,7 @@ private fun OnlineMapView(gps: Gps?, modifier: Modifier, zoom: Int, rotate: Bool
     LaunchedEffect(key, Hub.online) {
         if (key == null) return@LaunchedEffect
         while (true) {
+            Power.awaitUi()                 // ingen kartfliser fra nettet mens skjermen er av eller en annen app vises
             val g = latest ?: return@LaunchedEffect
             val img = MapTiles.around(g.lat, g.lon, tz)
             if (img != null) map = img

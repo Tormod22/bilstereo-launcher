@@ -11,15 +11,17 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.os.BatteryManager
 import android.os.Build
-import android.os.PowerManager
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import java.io.File
 import java.util.Locale
 import java.util.UUID
@@ -57,19 +59,21 @@ object CarBattery {
     }
 
     fun start(c: Context) {
-        Hub.scope.launch { while (isActive) { stereoVolt = withContext(Dispatchers.IO) { readStereo(c) }; publish(); delay(10_000) } }
+        // Stereoens spenning: bare med skjermen på (den vises ikke ellers) – ingen lesing hele natten
+        Hub.scope.launch { Power.every(10_000, { it.stereoVolt }) { stereoVolt = withContext(Dispatchers.IO) { readStereo(c) }; publish() } }
         Hub.scope.launch {
             while (isActive) {
-                // Ikke mens stereoen «sover» med skjermen av (bilen står): da får brikka sove, og bilbatteriet spares
-                if ((enabled || Engine.watching) && awake(c)) obdLoop(c)
+                // Ikke mens bilen står med tenningen av (eller skjermen av uten tenning): brikka og bilen skal få sove
+                Power.await { it.obd }
+                if (enabled || Engine.watching) obdLoop(c)
                 // Vent inntil 60 s – men prøv straks igjen hvis Tuning-siden (motordata) åpnes
                 val wasWatching = Engine.watching
-                for (i in 0 until 60) { if (Engine.watching && !wasWatching) break; delay(1_000) }
+                withTimeoutOrNull(60_000) { Engine.watchFlow.first { it && !wasWatching } }
             }
         }
     }
 
-    private fun awake(c: Context) = (c.getSystemService(Context.POWER_SERVICE) as? PowerManager)?.isInteractive != false
+    private fun awake() = Power.plan.obd
 
     private fun publish() {
         val o = obdVolt; val s = stereoVolt
@@ -115,7 +119,7 @@ object CarBattery {
         if (!ok) { obdStatus = "Fikk ikke kontakt med ${dev.name} (er tenningen på?)"; close(); return }
         obdStatus = "Tilkoblet ${dev.name}"
         Engine.onConnect()
-        while (Hub.scope.isActive && (enabled || Engine.watching) && awake(c)) {
+        while (Hub.scope.isActive && (enabled || Engine.watching) && awake()) {
             val v = withContext(Dispatchers.IO) { runCatching { cmd("ATRV").filter { it.isDigit() || it == '.' }.toFloatOrNull() } }
             if (v.isFailure) { obdStatus = "Mistet kontakten med ${dev.name}"; break }
             obdVolt = v.getOrNull()?.takeIf { it in 5f..18f }
@@ -183,7 +187,12 @@ object CarBattery {
  * ChipPower CRS selv har ingen utgang; dette leses fra bilens egen motorstyring.
  */
 object Engine {
-    var watching by mutableStateOf(false)
+    private var watchingState by mutableStateOf(false)
+    /** Tuning-siden (motordata) er åpen. Også som flyt, så OBD-løkka kan vente uten å sjekke hvert sekund. */
+    var watching: Boolean
+        get() = watchingState
+        set(v) { watchingState = v; watchFlow.value = v }
+    internal val watchFlow = MutableStateFlow(false)
     var rpm by mutableStateOf<Int?>(null)
     var coolant by mutableStateOf<Int?>(null)      // °C
     var boostBar by mutableStateOf<Float?>(null)   // overtrykk i bar (MAP − lufttrykk)

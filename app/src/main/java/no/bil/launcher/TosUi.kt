@@ -187,7 +187,7 @@ fun TosStatusBar(modifier: Modifier = Modifier) {
     val fmt = remember { SimpleDateFormat("HH:mm", Locale.getDefault()) }
     // Teksten (ikke tidspunktet) er tilstanden: linja tegnes bare på nytt når minuttet skifter
     var time by remember { mutableStateOf(fmt.format(Date())) }
-    LaunchedEffect(Unit) { while (true) { time = fmt.format(Date()); delay(1000L - System.currentTimeMillis() % 1000L) } }
+    LaunchedEffect(Unit) { while (true) { Power.awaitUi(); time = fmt.format(Date()); delay(1000L - System.currentTimeMillis() % 1000L) } }
     Row(
         modifier.clip(RoundedCornerShape(14.dp)).clickable(onClickLabel = "Åpne hurtigpanelet") { Nav.quick = true }
             .padding(horizontal = 12.dp),

@@ -286,12 +286,14 @@ object FytMain {
         }
         // Lyden ble skrudd av av T'OS (pause på radioen) og T'OS startet på nytt før den ble skrudd på igjen: skru på
         releaseTosMute("T'OS startet")
+        runCatching { Power.refresh() }         // tenningen er kjent igjen (hvis stereoen har meldt den)
     }
 
     /** Tilkoblingen til stereoen er borte: ingenting fra den gamle tilstanden skal holde T'OS passiv. */
     internal fun onDisconnected() {
         if (reversing) { reversing = false; reverseEndAt = 0L; note("rygging glemt (stereoen frakoblet)") }
         h.removeCallbacks(sendPending); pendingLevel = -1
+        runCatching { Power.refresh() }         // tenningen er ikke kjent lenger: skjermen avgjør (Power.kt)
     }
 
     /** Lyden er av fordi T'OS skrudde den av (radioen på pause): skru den på igjen. */
@@ -320,6 +322,8 @@ object FytMain {
             }
         }
         acc = on
+        // Strømsparingen (Power.kt): GPS, OBD, versjonssjekk … av/på etter tenningen
+        runCatching { Power.refresh() }
     }
 
     private val refreshTheme = Runnable {
