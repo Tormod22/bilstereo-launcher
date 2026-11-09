@@ -222,7 +222,9 @@ fun Cover(size: androidx.compose.ui.unit.Dp, radius: androidx.compose.ui.unit.Dp
     }
     Box(Modifier.size(size).clip(RoundedCornerShape(radius)).background(Card), contentAlignment = Alignment.Center) {
         when {
-            NetRadio.active || FytRadio.onAir -> Icon(Icons.Default.Radio, null, tint = TextPrimary, modifier = Modifier.size(size * 0.5f))
+            NetRadio.active || FytRadio.onAir -> Icon(Icons.Default.Radio, "Radio", tint = TextPrimary, modifier = Modifier.size(size * 0.5f))
+            // BT-musikk via stereoens BT-brikke: ikke Spotify-ikonet (den spiller ikke) – Bluetooth-merket
+            fytBtMusicShown -> Icon(Icons.Default.Bluetooth, "Bluetooth-musikk", tint = TextPrimary, modifier = Modifier.size(size * 0.5f))
             art != null -> Image(art.asImageBitmap(), null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
             icon != null -> AppIcon(icon, size * 0.7f, "cover:" + (NowPlaying.pkg ?: Prefs.str("music_pkg")))
             else -> Icon(Icons.Default.MusicNote, null, tint = TextPrimary, modifier = Modifier.size(size * 0.5f))
@@ -243,6 +245,20 @@ val musicSub: String? get() = when {
     fytBtMusicShown -> listOfNotNull(Fyt.btavArtist, FytPhone.btavAlbum).joinToString(" · ").ifEmpty { Fyt.phoneName ?: "Telefonen" }
     else -> NowPlaying.artist
 }
+/** Radio (FYT eller nett): neste/forrige bytter stasjon, ikke sang. */
+val musicIsRadio: Boolean get() = NetRadio.active || FytRadio.onAir
+val musicNextLabel: String get() = if (musicIsRadio) "Neste stasjon" else "Neste sang"
+val musicPrevLabel: String get() = if (musicIsRadio) "Forrige stasjon" else "Forrige sang"
+/** FYT-radioen har ingen pause: spill/pause = lyd av/på (høyttaler-symbol i stedet for pause). */
+val musicPlayIcon: androidx.compose.ui.graphics.vector.ImageVector get() = when {
+    FytRadio.onAir && !NetRadio.active -> if (musicPlaying) Icons.AutoMirrored.Filled.VolumeOff else Icons.AutoMirrored.Filled.VolumeUp
+    else -> if (musicPlaying) Icons.Default.Pause else Icons.Default.PlayArrow
+}
+val musicPlayLabel: String get() = when {
+    FytRadio.onAir && !NetRadio.active -> if (musicPlaying) "Lyd av" else "Lyd på"
+    else -> if (musicPlaying) "Pause" else "Spill"
+}
+
 val musicPlaying: Boolean get() = when {
     NetRadio.active -> NetRadio.playing
     FytRadio.onAir -> !Fyt.muted
@@ -325,9 +341,9 @@ fun MusicScreen(onClose: () -> Unit) {
                 Progress(Modifier.fillMaxWidth())
                 Spacer(Modifier.height(16.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(24.dp), verticalAlignment = Alignment.CenterVertically) {
-                    RoundIcon(Icons.Default.SkipPrevious, 64.dp, desc = "Forrige sang") { Media.previous(context) }
-                    RoundIcon(if (musicPlaying) Icons.Default.Pause else Icons.Default.PlayArrow, 84.dp, outlined = true, desc = if (musicPlaying) "Pause" else "Spill") { Media.playPause(context) }
-                    RoundIcon(Icons.Default.SkipNext, 64.dp, desc = "Neste sang") { Media.next(context) }
+                    RoundIcon(Icons.Default.SkipPrevious, 64.dp, desc = musicPrevLabel) { Media.previous(context) }
+                    RoundIcon(musicPlayIcon, 84.dp, outlined = true, desc = musicPlayLabel) { Media.playPause(context) }
+                    RoundIcon(Icons.Default.SkipNext, 64.dp, desc = musicNextLabel) { Media.next(context) }
                 }
                 if (!MediaListener.enabled(context)) {
                     Spacer(Modifier.height(16.dp))
@@ -731,7 +747,7 @@ fun PhoneScreen(onClose: () -> Unit) {
         Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
             Column(Modifier.width(176.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 // Er telefonen koblet til? (sier aldri «ikke tilkoblet» når stereoens egen BT-app styrer)
-                Text(btShortText(BtLink.current), color = TextMuted, fontSize = 13.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                Text(btShortText(BtLink.current), color = TextMuted, fontSize = 13.sp, maxLines = 3, overflow = TextOverflow.Ellipsis)
                 PhoneTab.entries.forEach { t ->
                     val sel = t == tab
                     Row(Modifier.fillMaxWidth().height(64.dp).clip(Small).background(if (sel) TextPrimary else Card).clickable { tab = t }.padding(horizontal = 16.dp),

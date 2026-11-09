@@ -311,7 +311,7 @@ svg.i { fill: currentColor; display: block; }
         <!-- 3. Én rad -->
         <div class="actions">
           <div class="music panel">
-            <div class="cover tap" data-go="music"><svg class="i" viewBox="0 0 24 24" width="28" height="28"><path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/></svg></div>
+            <div class="cover tap" data-go="music"><svg class="i" viewBox="0 0 24 24" width="28" height="28"><path id="mcov" d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/></svg></div>
             <div class="mtext tap" data-go="music"><b id="mtitle">Musikk</b><span id="msub">Ingenting spiller</span></div>
             <div class="round m tap" id="play" aria-label="Spill / pause"><svg class="i" viewBox="0 0 24 24" width="28" height="28"><path d="M8 5v14l11-7z"/></svg></div>
             <div class="round m2 tap" id="mnext" aria-label="Neste sang"><svg class="i" viewBox="0 0 24 24" width="26" height="26"><path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z"/></svg></div>
@@ -662,6 +662,8 @@ svg.i { fill: currentColor; display: block; }
   const songs = [['Eksempel-sang', 'Artist (eksempel)', 214], ['Nattkjøring', 'Eksempelbandet', 187], ['Langs E18', 'Demo', 240]];
   let song = 0, playing = false, pos = 0;
   const PLAYD = 'M8 5v14l11-7z', PAUSED = 'M6 19h4V5H6v14zm8-14v14h4V5h-4z';
+  const NOTED = 'M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z';
+  const RADIOD = 'M3.24 6.15C2.51 6.43 2 7.17 2 8v12c0 1.1.89 2 2 2h16c1.11 0 2-.9 2-2V8c0-1.11-.89-2-2-2H8.3l8.26-3.34L15.88 1 3.24 6.15zM7 20c-1.66 0-3-1.34-3-3s1.34-3 3-3 3 1.34 3 3-1.34 3-3 3zm13-8h-2v-2h-2v2H4V8h16v4z';
   function showMusic() {
     const r = radio.cur;
     const t = r ? r.name : playing || pos ? songs[song][0] : 'Musikk';
@@ -672,6 +674,9 @@ svg.i { fill: currentColor; display: block; }
     document.querySelectorAll('#play path, #bigplay path').forEach(p => p.setAttribute('d', on ? PAUSED : PLAYD));
     const f = r ? 0 : pos / songs[song][2] * 100;
     $('mprog').style.width = f + '%'; $('bigprog').style.width = f + '%';
+    // Coveret viser kilden: radiosymbol for radio (som i appen: FYT-radio/nettradio), ellers note (Bluetooth-musikk får BT-merket)
+    $('mcov').setAttribute('d', r ? RADIOD : NOTED);
+    $('mnext').setAttribute('aria-label', r ? 'Neste stasjon' : 'Neste sang');
   }
   function playPause() { if (radio.cur) { radio.audio.paused ? radio.audio.play() : radio.audio.pause(); } else playing = !playing; showMusic(); }
   function nextSong() { if (radio.cur) { radioStep(1); return; } song = (song + 1) % songs.length; pos = 0; playing = true; showMusic(); }
