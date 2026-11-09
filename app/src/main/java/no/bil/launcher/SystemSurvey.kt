@@ -274,6 +274,7 @@ object SystemSurvey {
             appendLine("Kartapper («geo:»): ${NaviKey.geoApps(c).sorted().joinToString().ifEmpty { "ingen" }}")
         }
         part("FYT-radioen (radio-modul 1, T'OS sin radio)") { append(FytRadio.report()) }
+        part("FYT-lyd (lydmodulen 4: volum, equalizer, balanse/fader, loudness)") { append(FytSound.report()) }
         part("FYT-statuslinjen (show_navigationbar)") {
             appendLine("show_navigationbar = ${FytBars.current(c)}  (1 = stereoens linje vises, 0 = skjult)")
             appendLine("navigationbar_config = ${runCatching { Settings.System.getString(c.contentResolver, "navigationbar_config") }.getOrNull()}")

@@ -40,6 +40,7 @@ import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlin.math.roundToInt
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.text.SimpleDateFormat
@@ -179,15 +180,31 @@ private fun SoundSettings() {
             if (s == AudioManager.STREAM_MUSIC) Ui.volume = it.toInt()
         }
     }
-    stream("Musikk og radio", Icons.Default.MusicNote, AudioManager.STREAM_MUSIC)
+    // FYT: det ekte volumet og lydbildet er stereoens (lydmodulen i com.syu.ms), ikke Androids lydstrømmer
+    val fyt = FytSound.volumeReady
+    if (fyt) {
+        var drag by remember { mutableStateOf<Float?>(null) }
+        val m = FytSound.max.coerceAtLeast(1)
+        val shown = drag ?: (if (FytSound.muted) 0 else FytSound.level).coerceIn(0, m).toFloat()
+        SliderRow("Volum  ${shown.roundToInt()}", Icons.AutoMirrored.Filled.VolumeUp, shown, 0f..m.toFloat(), onDone = { drag = null }) {
+            drag = it; FytSound.setVolume(it.roundToInt())
+        }
+        SettingRow("Lyd av", "Demper all lyd fra stereoen", onClick = { if (!FytSound.toggleMute()) say("Stereoen svarte ikke") }) { Toggle(FytSound.muted) }
+    }
+    if (FytSound.pictureReady) FytSoundPanel()
+    if (fyt) Section("Android-apper")
+    stream(if (fyt) "Musikk i apper" else "Musikk og radio", Icons.Default.MusicNote, AudioManager.STREAM_MUSIC)
     stream("Samtaler", Icons.Default.Call, AudioManager.STREAM_VOICE_CALL)
     stream("Ringelyd", Icons.Default.RingVolume, AudioManager.STREAM_RING)
     stream("Varsler", Icons.Default.Notifications, AudioManager.STREAM_NOTIFICATION)
     stream("Alarm", Icons.Default.Alarm, AudioManager.STREAM_ALARM)
     stream("Systemlyder", Icons.Default.TouchApp, AudioManager.STREAM_SYSTEM)
-    Section("Equalizer")
-    EqPanel()
-    Spacer(Modifier.height(8.dp))
+    // Stereoens eget lydbilde (over) erstatter Androids equalizer; ellers vises den som før
+    if (!FytSound.pictureReady) {
+        Section("Equalizer")
+        EqPanel()
+        Spacer(Modifier.height(8.dp))
+    }
     Section("Andre lyder")
     ToggleRow("Volum i T'OS-stil", "tos_volume", true,
         if (Fyt.connected) "Volumhjulet viser T'OS sin volumlinje oppå stereoens eget volumvindu (krever knappestyring)"

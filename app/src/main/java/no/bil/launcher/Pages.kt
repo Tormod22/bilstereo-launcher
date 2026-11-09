@@ -1041,8 +1041,8 @@ fun QuickPanel(onClose: () -> Unit, onGo: (Screen?) -> Unit = { onClose(); if (i
     val context = LocalContext.current
     val am = remember { context.getSystemService(Context.AUDIO_SERVICE) as AudioManager }
     val maxVol = remember { am.getStreamMaxVolume(AudioManager.STREAM_MUSIC) }
-    // Volumet ligger i Ui.volume, som følger volumhjulet (oppdateres i Root)
-    LaunchedEffect(Unit) { Ui.volume = am.getStreamVolume(AudioManager.STREAM_MUSIC) }
+    // Volumet ligger i Ui.volume, som følger volumhjulet (oppdateres i Root). FYT: stereoens eget volum (FytSound)
+    LaunchedEffect(Unit) { if (!FytSound.volumeReady) Ui.volume = am.getStreamVolume(AudioManager.STREAM_MUSIC) }
     // Har T'OS lov, styrer glideren hele stereoen; ellers bare T'OS-vinduet
     val canWrite = remember { Settings.System.canWrite(context) }
     var bright by remember {
@@ -1072,7 +1072,8 @@ fun QuickPanel(onClose: () -> Unit, onGo: (Screen?) -> Unit = { onClose(); if (i
                     } else Prefs.set("app_brightness", it)
                 }, valueRange = 0.05f..1f, colors = sliderColors, modifier = Modifier.weight(1f).semantics { contentDescription = "Lysstyrke" })
                 Icon(Icons.AutoMirrored.Filled.VolumeUp, null, tint = TextMuted)
-                Slider(Ui.volume.coerceAtLeast(0).toFloat(), {
+                if (FytSound.volumeReady) FytVolumeSlider(sliderColors, Modifier.weight(1f))
+                else Slider(Ui.volume.coerceAtLeast(0).toFloat(), {
                     val v = it.roundToInt()
                     if (v != Ui.volume) { Ui.volume = v; HwVolume.markOwnChange(); runCatching { am.setStreamVolume(AudioManager.STREAM_MUSIC, v, 0) } }
                 }, valueRange = 0f..maxVol.toFloat(), colors = sliderColors, modifier = Modifier.weight(1f).semantics { contentDescription = "Volum" })

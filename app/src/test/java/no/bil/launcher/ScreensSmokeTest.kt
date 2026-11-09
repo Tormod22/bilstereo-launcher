@@ -1,6 +1,7 @@
 package no.bil.launcher
 
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import org.junit.After
@@ -109,6 +110,40 @@ class ScreensSmokeTest {
         rule.runOnUiThread { TosKeyboard.close(); VolumeUi.show(7, 15); Notify.show("Røyktest") }
         settle(500)
         settle(6_000)   // melding og volumvindu forsvinner av seg selv
+    }
+
+    /** FYT-stereoen: volum og «Lydbilde» (Innstillinger → Lyd) og hurtigpanelet med falske verdier fra lydmodulen. */
+    @Test fun fytLyd_lydbilde() {
+        rule.runOnUiThread {
+            FytSound.forTest = true
+            val feed = listOf(1 to intArrayOf(6), 2 to intArrayOf(12), 3 to intArrayOf(0), 8 to intArrayOf(8, 8),
+                10 to intArrayOf(1), 11 to intArrayOf(0)) + (0 until 32).map { 9 to intArrayOf(it, 12) }
+            feed.forEach { (u, i) -> FytSound.onUpdate(u, i) }
+        }
+        try {
+            show(Screen.DASH)
+            rule.runOnUiThread { Prefs.set("settings_cat", SetCat.SOUND.name) }
+            show(Screen.SETTINGS)
+            rule.onNodeWithText("LYDBILDE").assertExists()
+            rule.onNodeWithText("Bass").assertExists()
+            rule.onNodeWithText("Loudness").assertExists()
+            rule.onNodeWithText("Volum  12").assertExists()
+            rule.onNodeWithText("Balanse 0").assertExists()
+            // Glidere og knapper sender (ingen com.syu.ms her – skal ikke krasje)
+            rule.runOnUiThread { FytSound.setGroup(0, 15); FytSound.setBalanceFader(3, 12); FytSound.setPreset(2); FytSound.setLoudness(true); FytSound.setVolume(20) }
+            settle()
+            rule.onNodeWithText("+3").assertExists()
+            rule.onNodeWithText("Balanse −5").assertExists()
+            rule.runOnUiThread { FytSound.resetPicture() }
+            settle()
+            rule.runOnUiThread { Nav.quick = true }
+            settle()
+            rule.runOnUiThread { Nav.quick = false }
+            settle()
+            show(Screen.DASH)
+        } finally {
+            rule.runOnUiThread { FytSound.reset(); FytSound.forTest = false; Ui.volume = -1 }
+        }
     }
 
     @Test fun samtaleBanner() {
