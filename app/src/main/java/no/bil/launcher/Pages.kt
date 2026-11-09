@@ -1,5 +1,10 @@
 package no.bil.launcher
 
+import androidx.compose.foundation.Canvas
+import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
+import androidx.compose.ui.graphics.nativeCanvas
+import androidx.compose.ui.graphics.toArgb
+
 import android.Manifest
 import android.content.Context
 import android.content.Intent
@@ -1004,6 +1009,9 @@ fun CarScreen(onClose: () -> Unit) {
                     BigNumber(Hub.gps?.let { Hub.compass(it.bearing) } ?: "–", "retning", Modifier.weight(1f))
                 }
 
+                // Bil-data fra stereoens canbus-boks (FytCan.kt) – bare det bilen faktisk melder
+                if (FytCan.active && (FytCan.doors.known || FytCan.air.known)) CarDataCard()
+
                 Section("Bilbatteri")
                 val bv = CarBattery.volt
                 if (bv != null) SettingRow("${CarBattery.text(bv)} · ${CarBattery.meaning(bv)}", "Målt av ${CarBattery.source}. Over 13 V betyr at dynamoen lader.")
@@ -1037,6 +1045,37 @@ fun CarScreen(onClose: () -> Unit) {
                     Text("Sist stilt: " + SimpleDateFormat("d. MMM HH:mm", Locale("nb", "NO")).format(Date(park.third)), color = TextMuted, fontSize = 13.sp)
                 } else Text("Ingen posisjon ennå. Den lagres når bilen står stille.", color = TextMuted, fontSize = 14.sp)
             }
+        }
+    }
+}
+
+/** «Bilen»: dørene sett ovenfra (åpne i hvitt) og klimaet, fra canbus-boksen. */
+@Composable
+private fun CarDataCard() {
+    val d = FytCan.doors
+    val a = FytCan.air
+    Section("Bilen")
+    Row(Modifier.fillMaxWidth().clip(Small).background(Card).padding(horizontal = 18.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically) {
+        if (d.known) {
+            val line = Line.toArgb(); val open = TextPrimary.toArgb()
+            val paint = remember { android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+                style = android.graphics.Paint.Style.STROKE; strokeCap = android.graphics.Paint.Cap.ROUND } }
+            Canvas(Modifier.size(width = 60.dp, height = 100.dp)) {
+                drawIntoCanvas { DoorDraw.draw(it.nativeCanvas, size.width, size.height, d, line, open, paint, density) }
+            }
+            Spacer(Modifier.width(18.dp))
+        }
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            if (d.known) {
+                val names = d.openNames()
+                Text(if (names.isEmpty()) "Alt er lukket" else "Åpen: " + names.joinToString(", "), color = TextPrimary, fontSize = 17.sp)
+            }
+            val summary = FytCanLogic.airSummary(a)
+            val tl = FytCan.airTemp(true); val tr = FytCan.airTemp(false)
+            val temps = listOfNotNull(tl, tr.takeIf { it != tl }).joinToString(" / ")
+            if (summary != null || temps.isNotEmpty())
+                Text(listOf(temps, summary.orEmpty()).filter { it.isNotEmpty() }.joinToString(" · "), color = TextMuted, fontSize = 15.sp)
         }
     }
 }

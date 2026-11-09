@@ -288,6 +288,8 @@ private fun ScreenSettings() {
     }
     ToggleRow("Nedtrekksmeny i T'OS-stil", "tos_shade", true,
         "Sveip ned fra toppen viser T'OS sitt panel med varsler, lys og volum i stedet for stereoens")
+    if (FytCan.active) ToggleRow("Klima og dører i T'OS-stil", "tos_canbus", true,
+        "Når klimaet endres eller en dør åpnes, viser T'OS sitt eget kort oppå stereoens. Ryggeradaren vises alltid som før.")
     ChoiceRow("Nattmodus", "night_mode", listOf("AUTO" to "Automatisk (etter sola)", "DAY" to "Alltid dag", "NIGHT" to "Alltid natt"), "AUTO")
     SettingRow("Demp hele stereoen om natten", if (canWrite) "Senker lysstyrken etter solnedgang" else "Krever at T'OS får styre lysstyrken (over)",
         onClick = { if (canWrite) Prefs.set("dim_system", !Prefs.bool("dim_system")) }) { Toggle(Prefs.bool("dim_system") && canWrite) }

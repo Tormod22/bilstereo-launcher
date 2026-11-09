@@ -282,6 +282,23 @@ class KeyService : AccessibilityService() {
         FytVolume.onWindows(snaps, dm.widthPixels, dm.heightPixels)
     }
 
+    /** FYT sine canbus-vinduer (klima/dører, com.syu.canbus): følg med mens T'OS-kortet ligger over dem (FytCan.kt). */
+    fun checkCanPopup() {
+        if (!FytCanOverlay.watching) return
+        val dm = resources.displayMetrics
+        val snaps = runCatching {
+            windows.orEmpty().filter { it.type == android.view.accessibility.AccessibilityWindowInfo.TYPE_APPLICATION }.mapNotNull { w ->
+                val b = android.graphics.Rect(); w.getBoundsInScreen(b)
+                if (b.height() > dm.heightPixels * 3 / 4) return@mapNotNull null
+                val root = runCatching { w.root }.getOrNull()
+                val pkg = root?.packageName?.toString()
+                @Suppress("DEPRECATION") if (root != null && Build.VERSION.SDK_INT < 33) runCatching { root.recycle() }
+                WinSnap(w.type, w.title?.toString(), pkg, b.left, b.top, b.right, b.bottom, w.layer, w.isActive, w.isFocused)
+            }
+        }.getOrNull()
+        FytCanOverlay.onWindows(snaps, dm.widthPixels, dm.heightPixels)
+    }
+
     private val labels = HashMap<String, String>()
     private fun label(pkg: String): String = labels.getOrPut(pkg) {
         runCatching { packageManager.getApplicationLabel(packageManager.getApplicationInfo(pkg, 0)).toString() }.getOrDefault("")
@@ -354,6 +371,7 @@ class KeyService : AccessibilityService() {
         val type = event.eventType
         if (type == AccessibilityEvent.TYPE_NOTIFICATION_STATE_CHANGED) lastNoteAt = SystemClock.elapsedRealtime()
         if (type == AccessibilityEvent.TYPE_WINDOWS_CHANGED && FytVolume.watching) checkFytPopup()
+        if (type == AccessibilityEvent.TYPE_WINDOWS_CHANGED && FytCanOverlay.watching) checkCanPopup()
         if (type == AccessibilityEvent.TYPE_WINDOWS_CHANGED || type == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) noteShade(event)
         if (type != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) return
         val pkg = event.packageName?.toString() ?: return
@@ -364,6 +382,8 @@ class KeyService : AccessibilityService() {
             FytVolume.onPopupEvent(this, texts)
             return
         }
+        // FYT sine canbus-vinduer (klima/dører/radar fra com.syu.canbus) er heller ikke en app som kom fram
+        if (FytCanLogic.isPopupEvent(pkg, cls)) { FytCanOverlay.onPopupEvent(); return }
         // Androids fanevisning (nylige apper, «No recent items») kom fram: vis T'OS sin «Siste apper» i stedet.
         // Sjekkes før systemvinduene under, fordi den på eldre Android ligger i SystemUI. Av: fanelista er bare innom.
         if (pkg != packageName && Prefs.bool("tos_recents", true) && isStockRecentsEvent(pkg, cls, event)) {
