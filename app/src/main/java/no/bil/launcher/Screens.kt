@@ -94,6 +94,8 @@ fun BluetoothScreen(onClose: () -> Unit) {
                 val (head, sub) = btTexts(status)
                 Text(head, color = TextPrimary, fontSize = 22.sp, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Text(sub, color = TextMuted, fontSize = 14.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                // FYT-stereoen: telefonen er koblet til stereoens egen BT-brikke – koble fra/til her
+                FytBtCard()
                 if (status.devices.isNotEmpty()) {
                     Spacer(Modifier.height(4.dp))
                     Text("Kjente enheter", color = TextMuted, fontSize = 13.sp)

@@ -44,4 +44,9 @@ kommando-/meldingskoder) er hentet fra disse åpne prosjektene, som har kartlagt
   app/src/main/kotlin/com/cabin/platform/SyuSoundProtocol.kt + SyuSoundController.kt (lydbrikke-ID 6/7/11 → antall bånd og
   område, formatet på balanse/fader [bal, fade], bånd [nr, verdi], forhåndsvalg, loudness, subwoofer – verifisert der mot
   Joying sin Equalizer 2023-08-31). Demp/opphev (c=0 [−3]/[−4]): PimpinPumpkin/FytRadio SyuRadioBridge.kt.
+- BT-telefonen (`FytPhone.kt`): alle U_/C_/KEY_/PHONE_STATE_-kodene fra FinalBt i FYT-Launcher-Mod
+  (app/src/main/java/com/syu/ipc/FinalBt.java), BT-musikkens tid/album fra samme prosjekt
+  (com/fyt/car/StockBtSource.java og com/android/launcher66/Launcher.java: u=2 lengde i ms, u=28 posisjon i ms, u=26 album),
+  og fyt-dialer (C_DIAL/C_PICKUP/C_HANG, «ringer bare når HFP er tilkoblet»). Formatet på telefonboka (u=22) og parede
+  enheter (u=5) finnes ikke i noen åpen kilde – T'OS tolker dem forsiktig og logger dem i kartleggingen.
 Ingen kode er kopiert; bare tallene og formatet.

@@ -225,15 +225,31 @@ fun Cover(size: androidx.compose.ui.unit.Dp, radius: androidx.compose.ui.unit.Dp
     }
 }
 
-// FYT-radioen som lydkilde: stasjon/frekvens i musikkortet (FytRadio.cardTitle), spill/pause = lyd av/på
-val musicTitle: String? get() = if (NetRadio.active) NetRadio.current?.name else if (FytRadio.onAir) FytRadio.cardTitle else NowPlaying.title
-val musicSub: String? get() = if (NetRadio.active) (if (NetRadio.buffering) "Kobler til …" else NetRadio.error ?: "Nettradio")
-    else if (FytRadio.onAir) FytRadio.cardSub else NowPlaying.artist
-val musicPlaying: Boolean get() = if (NetRadio.active) NetRadio.playing else if (FytRadio.onAir) !Fyt.muted else NowPlaying.playing
+// Musikkortet: nettradio, FYT-radioen (stasjon/frekvens, spill/pause = lyd av/på) eller BT-musikk via stereoens BT-brikke
+val musicTitle: String? get() = when {
+    NetRadio.active -> NetRadio.current?.name
+    FytRadio.onAir -> FytRadio.cardTitle
+    fytBtMusicShown -> Fyt.btavTitle ?: "Bluetooth-musikk"
+    else -> NowPlaying.title
+}
+val musicSub: String? get() = when {
+    NetRadio.active -> if (NetRadio.buffering) "Kobler til …" else NetRadio.error ?: "Nettradio"
+    FytRadio.onAir -> FytRadio.cardSub
+    fytBtMusicShown -> listOfNotNull(Fyt.btavArtist, FytPhone.btavAlbum).joinToString(" · ").ifEmpty { Fyt.phoneName ?: "Telefonen" }
+    else -> NowPlaying.artist
+}
+val musicPlaying: Boolean get() = when {
+    NetRadio.active -> NetRadio.playing
+    FytRadio.onAir -> !Fyt.muted
+    fytBtMusicShown -> Fyt.btavPlaying
+    else -> NowPlaying.playing
+}
 
 @Composable
 fun Progress(modifier: Modifier) {
     var p by remember { mutableFloatStateOf(0f) }
+    // FYT-BT-musikk: posisjonen kommer fra stereoen hvert sekund
+    if (fytBtMusicShown) { BarOf(modifier, FytPhoneLogic.progress(FytPhone.btavPosMs, FytPhone.btavTotalMs)); return }
     LaunchedEffect(NowPlaying.title, NowPlaying.playing) {
         while (true) {
             val d = NowPlaying.durationMs
@@ -241,6 +257,11 @@ fun Progress(modifier: Modifier) {
             delay(1000)
         }
     }
+    BarOf(modifier, p)
+}
+
+@Composable
+private fun BarOf(modifier: Modifier, p: Float) {
     Box(modifier.height(3.dp).clip(RoundedCornerShape(2.dp)).background(Line)) {
         Box(Modifier.fillMaxWidth(p).fillMaxHeight().background(TextPrimary))
     }
@@ -660,8 +681,16 @@ fun PhoneScreen(onClose: () -> Unit) {
     val roleOk = remember(tick) { Phone.dialerAvailable(context) }
     var canPlace by remember { mutableStateOf(true) }
     LaunchedEffect(tick) { while (true) { canPlace = withContext(Dispatchers.IO) { Phone.canPlaceCalls(context) }; delay(5000) } }
-    val contacts by produceState<List<Contact>?>(null, tick) { value = withContext(Dispatchers.IO) { Phone.contacts(context) } }
-    val recents by produceState<List<RecentCall>?>(null, tick, Phone.inCall) { value = withContext(Dispatchers.IO) { Phone.recents(context) } }
+    val androidContacts by produceState<List<Contact>?>(null, tick) { value = withContext(Dispatchers.IO) { Phone.contacts(context) } }
+    val androidRecents by produceState<List<RecentCall>?>(null, tick, Phone.inCall) { value = withContext(Dispatchers.IO) { Phone.recents(context) } }
+    // FYT-stereoen: Android har verken kontaktene eller anropene (iPhonen er koblet til stereoens BT-brikke) –
+    // da brukes telefonboka FYT har sendt og T'OS sin egen liste over FYT-samtalene
+    LaunchedEffect(Unit) { FytPhone.ensureLoaded() }
+    val fyt = FytPhone.enabled
+    val fytContacts = fyt && androidContacts.isNullOrEmpty() && FytPhone.contacts.isNotEmpty()
+    val fytRecents = fyt && androidRecents.isNullOrEmpty() && FytPhone.callLog.isNotEmpty()
+    val contacts = if (fytContacts) FytPhone.contacts else androidContacts
+    val recents = if (fytRecents) FytPhone.callLog else androidRecents
 
     var tab by remember { mutableStateOf(if (Favorites.all().isEmpty()) PhoneTab.KEYS else PhoneTab.FAV) }
     var number by remember { mutableStateOf("") }
@@ -669,13 +698,14 @@ fun PhoneScreen(onClose: () -> Unit) {
 
     Page("Telefon", onClose, extra = {
         if (Phone.inCall) { Pill("Til samtalen", Icons.Default.Call, strong = true) { Phone.openCallScreen(context) }; Spacer(Modifier.width(12.dp)) }
-        else if (missing.isEmpty() && !canPlace) {
+        else if (missing.isEmpty() && !canPlace && !FytPhone.canDial) {
             // Ingen telefon T'OS kan ringe med: reserve til stereoens egen app
             Pill("Stereoens telefon-app", Icons.Default.Dialpad) { Phone.openStereoApp(context) }; Spacer(Modifier.width(12.dp))
         }
     }) {
-        val needRole = !isDialer && roleOk
-        if (missing.isNotEmpty() || needRole) {
+        // På FYT går samtalene utenom Android: da trengs verken tillatelsene eller telefon-app-rollen for å ringe
+        val needRole = !isDialer && roleOk && !fyt
+        if ((missing.isNotEmpty() && !fyt) || needRole) {
             Row(Modifier.fillMaxWidth().padding(bottom = 12.dp).clip(Small).background(Card).padding(horizontal = 18.dp, vertical = 10.dp),
                 verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 Column(Modifier.weight(1f)) {
@@ -709,8 +739,8 @@ fun PhoneScreen(onClose: () -> Unit) {
             Box(Modifier.weight(1f).fillMaxHeight()) {
                 when (tab) {
                     PhoneTab.KEYS -> Keypad(number, { number = it }, contacts.orEmpty()) { Phone.call(context, it) }
-                    PhoneTab.CONTACTS -> ContactList(contacts, Manifest.permission.READ_CONTACTS in missing) { Phone.call(context, it) }
-                    PhoneTab.RECENT -> RecentList(recents, contacts.orEmpty(), Manifest.permission.READ_CALL_LOG in missing, isDialer) { Phone.call(context, it) }
+                    PhoneTab.CONTACTS -> ContactList(contacts, Manifest.permission.READ_CONTACTS in missing && !fyt, fyt) { Phone.call(context, it) }
+                    PhoneTab.RECENT -> RecentList(recents, contacts.orEmpty(), Manifest.permission.READ_CALL_LOG in missing && !fyt, isDialer || fyt) { Phone.call(context, it) }
                     PhoneTab.FAV -> FavoriteGrid { Phone.call(context, it) }
                 }
             }
@@ -790,7 +820,7 @@ private fun Initial(name: String) {
 }
 
 @Composable
-private fun ContactList(contacts: List<Contact>?, noPermission: Boolean, onCall: (String) -> Unit) {
+private fun ContactList(contacts: List<Contact>?, noPermission: Boolean, fyt: Boolean, onCall: (String) -> Unit) {
     var query by remember { mutableStateOf("") }
     val favs = Favorites.all()
     Column(Modifier.fillMaxSize()) {
@@ -798,6 +828,12 @@ private fun ContactList(contacts: List<Contact>?, noPermission: Boolean, onCall:
         when {
             noPermission -> EmptyNote("Trykk «Gi tilgang» øverst for å se kontaktene.")
             contacts == null -> Text("Henter kontakter …", color = TextMuted, fontSize = 15.sp)
+            contacts.isEmpty() && fyt -> EmptyNote(
+                if (FytPhone.bookState == 2) "Henter kontaktene fra telefonen …"
+                else "Ingen kontakter ennå. Trykk «Hent kontakter», og godta på iPhonen hvis den spør. " +
+                    "Står det fortsatt tomt: iPhonen → Innstillinger → Bluetooth → (i) ved stereoen → slå på «Synkroniser kontakter».",
+                "Hent kontakter" to { fytDownloadBook() },
+            )
             contacts.isEmpty() -> EmptyNote(
                 "Fant ingen kontakter. Kontaktene fra telefonen havner ofte bare i stereoens egen Bluetooth-app. " +
                     "På iPhonen: Innstillinger → Bluetooth → trykk (i) ved stereoen → slå på «Synkroniser kontakter». " +

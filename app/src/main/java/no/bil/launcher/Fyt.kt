@@ -72,8 +72,8 @@ object Fyt {
         M_MAIN to (0..20).toList() + SteerLogic.MAIN_EVENT_CODES,
         // Radio: alle kodene i FinalRadio (0–26: bånd, frekvens, område, kanaler, RDS, stereo, søk, PS …) – se FytRadio
         M_RADIO to (0..26).toList(),
-        // BT: ID3 tittel/artist, telefonens navn/nummer/tilstand, ringe-/taletid, BT-musikk spiller, HFP, PBAP
-        M_BT to listOf(0, 1, 6, 7, 8, 9, 11, 12, 13, 18, 29, 31),
+        // BT: alle U_-kodene i FinalBt (0–33) – telefon, telefonbok, parede enheter, BT-musikk (se FytPhone.kt)
+        M_BT to FytPhoneLogic.SUBSCRIBE,
         // Lyd: brikke, volum, demping, equalizer, balanse/fader, loudness … (FytSound)
         M_SOUND to FytSoundLogic.CODES,
         // Ratt (10): ingen kjente koder – alt logges (kartleggingen viser om rattknappene sender noe her)
@@ -216,7 +216,7 @@ object Fyt {
         val line = FytLogic.describe(m, u, ints, flts, strs) + (SteerLogic.note(m, u, ints)?.let { "  $it" } ?: "") +
             if (initial) "  (nåverdi)" else ""
         // Canbus og tallene fra rattet kan komme tett: høyst én linje per kode i sekundet i opptaket, og høyst 100 i loggen
-        val busy = m == M_CANBUS || (m == M_STEER && (u == 2 || u == 3))
+        val busy = m == M_CANBUS || (m == M_STEER && (u == 2 || u == 3)) || (m == M_BT && FytPhoneLogic.isTicker(u))
         val canbusDue = !busy || synchronized(canbusNoteAt) {
             val k = m * 10_000 + u
             val last = canbusNoteAt[k]
@@ -259,7 +259,7 @@ object Fyt {
                 21 -> if (i0 != null) radioStereo = i0 != 0
                 22 -> if (i0 != null) radioSearching = i0 != 0
             }
-            M_BT -> when (u) {
+            M_BT -> { when (u) {
                 0 -> btavTitle = s0
                 1 -> btavArtist = s0
                 7 -> phoneName = FytLogic.phoneName(strs)
@@ -271,6 +271,7 @@ object Fyt {
                 }
                 13 -> if (i0 != null) btavPlaying = i0 == 1
             }
+                runCatching { FytPhone.onBt(u, ints, strs) } }   // samtale, telefonbok, BT-musikk (FytPhone.kt)
             // Volumhjulet endrer FYT sitt volum (ikke Androids): T'OS sin linje legges over FYT sitt volumvindu
             // (via knappestyringen – bare et tilgjengelighetsvindu ligger over FYT-vinduet)
             M_SOUND -> when (u) {
@@ -367,6 +368,8 @@ object Fyt {
     fun answer() = cmd(M_BT, 9)
     fun hangUp() = cmd(M_BT, 10)
     fun reject() = cmd(M_BT, 11).also { cmd(M_BT, 10) }
+    /** Annen BT-kommando (FytPhone.kt: tonevalg, telefonbok, koble til/fra). */
+    fun btCmd(code: Int, ints: IntArray? = null, strs: Array<String?>? = null) = cmd(M_BT, code, ints, strs)
     fun btavPlayPause() = cmd(M_BT, 2)
     fun btavNext() = cmd(M_BT, 1)
     fun btavPrev() = cmd(M_BT, 0)
@@ -542,6 +545,7 @@ internal object FytLogic {
     fun describe(m: Int, u: Int, ints: IntArray?, flts: FloatArray?, strs: Array<String?>?): String {
         val base = "${moduleName(m)} u=$u ${payload(ints, flts, strs)}"
         val id = ints?.firstOrNull()
+        if (m == 2) FytPhoneLogic.codeName(u).takeIf { it.isNotEmpty() }?.let { return "$base  ($it)" }
         return if (m == 0 && u == 0 && id != null) "$base → kilde: ${sourceName(id)}" else base
     }
 }

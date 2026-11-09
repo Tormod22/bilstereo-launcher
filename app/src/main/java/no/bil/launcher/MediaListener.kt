@@ -112,7 +112,7 @@ object Call {
 
     /** Avvis samtalen (gir false hvis verken varselet eller FYT-stereoen kan avvise). */
     fun decline(): Boolean = declineAction?.let { runCatching { it.send() }.isSuccess } == true ||
-        (Fyt.btReady && Fyt.inCall && Fyt.reject())
+        (Fyt.btReady && Fyt.inCall && FytPhone.reject())
 
     internal fun setActions(n: Notification) {
         val acts = n.actions.orEmpty()

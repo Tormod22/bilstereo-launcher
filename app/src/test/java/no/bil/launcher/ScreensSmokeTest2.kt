@@ -2,6 +2,7 @@ package no.bil.launcher
 
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
@@ -108,6 +109,8 @@ class RecentsSmokeTest {
         check(closedAll) { "«Lukk alle» skal lukke etter andre trykk" }
         rule.runOnUiThread { state = Triple(emptyList(), true, true) }
         settle()
+        // Tomtilstanden kan komme et par bilder senere (animasjon ut av lista) – vent til den er der
+        repeat(10) { if (rule.onAllNodesWithText("Ingen apper i bakgrunnen").fetchSemanticsNodes().isEmpty()) settle() }
         rule.onNodeWithText("Ingen apper i bakgrunnen").assertExists()
         rule.runOnUiThread { state = Triple(emptyList(), false, true) }
         settle()
