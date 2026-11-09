@@ -40,6 +40,7 @@ import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlin.math.roundToInt
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.text.SimpleDateFormat
@@ -59,13 +60,13 @@ enum class SetCat(val label: String, val icon: ImageVector, val group: String, v
     APPS("Apper", Icons.Default.Apps, "Stereoen", "apper app skjul vis startskjerm carplay car link radio kamera systemapper avinstaller siste nylige bakgrunn lukk"),
     STORAGE("Lagring", Icons.Default.Storage, "Stereoen", "lagring plass minne cache tøm kart minnepinne"),
     TIME("Dato, tid og språk", Icons.Default.Schedule, "Stereoen", "dato tid klokke tidssone 24 timer språk tastatur norsk"),
-    ABOUT("Om stereoen", Icons.Default.Info, "Stereoen", "om versjon oppdatering oppdater stereo android prosessor minne oppsett tillatelser adb pc avansert"),
+    ABOUT("Om stereoen", Icons.Default.Info, "Stereoen", "om versjon oppdatering oppdater stereo android prosessor minne oppsett tillatelser adb pc avansert bruksanvisning hjelp manual"),
     MAP("Kart og kjøring", Icons.Default.Map, "T'OS", "kart navigasjon adresse hjem jobb waze maps fart fartsgrense popup"),
     MUSIC("Musikk og oppstart", Icons.Default.MusicNote, "T'OS", "musikk spotify oppstart sangtittel cover varseltilgang radio fm radiomotor"),
     PHONE("Telefon", Icons.Default.Phone, "T'OS", "telefon favoritter carplay ring samtale"),
     CAR("Bil", Icons.Default.DirectionsCar, "T'OS", "bil batteri spenning obd eu-kontroll service dekk dekkskift tuning tur"),
     KEYS("Knapper", Icons.Default.Tune, "T'OS", "knapper ratt lær tast menu navi"),
-    BACKUP("Sikkerhetskopi og hjelp", Icons.Default.Backup, "T'OS", "sikkerhetskopi backup lagre hent fil rapport feil krasj sikker modus kartlegg kartlegging opptak"),
+    BACKUP("Sikkerhetskopi og hjelp", Icons.Default.Backup, "T'OS", "sikkerhetskopi backup lagre hent fil rapport feil krasj sikker modus kartlegg kartlegging opptak bruksanvisning"),
 }
 
 /** Kategoriene som passer søket (alle ord må finnes i navnet eller søkeordene). Ren logikk, testes. */
@@ -179,15 +180,31 @@ private fun SoundSettings() {
             if (s == AudioManager.STREAM_MUSIC) Ui.volume = it.toInt()
         }
     }
-    stream("Musikk og radio", Icons.Default.MusicNote, AudioManager.STREAM_MUSIC)
+    // FYT: det ekte volumet og lydbildet er stereoens (lydmodulen i com.syu.ms), ikke Androids lydstrømmer
+    val fyt = FytSound.volumeReady
+    if (fyt) {
+        var drag by remember { mutableStateOf<Float?>(null) }
+        val m = FytSound.max.coerceAtLeast(1)
+        val shown = drag ?: (if (FytSound.muted) 0 else FytSound.level).coerceIn(0, m).toFloat()
+        SliderRow("Volum  ${shown.roundToInt()}", Icons.AutoMirrored.Filled.VolumeUp, shown, 0f..m.toFloat(), onDone = { drag = null }) {
+            drag = it; FytSound.setVolume(it.roundToInt())
+        }
+        SettingRow("Lyd av", "Demper all lyd fra stereoen", onClick = { if (!FytSound.toggleMute()) say("Stereoen svarte ikke") }) { Toggle(FytSound.muted) }
+    }
+    if (FytSound.pictureReady) FytSoundPanel()
+    if (fyt) Section("Android-apper")
+    stream(if (fyt) "Musikk i apper" else "Musikk og radio", Icons.Default.MusicNote, AudioManager.STREAM_MUSIC)
     stream("Samtaler", Icons.Default.Call, AudioManager.STREAM_VOICE_CALL)
     stream("Ringelyd", Icons.Default.RingVolume, AudioManager.STREAM_RING)
     stream("Varsler", Icons.Default.Notifications, AudioManager.STREAM_NOTIFICATION)
     stream("Alarm", Icons.Default.Alarm, AudioManager.STREAM_ALARM)
     stream("Systemlyder", Icons.Default.TouchApp, AudioManager.STREAM_SYSTEM)
-    Section("Equalizer")
-    EqPanel()
-    Spacer(Modifier.height(8.dp))
+    // Stereoens eget lydbilde (over) erstatter Androids equalizer; ellers vises den som før
+    if (!FytSound.pictureReady) {
+        Section("Equalizer")
+        EqPanel()
+        Spacer(Modifier.height(8.dp))
+    }
     Section("Andre lyder")
     ToggleRow("Volum i T'OS-stil", "tos_volume", true,
         if (Fyt.connected) "Volumhjulet viser T'OS sin volumlinje oppå stereoens eget volumvindu (krever knappestyring)"
@@ -197,6 +214,17 @@ private fun SoundSettings() {
         listOf("0" to "Automatisk (${FytVolume.max})", "30" to "30", "35" to "35", "40" to "40", "45" to "45", "50" to "50", "60" to "60"), "0",
         "Bare for hvor full volumlinja blir. Skru helt opp én gang, så finner T'OS det selv.")
     ToggleRow("Lyd når du er over fartsgrensen", "speed_beep", false, "Ett kort pip når du kjører mer enn 3 km/t over grensen")
+    // FYT: stereoens egen tastelyd (pip fra knappene) og navigasjonsmiks – bare når stereoen har meldt dem (FytMain)
+    FytMain.beep?.let { on ->
+        SettingRow("Pip fra stereoens knapper", "Stereoens egen tastelyd (FYT)", onClick = {
+            FytMain.setBeep(!on) { ok -> if (!ok) say("Stereoen svarte ikke – tastelyden er uendret") }
+        }) { Toggle(on) }
+    }
+    FytMain.naviMix?.let { on ->
+        SettingRow("Senk musikken når kartappen snakker", "Stereoens navigasjonsmiks (FYT)", onClick = {
+            FytMain.setNaviMix(!on) { ok -> if (!ok) say("Stereoen svarte ikke – innstillingen er uendret") }
+        }) { Toggle(on) }
+    }
     val tick = rememberResumeTick()
     val canWrite = remember(tick) { Settings.System.canWrite(context) }
     if (canWrite) {
@@ -232,7 +260,28 @@ private fun ScreenSettings() {
             say(if (ok) "Bilbildet er lagret" else "Fikk ikke lest bildet")
         }
     }
-    if (canWrite) {
+    val fytBright = FytMain.brightReady
+    if (fytBright) {
+        // FYT: baklyset styres av stereoen (MCU-en), ikke av Android – T'OS sender lysstyrken dit (FytMain)
+        var b by remember { mutableFloatStateOf(FytMain.fraction()) }
+        SliderRow("Lysstyrke", Icons.Default.LightMode, b, 0.05f..1f) {
+            b = it
+            if (Prefs.float("app_brightness", -1f) >= 0f) Prefs.set("app_brightness", -1f)
+            FytMain.setFromSlider(it)
+        }
+        if (Prefs.bool("dim_system")) {
+            var n by remember { mutableFloatStateOf(Prefs.int("fyt_bright_night", 25) / 100f) }
+            SliderRow("Lysstyrke om natten", Icons.Default.DarkMode, n, 0.05f..1f) {
+                n = it
+                val l = FytMainLogic.levelFor(it)
+                Prefs.setQuiet("fyt_bright_night", l)
+                if (Prefs.bool("fyt_night_dimmed")) FytMain.sendLevel(l)
+            }
+        }
+    }
+    if (Fyt.connected) ToggleRow("Lysstyrke via stereoen (FYT)", "fyt_bright", true,
+        if (FytMain.brightConfirmed) "Stereoen bekrefter lysstyrken T'OS sender" else "Glideren styrer stereoens eget baklys. Virker den ikke, slå av – da prøver T'OS Androids lysstyrke.")
+    if (!fytBright && canWrite) {
         var b by remember { mutableFloatStateOf(runCatching { Settings.System.getInt(context.contentResolver, Settings.System.SCREEN_BRIGHTNESS) }.getOrDefault(150).toFloat()) }
         SliderRow("Lysstyrke", Icons.Default.LightMode, b, 5f..255f) {
             b = it
@@ -242,7 +291,7 @@ private fun ScreenSettings() {
                 Settings.System.putInt(context.contentResolver, Settings.System.SCREEN_BRIGHTNESS, it.toInt())
             }
         }
-    } else {
+    } else if (!fytBright) {
         var b by remember { mutableFloatStateOf(Prefs.float("app_brightness", 0.7f).let { if (it < 0) 0.7f else it }) }
         SliderRow("Lysstyrke (T'OS)", Icons.Default.LightMode, b, 0.05f..1f) { b = it; Prefs.set("app_brightness", it) }
         SettingRow("Styr lysstyrken for hele stereoen", "Gi T'OS lov til å endre systeminnstillinger (åpner Androids tillatelsesside én gang – eller bruk PC, se Om stereoen → Førstegangsoppsett)", onClick = {
@@ -271,9 +320,19 @@ private fun ScreenSettings() {
     }
     ToggleRow("Nedtrekksmeny i T'OS-stil", "tos_shade", true,
         "Sveip ned fra toppen viser T'OS sitt panel med varsler, lys og volum i stedet for stereoens")
-    ChoiceRow("Nattmodus", "night_mode", listOf("AUTO" to "Automatisk (etter sola)", "DAY" to "Alltid dag", "NIGHT" to "Alltid natt"), "AUTO")
-    SettingRow("Demp hele stereoen om natten", if (canWrite) "Senker lysstyrken etter solnedgang" else "Krever at T'OS får styre lysstyrken (over)",
-        onClick = { if (canWrite) Prefs.set("dim_system", !Prefs.bool("dim_system")) }) { Toggle(Prefs.bool("dim_system") && canWrite) }
+    if (FytCan.active) ToggleRow("Klima og dører i T'OS-stil", "tos_canbus", true,
+        "Når klimaet endres eller en dør åpnes, viser T'OS sitt eget kort oppå stereoens. Ryggeradaren vises alltid som før.")
+    // FYT: stereoen vet om lysene er på (ILL-ledningen) – da kan natt følge lysene i stedet for sola
+    val lightsKnown = FytMain.lights != null || Prefs.bool("fyt_lights_seen")
+    ChoiceRow("Nattmodus", "night_mode", listOf("AUTO" to if (lightsKnown && FytMain.byLights) "Automatisk (lysene på bilen)" else "Automatisk (etter sola)",
+        "DAY" to "Alltid dag", "NIGHT" to "Alltid natt"), "AUTO")
+    if (lightsKnown) SettingRow("Natt når lysene er på",
+        (when (FytMain.lights) { true -> "Lysene er på nå. "; false -> "Lysene er av nå. "; null -> "" }) +
+            "Står lysene alltid på om dagen, slå dette av – da avgjør sola.",
+        onClick = { Prefs.set("night_lights", !FytMain.byLights); FytMain.onLightsSetting() }) { Toggle(FytMain.byLights) }
+    val canDim = canWrite || fytBright
+    SettingRow("Demp hele stereoen om natten", if (canDim) "Senker lysstyrken når det er natt" else "Krever at T'OS får styre lysstyrken (over)",
+        onClick = { if (canDim) { Prefs.set("dim_system", !Prefs.bool("dim_system")); NightBrightness.apply(context) } }) { Toggle(Prefs.bool("dim_system") && canDim) }
     ChoiceRow("App-ikoner", "icon_style", listOf("DARK" to "Mørke (gråtoner)", "COLOR" to "Originale farger"), "DARK")
     ChoiceRow("Tekststørrelse", "text_scale_s", listOf("1.0" to "Normal", "1.1" to "Stor", "1.2" to "Ekstra stor"), "1.0")
     ChoiceRow("Klokke når bilen står stille", "saver_min", listOf("0" to "Av", "1" to "Etter 1 min", "3" to "Etter 3 min", "5" to "Etter 5 min"), "3")
@@ -524,11 +583,16 @@ private fun AboutSettings() {
     val v = remember { runCatching { context.packageManager.getPackageInfo(context.packageName, 0).versionName }.getOrNull() }
     SettingRow("T'OS $v", Hub.update?.let { "Ny versjon ${it.versionName} er klar" } ?: Updater.lastError?.let { "Fikk ikke sjekket: $it" } ?: "Du har siste versjon") { UpdateButton() }
     SettingRow("Oppdateringer", "Installeres inne i T'OS. Første gang må du trykke «Installer» én gang; etterpå går det av seg selv (Android 12+).")
+    // Hovedbryter for alt T'OS gjør med FYT-stereoen (radio, telefon, lyd, rattknapper, lysstyrke …). Vises også når den er av,
+    // ellers kunne man ikke slå den på igjen etter at T'OS slo den av etter en feil.
+    if (remember { Fyt.present(context) }) ToggleRow("Stereo-funksjoner (FYT)", "fyt_all", true,
+        "Radio, telefon, lyd, rattknapper og lysstyrke styres av T'OS. Slå av hvis noe oppfører seg rart – da gjør stereoen alt selv.")
     SettingRow("Stereo", "${Build.MANUFACTURER} ${Build.MODEL}")
     SettingRow("Android", "${Build.VERSION.RELEASE} (SDK ${Build.VERSION.SDK_INT})")
     SettingRow("Prosessor", "${Build.HARDWARE} · ${Runtime.getRuntime().availableProcessors()} kjerner · ${Hub.cpuTemp?.let { "$it °C" } ?: "temperatur ukjent"}")
     SettingRow("Minne", Hub.memText)
     SettingRow("Førstegangsoppsett", "Tillatelser – med stereoen eller med PC (uten Android-menyene)", onClick = { Nav.screen = Screen.SETUP }) { Chevron() }
+    SettingRow("Bruksanvisning", "Slik bruker du T'OS: knappene, rattet, radio, musikk, telefon og hva du gjør hvis noe er rart", onClick = { Nav.screen = Screen.HELP }) { Chevron() }
     SettingRow("Takk til", "Radiostyring og app-søk bygger på OpenLauncher (MIT). Kart © OpenStreetMap, Protomaps. Se docs/TREDJEPART.md.")
     Section("Avansert")
     var ask by remember { mutableStateOf(false) }
@@ -680,6 +744,7 @@ private fun BackupSettings() {
     SettingRow("Hent innstillinger fra fil", "Androids filvelger åpnes", onClick = { importFile.launch(arrayOf("application/json", "text/plain", "*/*")) }) { Chevron() }
 
     Section("Hjelp")
+    SettingRow("Bruksanvisning", "Slik bruker du T'OS – kort og enkelt", onClick = { Nav.screen = Screen.HELP }) { Chevron() }
     if (SafeMode.on) SettingRow("Sikker modus er på", "T'OS krasjet flere ganger og startet uten kart uten nett, bilbilde og oppstartsmusikk. Send feilrapporten under, og slå av når feilen er rettet.") {
         Pill("Slå av", strong = true) { SafeMode.turnOff(context) }
     }
@@ -690,6 +755,7 @@ private fun BackupSettings() {
             context.open(Intent.createChooser(i, "Send oppsettrapport"))
         }
     }) { Chevron() }
+    SettingRow("Selvtest av stereoen", "T'OS prøver selv radio, lyd, lys, Bluetooth og rattet – og viser hva som virker", onClick = { Nav.screen = Screen.SELFTEST }) { Chevron() }
     SurveyRows()
     SettingRow("Del feilrapport", "Send til deg selv og lim inn i Claude", onClick = {
         Hub.scope.launch {

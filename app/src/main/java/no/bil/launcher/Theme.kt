@@ -25,11 +25,10 @@ object Theme {
     val textScale get() = Prefs.str("text_scale_s", "1.0").toFloatOrNull() ?: 1f
 
     fun update(lat: Double?, lon: Double?) {
-        night = when (mode) {
-            "DAY" -> false
-            "NIGHT" -> true
-            else -> Sun.isNight(lat ?: 59.91, lon ?: 10.75, Calendar.getInstance(TimeZone.getTimeZone("UTC")))
-        }
+        // FYT: lysene på = natt (Innstillinger → Skjerm «Natt når lysene er på»); ellers etter sola
+        val lights = runCatching { FytMain.lightsNight() }.getOrNull()
+        night = FytMainLogic.night(mode, lights != null, lights,
+            mode == "AUTO" && lights == null && Sun.isNight(lat ?: 59.91, lon ?: 10.75, Calendar.getInstance(TimeZone.getTimeZone("UTC"))))
     }
 }
 

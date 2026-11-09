@@ -1,5 +1,10 @@
 package no.bil.launcher
 
+import androidx.compose.foundation.Canvas
+import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
+import androidx.compose.ui.graphics.nativeCanvas
+import androidx.compose.ui.graphics.toArgb
+
 import android.Manifest
 import android.content.Context
 import android.content.Intent
@@ -217,7 +222,9 @@ fun Cover(size: androidx.compose.ui.unit.Dp, radius: androidx.compose.ui.unit.Dp
     }
     Box(Modifier.size(size).clip(RoundedCornerShape(radius)).background(Card), contentAlignment = Alignment.Center) {
         when {
-            NetRadio.active -> Icon(Icons.Default.Radio, null, tint = TextPrimary, modifier = Modifier.size(size * 0.5f))
+            NetRadio.active || FytRadio.onAir -> Icon(Icons.Default.Radio, "Radio", tint = TextPrimary, modifier = Modifier.size(size * 0.5f))
+            // BT-musikk via stereoens BT-brikke: ikke Spotify-ikonet (den spiller ikke) – Bluetooth-merket
+            fytBtMusicShown -> Icon(Icons.Default.Bluetooth, "Bluetooth-musikk", tint = TextPrimary, modifier = Modifier.size(size * 0.5f))
             art != null -> Image(art.asImageBitmap(), null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
             icon != null -> AppIcon(icon, size * 0.7f, "cover:" + (NowPlaying.pkg ?: Prefs.str("music_pkg")))
             else -> Icon(Icons.Default.MusicNote, null, tint = TextPrimary, modifier = Modifier.size(size * 0.5f))
@@ -225,13 +232,45 @@ fun Cover(size: androidx.compose.ui.unit.Dp, radius: androidx.compose.ui.unit.Dp
     }
 }
 
-val musicTitle: String? get() = if (NetRadio.active) NetRadio.current?.name else NowPlaying.title
-val musicSub: String? get() = if (NetRadio.active) (if (NetRadio.buffering) "Kobler til …" else NetRadio.error ?: "Nettradio") else NowPlaying.artist
-val musicPlaying: Boolean get() = if (NetRadio.active) NetRadio.playing else NowPlaying.playing
+// Musikkortet: nettradio, FYT-radioen (stasjon/frekvens, spill/pause = lyd av/på) eller BT-musikk via stereoens BT-brikke
+val musicTitle: String? get() = when {
+    NetRadio.active -> NetRadio.current?.name
+    FytRadio.onAir -> FytRadio.cardTitle
+    fytBtMusicShown -> Fyt.btavTitle ?: "Bluetooth-musikk"
+    else -> NowPlaying.title
+}
+val musicSub: String? get() = when {
+    NetRadio.active -> if (NetRadio.buffering) "Kobler til …" else NetRadio.error ?: "Nettradio"
+    FytRadio.onAir -> FytRadio.cardSub
+    fytBtMusicShown -> listOfNotNull(Fyt.btavArtist, FytPhone.btavAlbum).joinToString(" · ").ifEmpty { Fyt.phoneName ?: "Telefonen" }
+    else -> NowPlaying.artist
+}
+/** Radio (FYT eller nett): neste/forrige bytter stasjon, ikke sang. */
+val musicIsRadio: Boolean get() = NetRadio.active || FytRadio.onAir
+val musicNextLabel: String get() = if (musicIsRadio) "Neste stasjon" else "Neste sang"
+val musicPrevLabel: String get() = if (musicIsRadio) "Forrige stasjon" else "Forrige sang"
+/** FYT-radioen har ingen pause: spill/pause = lyd av/på (høyttaler-symbol i stedet for pause). */
+val musicPlayIcon: androidx.compose.ui.graphics.vector.ImageVector get() = when {
+    FytRadio.onAir && !NetRadio.active -> if (musicPlaying) Icons.AutoMirrored.Filled.VolumeOff else Icons.AutoMirrored.Filled.VolumeUp
+    else -> if (musicPlaying) Icons.Default.Pause else Icons.Default.PlayArrow
+}
+val musicPlayLabel: String get() = when {
+    FytRadio.onAir && !NetRadio.active -> if (musicPlaying) "Lyd av" else "Lyd på"
+    else -> if (musicPlaying) "Pause" else "Spill"
+}
+
+val musicPlaying: Boolean get() = when {
+    NetRadio.active -> NetRadio.playing
+    FytRadio.onAir -> !Fyt.muted
+    fytBtMusicShown -> Fyt.btavPlaying
+    else -> NowPlaying.playing
+}
 
 @Composable
 fun Progress(modifier: Modifier) {
     var p by remember { mutableFloatStateOf(0f) }
+    // FYT-BT-musikk: posisjonen kommer fra stereoen hvert sekund
+    if (fytBtMusicShown) { BarOf(modifier, FytPhoneLogic.progress(FytPhone.btavPosMs, FytPhone.btavTotalMs)); return }
     LaunchedEffect(NowPlaying.title, NowPlaying.playing) {
         while (true) {
             val d = NowPlaying.durationMs
@@ -239,6 +278,11 @@ fun Progress(modifier: Modifier) {
             delay(1000)
         }
     }
+    BarOf(modifier, p)
+}
+
+@Composable
+private fun BarOf(modifier: Modifier, p: Float) {
     Box(modifier.height(3.dp).clip(RoundedCornerShape(2.dp)).background(Line)) {
         Box(Modifier.fillMaxWidth(p).fillMaxHeight().background(TextPrimary))
     }
@@ -297,9 +341,9 @@ fun MusicScreen(onClose: () -> Unit) {
                 Progress(Modifier.fillMaxWidth())
                 Spacer(Modifier.height(16.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(24.dp), verticalAlignment = Alignment.CenterVertically) {
-                    RoundIcon(Icons.Default.SkipPrevious, 64.dp, desc = "Forrige sang") { Media.previous(context) }
-                    RoundIcon(if (musicPlaying) Icons.Default.Pause else Icons.Default.PlayArrow, 84.dp, outlined = true, desc = if (musicPlaying) "Pause" else "Spill") { Media.playPause(context) }
-                    RoundIcon(Icons.Default.SkipNext, 64.dp, desc = "Neste sang") { Media.next(context) }
+                    RoundIcon(Icons.Default.SkipPrevious, 64.dp, desc = musicPrevLabel) { Media.previous(context) }
+                    RoundIcon(musicPlayIcon, 84.dp, outlined = true, desc = musicPlayLabel) { Media.playPause(context) }
+                    RoundIcon(Icons.Default.SkipNext, 64.dp, desc = musicNextLabel) { Media.next(context) }
                 }
                 if (!MediaListener.enabled(context)) {
                     Spacer(Modifier.height(16.dp))
@@ -322,69 +366,176 @@ fun RadioScreen(onClose: () -> Unit) {
     val context = LocalContext.current
     Page("Radio", onClose, extra = {
         if (NetRadio.active) { Pill("Stopp nettradio", Icons.Default.Stop) { NetRadio.stop(context) }; Spacer(Modifier.width(12.dp)) }
+        // På = T'OS styrer radioen (i bakgrunnen); stereoens radio-app vises ikke
+        if (HwRadio.wanted || HwRadio.state != null || FytRadio.onAir) Pill("Stopp radio", Icons.Default.Stop) { HwRadio.powerOff(context) }
+        else Pill("Start radio", Icons.Default.Radio, strong = true) { HwRadio.powerOn(context) }
+        Spacer(Modifier.width(12.dp))
     }) {
-        // Stereoens ekte FM/AM-radio
-        val hw = HwRadio.state
-        Row(
-            Modifier.fillMaxWidth().clip(Small).background(Card).padding(horizontal = 20.dp, vertical = 14.dp),
-            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp),
-        ) {
-            Column(Modifier.weight(1f)) {
-                Text("STEREOENS RADIO", color = TextMuted, fontSize = 12.sp, letterSpacing = 1.sp)
-                if (hw != null) {
-                    Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Text(hw.freq, color = TextPrimary, fontSize = 40.sp, fontWeight = FontWeight.Medium)
-                        Text(if (hw.isAm) "kHz" else "MHz", color = TextMuted, fontSize = 16.sp, modifier = Modifier.padding(bottom = 8.dp))
-                        Text(hw.band, color = TextMuted, fontSize = 16.sp, modifier = Modifier.padding(bottom = 8.dp))
+        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            // FYT-stereo: hele radioen i T'OS (FytRadio). Andre stereoer: det T'OS kan lese fra radio-appen/MCU.
+            if (FytRadio.active) FytRadioPanel() else HwRadioCard()
+            Section("Nettradio")
+            NetRadio.error?.let { Text(it, color = TextMuted, fontSize = 15.sp) }
+            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                NetRadio.stations.forEach { s ->
+                    val on = NetRadio.current == s
+                    Column(
+                        Modifier.size(170.dp, 96.dp).clip(Small).background(if (on) TextPrimary else Card)
+                            .clickable { if (on) NetRadio.toggle(context) else NetRadio.play(context, s) }.padding(16.dp),
+                        verticalArrangement = Arrangement.SpaceBetween,
+                    ) {
+                        Text(s.name, color = if (on) Bg else TextPrimary, fontSize = 18.sp, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(
+                            when { !on -> "Nettradio"; NetRadio.buffering -> "Kobler til …"; NetRadio.playing -> "Spiller"; else -> "Pause" },
+                            color = if (on) Bg else TextMuted, fontSize = 13.sp,
+                        )
                     }
-                    hw.station?.let { Text(it, color = TextMuted, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis) }
-                    hw.text?.let { Text(it, color = TextMuted, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis) }
-                } else Text("Trykk «Start radio». Frekvensen vises her når radioen spiller.", color = TextMuted, fontSize = 15.sp)
-            }
-            if (hw != null) {
-                if (hw.canStep) RoundIcon(Icons.Default.Remove, 52.dp, desc = "Ett trinn ned") { HwRadio.step(up = false) }
-                RoundIcon(Icons.Default.FastRewind, 52.dp, desc = "Søk ned") { HwRadio.seekDown() }
-                RoundIcon(Icons.Default.FastForward, 52.dp, desc = "Søk opp") { HwRadio.seekUp() }
-                if (hw.canStep) RoundIcon(Icons.Default.Add, 52.dp, desc = "Ett trinn opp") { HwRadio.step(up = true) }
-                if (hw.canTune) { Pill("FM") { HwRadio.cycleFm() }; Pill("AM") { HwRadio.am() } }
-            }
-            // På = T'OS styrer radioen (i bakgrunnen); stereoens radio-app vises ikke
-            if (HwRadio.wanted || hw != null) Pill("Stopp", Icons.Default.Stop) { HwRadio.powerOff(context) }
-            else Pill("Start radio", Icons.Default.Radio, strong = true) { HwRadio.powerOn(context) }
-        }
-        // FYT: forvalgte kanaler (bare de stereoen sender frekvens eller navn for)
-        val presets = if (HwRadio.fyt) Fyt.radioPresets else emptyList()
-        if (presets.isNotEmpty()) {
-            Spacer(Modifier.height(10.dp))
-            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                presets.forEach { p -> Pill(p.label) { Fyt.radioPreset(p.number) } }
-            }
-        }
-        Section("Nettradio")
-        NetRadio.error?.let { Text(it, color = TextMuted, fontSize = 15.sp, modifier = Modifier.padding(bottom = 10.dp)) }
-        LazyVerticalGrid(GridCells.Fixed(4), verticalArrangement = Arrangement.spacedBy(12.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            items(NetRadio.stations) { s ->
-                val on = NetRadio.current == s
-                Column(
-                    Modifier.height(120.dp).clip(Small).background(if (on) TextPrimary else Card)
-                        .clickable { if (on) NetRadio.toggle(context) else NetRadio.play(context, s) }.padding(16.dp),
-                    verticalArrangement = Arrangement.SpaceBetween,
-                ) {
-                    Text(s.name, color = if (on) Bg else TextPrimary, fontSize = 19.sp, fontWeight = FontWeight.Medium, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                    Text(
-                        when { !on -> "Nettradio"; NetRadio.buffering -> "Kobler til …"; NetRadio.playing -> "Spiller"; else -> "Pause" },
-                        color = if (on) Bg else TextMuted, fontSize = 13.sp,
-                    )
                 }
             }
             // Reserve, lite synlig: stereoens egen radio-app (hvis noe ikke virker fra T'OS)
-            item(span = { GridItemSpan(maxLineSpan) }) {
-                Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.CenterEnd) {
-                    Text("Åpne original radio-app", color = TextMuted, fontSize = 13.sp,
-                        modifier = Modifier.heightIn(min = 48.dp).clip(Small).clickable { HwRadio.openApp(context) }
-                            .padding(horizontal = 14.dp, vertical = 14.dp))
+            Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.CenterEnd) {
+                Text("Åpne original radio-app", color = TextMuted, fontSize = 13.sp,
+                    modifier = Modifier.heightIn(min = 48.dp).clip(Small).clickable { HwRadio.openApp(context) }
+                        .padding(horizontal = 14.dp, vertical = 14.dp))
+            }
+        }
+    }
+}
+
+/** Andre stereoer enn FYT: frekvens/stasjon fra MCU eller radio-appens mediaøkt, søk og bånd. */
+@Composable
+private fun HwRadioCard() {
+    val hw = HwRadio.state
+    Row(
+        Modifier.fillMaxWidth().clip(Small).background(Card).padding(horizontal = 20.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text("STEREOENS RADIO", color = TextMuted, fontSize = 12.sp, letterSpacing = 1.sp)
+            if (hw != null) {
+                Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text(hw.freq, color = TextPrimary, fontSize = 40.sp, fontWeight = FontWeight.Medium)
+                    Text(if (hw.isAm) "kHz" else "MHz", color = TextMuted, fontSize = 16.sp, modifier = Modifier.padding(bottom = 8.dp))
+                    Text(hw.band, color = TextMuted, fontSize = 16.sp, modifier = Modifier.padding(bottom = 8.dp))
+                }
+                hw.station?.let { Text(it, color = TextMuted, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+                hw.text?.let { Text(it, color = TextMuted, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+            } else Text("Trykk «Start radio». Frekvensen vises her når radioen spiller.", color = TextMuted, fontSize = 15.sp)
+        }
+        if (hw != null) {
+            RoundIcon(Icons.Default.FastRewind, 56.dp, desc = "Søk ned") { HwRadio.seekDown() }
+            RoundIcon(Icons.Default.FastForward, 56.dp, desc = "Søk opp") { HwRadio.seekUp() }
+            if (hw.canTune) { Pill("FM") { HwRadio.cycleFm() }; Pill("AM") { HwRadio.am() } }
+        }
+    }
+}
+
+/** FYT-stereo: stor frekvens og stasjon, søk/trinn, bånd, 6 forvalg per bank, «Søk etter stasjoner» og RDS. */
+@Composable
+private fun FytRadioPanel() {
+    val context = LocalContext.current
+    val on = FytRadio.onAir || HwRadio.wanted
+    val f = FytRadio.freqRaw
+    val bank = FytRadio.bank
+    val scan = FytRadio.scan
+    Row(Modifier.fillMaxWidth().clip(Small).background(Card).padding(horizontal = 24.dp, vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f)) {
+            val tags = listOfNotNull(bank, "Stereo".takeIf { on && FytRadio.stereo && FytRadio.isFm != false },
+                "Trafikk".takeIf { on && FytRadio.tp == 1 }, FytRadio.ptyName.takeIf { on }, "Lyd av".takeIf { on && Fyt.muted })
+            Text(tags.joinToString("  ·  ").uppercase(), color = TextMuted, fontSize = 13.sp, letterSpacing = 1.sp, maxLines = 1)
+            Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(if (f > 0) FytRadio.freqText else "–", color = if (on) TextPrimary else TextMuted, fontSize = 80.sp,
+                    fontWeight = FontWeight.Medium, maxLines = 1, lineHeight = 84.sp)
+                Text(FytRadio.unit, color = TextMuted, fontSize = 22.sp, modifier = Modifier.padding(bottom = 14.dp))
+            }
+            val line = when {
+                scan != null -> "Søker etter stasjoner … ${scan.found} funnet"
+                FytRadio.tuningTo > 0 -> "Stiller inn ${FytLogic.freqLabel(Int.MIN_VALUE, FytRadio.tuningTo)} …"
+                on && FytRadio.searching -> "Søker …"
+                !on -> "Radioen er av. Trykk «Start radio» eller et forvalg."
+                else -> FytRadio.stationName ?: ""
+            }
+            Text(line, color = TextPrimary, fontSize = 26.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            val rt = FytRadio.rt
+            if (on && rt != null && scan == null) Text(rt, color = TextMuted, fontSize = 16.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            if (scan != null) {
+                Spacer(Modifier.height(8.dp))
+                Box(Modifier.fillMaxWidth().height(4.dp).clip(RoundedCornerShape(2.dp)).background(Line)) {
+                    Box(Modifier.fillMaxWidth(scan.progress).fillMaxHeight().background(TextPrimary))
                 }
             }
+        }
+    }
+    // Søk ‹‹ · trinn ‹ › · søk ›› og bånd
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+        RadioKey(Icons.Default.FastRewind, "Søk ned", 72.dp) { FytRadio.seek(up = false) }
+        RadioKey(Icons.AutoMirrored.Filled.KeyboardArrowLeft, "Ett trinn ned", 64.dp) { FytRadio.step(up = false) }
+        RadioKey(Icons.AutoMirrored.Filled.KeyboardArrowRight, "Ett trinn opp", 64.dp) { FytRadio.step(up = true) }
+        RadioKey(Icons.Default.FastForward, "Søk opp", 72.dp) { FytRadio.seek(up = true) }
+        Spacer(Modifier.weight(1f))
+        FytRadioLogic.BANKS.forEach { b ->
+            Box(
+                Modifier.size(72.dp, 56.dp).clip(RoundedCornerShape(28.dp)).background(if (b == bank) TextPrimary else Line)
+                    .clickable { FytRadio.selectBank(b) }.semantics { contentDescription = "Bånd $b" },
+                contentAlignment = Alignment.Center,
+            ) { Text(b, color = if (b == bank) Bg else TextPrimary, fontSize = 17.sp, fontWeight = FontWeight.Medium) }
+        }
+    }
+    // Forvalg: trykk = gå til stasjonen, hold inne = lagre stasjonen som spiller nå
+    val presets = FytRadio.presetsOf(bank)
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        presets.forEachIndexed { i, p ->
+            PresetTile(i, p, current = on && p != null && p.freqRaw == f, Modifier.weight(1f),
+                onTap = { FytRadio.recall(context, bank, i) }, onHold = { FytRadio.save(bank, i) })
+        }
+    }
+    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(10.dp),
+        verticalAlignment = Alignment.CenterVertically) {
+        if (scan != null) Pill("Avbryt søket", Icons.Default.Close, strong = true) { FytRadio.cancel() }
+        else {
+            // Erstatter forvalgene i båndet (FM1–FM3 eller AM): «Trykk igjen» hvis det finnes noen
+            var confirm by remember { mutableStateOf(false) }
+            LaunchedEffect(confirm) { if (confirm) { delay(4000); confirm = false } }
+            val affected = if (FytRadio.isFm == false) listOf("AM") else FytRadioLogic.BANKS.take(3)
+            val hasAny = affected.any { b -> FytRadio.presetsOf(b).any { it != null } }
+            Pill(if (confirm) "Trykk igjen – forvalgene byttes ut" else "Søk etter stasjoner", Icons.Default.Search, strong = confirm) {
+                if (hasAny && !confirm) confirm = true else { confirm = false; FytRadio.scanAll(context) }
+            }
+        }
+        // RDS-bryterne vises bare når stereoen har sagt hva de står på
+        if (FytRadio.taEnabled >= 0) Pill("Trafikkmeldinger", Icons.Default.Traffic, strong = FytRadio.taEnabled == 1) { FytRadio.setTa(FytRadio.taEnabled != 1) }
+        if (FytRadio.af >= 0) Pill("Følg stasjonen (AF)", Icons.Default.SettingsInputAntenna, strong = FytRadio.af == 1) { FytRadio.setAf(FytRadio.af != 1) }
+        if (FytRadio.loc >= 0) Pill("Bare sterke stasjoner", strong = FytRadio.loc == 1) { FytRadio.setLoc(FytRadio.loc != 1) }
+    }
+}
+
+@Composable
+private fun RadioKey(icon: androidx.compose.ui.graphics.vector.ImageVector, desc: String, size: androidx.compose.ui.unit.Dp, onClick: () -> Unit) {
+    Box(Modifier.size(size).clip(CircleShape).background(Line).clickable(onClick = onClick), contentAlignment = Alignment.Center) {
+        Icon(icon, desc, tint = TextPrimary, modifier = Modifier.size(size * 0.5f))
+    }
+}
+
+@Composable
+private fun PresetTile(i: Int, p: FytRadioLogic.Slot?, current: Boolean, modifier: Modifier, onTap: () -> Unit, onHold: () -> Unit) {
+    val tap by rememberUpdatedState(onTap)
+    val hold by rememberUpdatedState(onHold)
+    val fg = if (current) Bg else TextPrimary
+    val sub = if (current) Bg else TextMuted
+    Column(
+        modifier.height(76.dp).clip(Small).background(if (current) TextPrimary else Card)
+            .pointerInput(Unit) { detectTapGestures(onTap = { tap() }, onLongPress = { hold() }) }
+            .semantics { contentDescription = "Forvalg ${i + 1}" + (p?.let { ": " + (it.name ?: FytRadioLogic.shortFreq(it.freqRaw)) } ?: ", tomt") }
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+        verticalArrangement = Arrangement.Center,
+    ) {
+        if (p == null) {
+            Text("${i + 1}", color = sub, fontSize = 13.sp)
+            Text("Tom", color = sub, fontSize = 16.sp, maxLines = 1)
+        } else {
+            Text("${i + 1}" + (p.name?.let { "  ·  " + FytRadioLogic.shortFreq(p.freqRaw) } ?: ""), color = sub, fontSize = 13.sp, maxLines = 1)
+            Text(p.name ?: FytRadioLogic.shortFreq(p.freqRaw), color = fg, fontSize = 20.sp, fontWeight = FontWeight.Medium,
+                maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
     }
 }
@@ -551,8 +702,16 @@ fun PhoneScreen(onClose: () -> Unit) {
     val roleOk = remember(tick) { Phone.dialerAvailable(context) }
     var canPlace by remember { mutableStateOf(true) }
     LaunchedEffect(tick) { while (true) { canPlace = withContext(Dispatchers.IO) { Phone.canPlaceCalls(context) }; delay(5000) } }
-    val contacts by produceState<List<Contact>?>(null, tick) { value = withContext(Dispatchers.IO) { Phone.contacts(context) } }
-    val recents by produceState<List<RecentCall>?>(null, tick, Phone.inCall) { value = withContext(Dispatchers.IO) { Phone.recents(context) } }
+    val androidContacts by produceState<List<Contact>?>(null, tick) { value = withContext(Dispatchers.IO) { Phone.contacts(context) } }
+    val androidRecents by produceState<List<RecentCall>?>(null, tick, Phone.inCall) { value = withContext(Dispatchers.IO) { Phone.recents(context) } }
+    // FYT-stereoen: Android har verken kontaktene eller anropene (iPhonen er koblet til stereoens BT-brikke) –
+    // da brukes telefonboka FYT har sendt og T'OS sin egen liste over FYT-samtalene
+    LaunchedEffect(Unit) { FytPhone.ensureLoaded() }
+    val fyt = FytPhone.enabled
+    val fytContacts = fyt && androidContacts.isNullOrEmpty() && FytPhone.contacts.isNotEmpty()
+    val fytRecents = fyt && androidRecents.isNullOrEmpty() && FytPhone.callLog.isNotEmpty()
+    val contacts = if (fytContacts) FytPhone.contacts else androidContacts
+    val recents = if (fytRecents) FytPhone.callLog else androidRecents
 
     var tab by remember { mutableStateOf(if (Favorites.all().isEmpty()) PhoneTab.KEYS else PhoneTab.FAV) }
     var number by remember { mutableStateOf("") }
@@ -560,13 +719,14 @@ fun PhoneScreen(onClose: () -> Unit) {
 
     Page("Telefon", onClose, extra = {
         if (Phone.inCall) { Pill("Til samtalen", Icons.Default.Call, strong = true) { Phone.openCallScreen(context) }; Spacer(Modifier.width(12.dp)) }
-        else if (missing.isEmpty() && !canPlace) {
+        else if (missing.isEmpty() && !canPlace && !FytPhone.canDial) {
             // Ingen telefon T'OS kan ringe med: reserve til stereoens egen app
             Pill("Stereoens telefon-app", Icons.Default.Dialpad) { Phone.openStereoApp(context) }; Spacer(Modifier.width(12.dp))
         }
     }) {
-        val needRole = !isDialer && roleOk
-        if (missing.isNotEmpty() || needRole) {
+        // På FYT går samtalene utenom Android: da trengs verken tillatelsene eller telefon-app-rollen for å ringe
+        val needRole = !isDialer && roleOk && !fyt
+        if ((missing.isNotEmpty() && !fyt) || needRole) {
             Row(Modifier.fillMaxWidth().padding(bottom = 12.dp).clip(Small).background(Card).padding(horizontal = 18.dp, vertical = 10.dp),
                 verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 Column(Modifier.weight(1f)) {
@@ -587,7 +747,7 @@ fun PhoneScreen(onClose: () -> Unit) {
         Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
             Column(Modifier.width(176.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 // Er telefonen koblet til? (sier aldri «ikke tilkoblet» når stereoens egen BT-app styrer)
-                Text(btShortText(BtLink.current), color = TextMuted, fontSize = 13.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                Text(btShortText(BtLink.current), color = TextMuted, fontSize = 13.sp, maxLines = 3, overflow = TextOverflow.Ellipsis)
                 PhoneTab.entries.forEach { t ->
                     val sel = t == tab
                     Row(Modifier.fillMaxWidth().height(64.dp).clip(Small).background(if (sel) TextPrimary else Card).clickable { tab = t }.padding(horizontal = 16.dp),
@@ -600,8 +760,8 @@ fun PhoneScreen(onClose: () -> Unit) {
             Box(Modifier.weight(1f).fillMaxHeight()) {
                 when (tab) {
                     PhoneTab.KEYS -> Keypad(number, { number = it }, contacts.orEmpty()) { Phone.call(context, it) }
-                    PhoneTab.CONTACTS -> ContactList(contacts, Manifest.permission.READ_CONTACTS in missing) { Phone.call(context, it) }
-                    PhoneTab.RECENT -> RecentList(recents, contacts.orEmpty(), Manifest.permission.READ_CALL_LOG in missing, isDialer) { Phone.call(context, it) }
+                    PhoneTab.CONTACTS -> ContactList(contacts, Manifest.permission.READ_CONTACTS in missing && !fyt, fyt) { Phone.call(context, it) }
+                    PhoneTab.RECENT -> RecentList(recents, contacts.orEmpty(), Manifest.permission.READ_CALL_LOG in missing && !fyt, isDialer || fyt) { Phone.call(context, it) }
                     PhoneTab.FAV -> FavoriteGrid { Phone.call(context, it) }
                 }
             }
@@ -681,7 +841,7 @@ private fun Initial(name: String) {
 }
 
 @Composable
-private fun ContactList(contacts: List<Contact>?, noPermission: Boolean, onCall: (String) -> Unit) {
+private fun ContactList(contacts: List<Contact>?, noPermission: Boolean, fyt: Boolean, onCall: (String) -> Unit) {
     var query by remember { mutableStateOf("") }
     val favs = Favorites.all()
     Column(Modifier.fillMaxSize()) {
@@ -689,6 +849,12 @@ private fun ContactList(contacts: List<Contact>?, noPermission: Boolean, onCall:
         when {
             noPermission -> EmptyNote("Trykk «Gi tilgang» øverst for å se kontaktene.")
             contacts == null -> Text("Henter kontakter …", color = TextMuted, fontSize = 15.sp)
+            contacts.isEmpty() && fyt -> EmptyNote(
+                if (FytPhone.bookState == 2) "Henter kontaktene fra telefonen …"
+                else "Ingen kontakter ennå. Trykk «Hent kontakter», og godta på iPhonen hvis den spør. " +
+                    "Står det fortsatt tomt: iPhonen → Innstillinger → Bluetooth → (i) ved stereoen → slå på «Synkroniser kontakter».",
+                "Hent kontakter" to { fytDownloadBook() },
+            )
             contacts.isEmpty() -> EmptyNote(
                 "Fant ingen kontakter. Kontaktene fra telefonen havner ofte bare i stereoens egen Bluetooth-app. " +
                     "På iPhonen: Innstillinger → Bluetooth → trykk (i) ved stereoen → slå på «Synkroniser kontakter». " +
@@ -859,6 +1025,9 @@ fun CarScreen(onClose: () -> Unit) {
                     BigNumber(Hub.gps?.let { Hub.compass(it.bearing) } ?: "–", "retning", Modifier.weight(1f))
                 }
 
+                // Bil-data fra stereoens canbus-boks (FytCan.kt) – bare det bilen faktisk melder
+                if (FytCan.active && Fyt.connected && (FytCan.doors.known || FytCan.air.known)) CarDataCard()
+
                 Section("Bilbatteri")
                 val bv = CarBattery.volt
                 if (bv != null) SettingRow("${CarBattery.text(bv)} · ${CarBattery.meaning(bv)}", "Målt av ${CarBattery.source}. Over 13 V betyr at dynamoen lader.")
@@ -892,6 +1061,37 @@ fun CarScreen(onClose: () -> Unit) {
                     Text("Sist stilt: " + SimpleDateFormat("d. MMM HH:mm", Locale("nb", "NO")).format(Date(park.third)), color = TextMuted, fontSize = 13.sp)
                 } else Text("Ingen posisjon ennå. Den lagres når bilen står stille.", color = TextMuted, fontSize = 14.sp)
             }
+        }
+    }
+}
+
+/** «Bilen»: dørene sett ovenfra (åpne i hvitt) og klimaet, fra canbus-boksen. */
+@Composable
+private fun CarDataCard() {
+    val d = FytCan.doors
+    val a = FytCan.air
+    Section("Bilen")
+    Row(Modifier.fillMaxWidth().clip(Small).background(Card).padding(horizontal = 18.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically) {
+        if (d.known) {
+            val line = Line.toArgb(); val open = TextPrimary.toArgb()
+            val paint = remember { android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+                style = android.graphics.Paint.Style.STROKE; strokeCap = android.graphics.Paint.Cap.ROUND } }
+            Canvas(Modifier.size(width = 60.dp, height = 100.dp)) {
+                drawIntoCanvas { DoorDraw.draw(it.nativeCanvas, size.width, size.height, d, line, open, paint, density) }
+            }
+            Spacer(Modifier.width(18.dp))
+        }
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            if (d.known) {
+                val names = d.openNames()
+                Text(if (names.isEmpty()) "Alt er lukket" else "Åpen: " + names.joinToString(", "), color = TextPrimary, fontSize = 17.sp)
+            }
+            val summary = FytCanLogic.airSummary(a)
+            val tl = FytCan.airTemp(true); val tr = FytCan.airTemp(false)
+            val temps = listOfNotNull(tl, tr.takeIf { it != tl }).joinToString(" / ")
+            if (summary != null || temps.isNotEmpty())
+                Text(listOf(temps, summary.orEmpty()).filter { it.isNotEmpty() }.joinToString(" · "), color = TextMuted, fontSize = 15.sp)
         }
     }
 }
@@ -932,13 +1132,16 @@ fun QuickPanel(onClose: () -> Unit, onGo: (Screen?) -> Unit = { onClose(); if (i
     val context = LocalContext.current
     val am = remember { context.getSystemService(Context.AUDIO_SERVICE) as AudioManager }
     val maxVol = remember { am.getStreamMaxVolume(AudioManager.STREAM_MUSIC) }
-    // Volumet ligger i Ui.volume, som følger volumhjulet (oppdateres i Root)
-    LaunchedEffect(Unit) { Ui.volume = am.getStreamVolume(AudioManager.STREAM_MUSIC) }
+    // Volumet ligger i Ui.volume, som følger volumhjulet (oppdateres i Root). FYT: stereoens eget volum (FytSound)
+    LaunchedEffect(Unit) { if (!FytSound.volumeReady) Ui.volume = am.getStreamVolume(AudioManager.STREAM_MUSIC) }
     // Har T'OS lov, styrer glideren hele stereoen; ellers bare T'OS-vinduet
     val canWrite = remember { Settings.System.canWrite(context) }
+    // FYT: baklyset styres av stereoen (MCU-en) – glideren sender lysstyrken dit (FytMain)
+    val fytBright = remember { FytMain.brightReady }
     var bright by remember {
         mutableFloatStateOf(
-            if (canWrite) runCatching { Settings.System.getInt(context.contentResolver, Settings.System.SCREEN_BRIGHTNESS) / 255f }.getOrDefault(0.6f)
+            if (fytBright) FytMain.fraction()
+            else if (canWrite) runCatching { Settings.System.getInt(context.contentResolver, Settings.System.SCREEN_BRIGHTNESS) / 255f }.getOrDefault(0.6f)
             else Prefs.float("app_brightness", -1f).let { if (it < 0) 0.7f else it })
     }
     val sliderColors = SliderDefaults.colors(thumbColor = TextPrimary, activeTrackColor = TextPrimary, inactiveTrackColor = Line)
@@ -954,7 +1157,10 @@ fun QuickPanel(onClose: () -> Unit, onGo: (Screen?) -> Unit = { onClose(); if (i
                 Icon(Icons.Default.LightMode, null, tint = TextMuted)
                 Slider(bright, {
                     bright = it
-                    if (canWrite) {
+                    if (fytBright) {
+                        if (Prefs.float("app_brightness", -1f) >= 0f) Prefs.set("app_brightness", -1f)
+                        FytMain.setFromSlider(it)
+                    } else if (canWrite) {
                         if (Prefs.float("app_brightness", -1f) >= 0f) Prefs.set("app_brightness", -1f)
                         runCatching {
                             Settings.System.putInt(context.contentResolver, Settings.System.SCREEN_BRIGHTNESS_MODE, Settings.System.SCREEN_BRIGHTNESS_MODE_MANUAL)
@@ -963,7 +1169,8 @@ fun QuickPanel(onClose: () -> Unit, onGo: (Screen?) -> Unit = { onClose(); if (i
                     } else Prefs.set("app_brightness", it)
                 }, valueRange = 0.05f..1f, colors = sliderColors, modifier = Modifier.weight(1f).semantics { contentDescription = "Lysstyrke" })
                 Icon(Icons.AutoMirrored.Filled.VolumeUp, null, tint = TextMuted)
-                Slider(Ui.volume.coerceAtLeast(0).toFloat(), {
+                if (FytSound.volumeReady) FytVolumeSlider(sliderColors, Modifier.weight(1f))
+                else Slider(Ui.volume.coerceAtLeast(0).toFloat(), {
                     val v = it.roundToInt()
                     if (v != Ui.volume) { Ui.volume = v; HwVolume.markOwnChange(); runCatching { am.setStreamVolume(AudioManager.STREAM_MUSIC, v, 0) } }
                 }, valueRange = 0f..maxVol.toFloat(), colors = sliderColors, modifier = Modifier.weight(1f).semantics { contentDescription = "Volum" })

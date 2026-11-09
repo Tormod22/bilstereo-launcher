@@ -216,12 +216,38 @@ internal fun nextRoute(current: Int, mask: Int): Int {
     return all[(i + 1) % all.size]
 }
 
+/**
+ * Samtaleskjermen som åpnes av seg selv (det ringer, FYT/Android melder en samtale): ikke mens bilen rygger – da viser
+ * stereoen kamerabildet, og T'OS skal ikke legge seg over det. Den vises når ryggingen er ferdig (hvis samtalen
+ * fortsatt pågår). Banneret og «Svar» på rattet virker hele tiden. Testes i IntegrationLogicTest.
+ */
+internal enum class AutoOpen { OPEN, WAIT, DROP }
+internal fun autoOpenCallScreen(stayOut: Boolean, liveCall: Boolean): AutoOpen = when {
+    !liveCall -> AutoOpen.DROP
+    stayOut -> AutoOpen.WAIT
+    else -> AutoOpen.OPEN
+}
+
 /* ---------------- Telefonen ---------------- */
 
 object Phone {
-    /** Samtalene akkurat nå (tom = ingen). Compose-tilstand: Root kan vise et banner når denne ikke er tom. */
-    var calls by mutableStateOf<List<PhoneCall>>(emptyList())
-        internal set
+    private val handler by lazy { android.os.Handler(android.os.Looper.getMainLooper()) }
+    @Volatile private var autoWaiting = false
+    /** Samtalene Android (TosInCallService) vet om. */
+    private var telecomCalls by mutableStateOf<List<PhoneCall>>(emptyList())
+
+    /**
+     * Samtalene akkurat nå (tom = ingen). Compose-tilstand: Root kan vise et banner når denne ikke er tom.
+     * På FYT-stereoen ser ikke Android samtalene (iPhonen er koblet til stereoens egen BT-brikke): da kommer
+     * samtalen fra [FytPhone] (id [FytPhone.CALL_ID]) – bare når Android ikke selv har en samtale.
+     */
+    var calls: List<PhoneCall>
+        get() {
+            val t = telecomCalls
+            val f = FytPhone.call
+            return if (f != null && t.none { it.state != CallState.ENDED }) t + f else t
+        }
+        internal set(v) { telecomCalls = v.filter { it.id != FytPhone.CALL_ID } }
 
     /** Samtalen som vises stort (innkommende først). */
     val current: PhoneCall? get() = primaryCall(calls)
@@ -317,7 +343,7 @@ object Phone {
         val num = dialable(number)
         if (num.isEmpty() || num == "+") { Notify.show("Skriv inn et nummer først"); return }
         // FYT-stereo med telefonen koblet til stereoens BT-brikke: Android ser ikke telefonen, så ring via stereoen
-        if (Fyt.btReady && Fyt.phoneConnected == true && Fyt.dial(num)) { Notify.show("Ringer $num …"); return }
+        if (Fyt.btReady && Fyt.phoneConnected == true && FytPhone.dial(num)) { Notify.show("Ringer $num …"); return }
         if (!granted(c, Manifest.permission.CALL_PHONE) || !granted(c, Manifest.permission.READ_PHONE_STATE)) {
             pendingDial = num; Nav.screen = Screen.PHONE
             Notify.show("T'OS trenger lov til å ringe. Trykk «Gi tilgang».", long = true)
@@ -326,7 +352,7 @@ object Phone {
         val accounts = callAccounts(c)
         if (accounts.isEmpty()) {
             // FYT-stereo: ring via stereoens BT-brikke direkte (telefonen må være koblet til stereoen)
-            if (Fyt.btReady && Fyt.phoneConnected != false && Fyt.dial(num)) { Notify.show("Ringer $num …"); return }
+            if (Fyt.btReady && Fyt.phoneConnected != false && FytPhone.dial(num)) { Notify.show("Ringer $num …"); return }
             callWithStereoApp(c, num); return
         }
         val extras = Bundle()
@@ -360,9 +386,14 @@ object Phone {
 
     private fun live(id: Int) = service?.callById(id)
 
-    fun answer(id: Int) { runCatching { live(id)?.answer(android.telecom.VideoProfile.STATE_AUDIO_ONLY) } }
-    fun reject(id: Int) { runCatching { live(id)?.reject(false, null) } }
-    fun hangUp(id: Int) { runCatching { live(id)?.disconnect() } }
+    // FYT-samtalen (id FytPhone.CALL_ID) styres via stereoen, de andre via Android
+    private fun fytFailed() = Notify.show("Fikk ikke kontakt med stereoen – bruk telefonen")
+    fun answer(id: Int) { if (id == FytPhone.CALL_ID) { if (!FytPhone.answer()) fytFailed(); return }
+        runCatching { live(id)?.answer(android.telecom.VideoProfile.STATE_AUDIO_ONLY) } }
+    fun reject(id: Int) { if (id == FytPhone.CALL_ID) { if (!FytPhone.reject()) fytFailed(); return }
+        runCatching { live(id)?.reject(false, null) } }
+    fun hangUp(id: Int) { if (id == FytPhone.CALL_ID) { if (!FytPhone.hangUp()) fytFailed(); return }
+        runCatching { live(id)?.disconnect() } }
     fun hold(id: Int) { runCatching { live(id)?.hold() } }
     fun unhold(id: Int) { runCatching { live(id)?.unhold() } }
 
@@ -378,8 +409,32 @@ object Phone {
     @Suppress("DEPRECATION")   // erstatning (requestCallEndpointChange) finnes først i Android 14
     fun setRoute(r: Int) { runCatching { service?.setAudioRoute(r) } }
 
-    fun dtmfDown(id: Int, ch: Char) { runCatching { live(id)?.playDtmfTone(ch) } }
+    fun dtmfDown(id: Int, ch: Char) { if (id == FytPhone.CALL_ID) { FytPhone.dtmf(ch); return }; runCatching { live(id)?.playDtmfTone(ch) } }
     fun dtmfUp(id: Int) { runCatching { live(id)?.stopDtmfTone() } }
+
+    /**
+     * Samtaleskjermen åpnes av seg selv (ny samtale): med en gang, eller når bilen er ferdig med å rygge
+     * ([autoOpenCallScreen]). [c] bør være knappestyringen når den kjører (Android 10 lar da T'OS åpne fra bakgrunnen).
+     */
+    fun openCallScreenAuto(c: Context) {
+        when (autoOpenCallScreen(FytMain.stayOut, inCall)) {
+            AutoOpen.OPEN -> openCallScreen(c)
+            AutoOpen.DROP -> Unit
+            AutoOpen.WAIT -> {
+                if (autoWaiting) return
+                autoWaiting = true
+                handler.postDelayed(object : Runnable {
+                    override fun run() {
+                        when (autoOpenCallScreen(FytMain.stayOut, inCall)) {
+                            AutoOpen.WAIT -> handler.postDelayed(this, 500)
+                            AutoOpen.OPEN -> { autoWaiting = false; if (!callScreenVisible) openCallScreen(KeyService.instance ?: c) }
+                            AutoOpen.DROP -> autoWaiting = false
+                        }
+                    }
+                }, 500)
+            }
+        }
+    }
 
     /** Viser T'OS sin samtaleskjerm (fra banneret). */
     fun openCallScreen(c: Context) {

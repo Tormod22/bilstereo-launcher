@@ -114,7 +114,19 @@ class MainActivity : ComponentActivity() {
         if (Startup.isFreshBoot(this) && !SafeMode.on) Startup.run(applicationContext)
         // Bilbildet leses i bakgrunnen mens skjermen bygges, så det er klart (nesten) med én gang
         if (CarArt.bitmap == null) Hub.scope.launch(Dispatchers.IO) { CarArt.load(applicationContext) }
+        Splash.onCreate()
         setContent { Root() }
+    }
+
+    override fun onStart() {
+        super.onStart()
+        Splash.onStart()
+    }
+
+    override fun onStop() {
+        // Skjermen av (tenning av): neste gang T'OS kommer fram etter en stund, vises oppstartsskjermen igjen
+        Splash.onStop(runCatching { (getSystemService(Context.POWER_SERVICE) as android.os.PowerManager).isInteractive }.getOrDefault(true))
+        super.onStop()
     }
 
     override fun onResume() {
@@ -344,11 +356,15 @@ fun Root() {
                         Screen.SETUP -> SetupScreen(home)
                         Screen.RECENTS -> RecentsScreen(home)
                         Screen.STEER -> SteerScreen(home)
+                        Screen.SELFTEST -> SelfTestScreen(home)
+                        Screen.HELP -> HelpScreen(home)
                         Screen.CLOCK -> {}
                     }
                 }
             }
             if (Nav.screen == Screen.CLOCK) ClockScreen(home)
+            // Rolig oppstart (bare kald start / etter tenning): T'OS-merket på svart som tones bort
+            SplashHost()
             if (Nav.quick) {
                 BackHandler { closeQuick() }
                 QuickPanel(onClose = closeQuick, onGo = { s -> Nav.quick = false; ShadePanel.forgetReturn(); if (s != null) Nav.screen = s })
@@ -806,8 +822,8 @@ fun ActionRow(onApps: () -> Unit, onPickSlot: () -> Unit, modifier: Modifier) {
                     Text(musicTitle ?: "Musikk", color = TextPrimary, fontSize = 18.sp, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     Text(musicSub ?: if (MediaListener.enabled(context)) "Ingenting spiller" else "Trykk for mer", color = TextMuted, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
-                RoundIcon(if (musicPlaying) Icons.Default.Pause else Icons.Default.PlayArrow, 48.dp, outlined = true, desc = if (musicPlaying) "Pause" else "Spill") { Media.playPause(context) }
-                RoundIcon(Icons.Default.SkipNext, 48.dp, desc = "Neste sang") { Media.next(context) }
+                RoundIcon(musicPlayIcon, 48.dp, outlined = true, desc = musicPlayLabel) { Media.playPause(context) }
+                RoundIcon(Icons.Default.SkipNext, 48.dp, desc = musicNextLabel) { Media.next(context) }
             }
             Progress(Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(horizontal = 28.dp, vertical = 10.dp))
         }

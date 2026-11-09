@@ -61,6 +61,7 @@ object Hub {
         CarBattery.start(app)
         HwRadio.start(app)
         BtLink.start(app)                       // Bluetooth-hendelser og profiler (er telefonen tilkoblet?)
+        FytMain.start(app)                      // FYT: tenningen også som kringkasting (reserve)
         Fyt.start(app)                          // FYT-stereoen: radio, BT-telefon, lydkilde direkte (gjør ingenting andre steder)
         Updater.announceIfUpdated(app)          // «Oppdatert til …» etter en oppdatering
         // Equalizeren (lydtjenesten) settes etter at første skjermbilde er tegnet – den kan ta litt tid å koble til
@@ -232,6 +233,9 @@ object Trip {
         if (now - lastSave > 20_000) { lastSave = now; save() }
     }
 
+    /** Lagre turen nå (tenningen ble slått av – stereoen kan sove før neste lagring). */
+    fun flush() = save()
+
     private fun save() {
         Prefs.setQuiet("trip_m", meters.toFloat()); Prefs.setQuiet("trip_s", movingSec)
         Prefs.setQuiet("trip_max", maxKmh); Prefs.setQuiet("trip_start", startedAt)
@@ -267,6 +271,16 @@ object Parking {
             // Ny plass: lagres med Prefs.set så parkeringskortet tegnes på nytt (ikke hvert 15. sekund når bilen bare står)
             if (moved) Prefs.set("park_time", System.currentTimeMillis()) else Prefs.setQuiet("park_time", System.currentTimeMillis())
         }
+    }
+    /**
+     * Tenningen ble slått av (FytMain): lagre siste posisjon som parkeringsplassen med en gang, også om bilen ikke har
+     * stått stille i 15 s ennå. Siste kjente posisjon brukes selv om GPS-en er «gammel» (den er bare noen sekunder gammel).
+     */
+    fun saveNow(g: Gps?) {
+        if (g == null || (g.lat == 0.0 && g.lon == 0.0)) return
+        lastSave = SystemClock.elapsedRealtime()
+        Prefs.setQuiet("park_lat", g.lat.toFloat()); Prefs.setQuiet("park_lon", g.lon.toFloat())
+        Prefs.set("park_time", System.currentTimeMillis())
     }
     val lat get() = Prefs.float("park_lat").toDouble()
     val lon get() = Prefs.float("park_lon").toDouble()
@@ -450,6 +464,10 @@ object NightBrightness {
         set(v) = Prefs.set("night_dimmed", v)
 
     fun apply(c: Context) {
+        // FYT: baklyset styres av stereoen (MCU-en), ikke av Android – demp via stereoen (FytMain), uten systemtillatelse
+        if (FytMain.brightReady) { FytMain.applyNight(Prefs.bool("dim_system") && Theme.night); return }
+        // «Lysstyrke via stereoen» slått av mens stereoen var dempet: sett dagnivået tilbake der først
+        if (Fyt.connected && Prefs.bool("fyt_night_dimmed")) FytMain.applyNight(false)
         if (!Settings.System.canWrite(c)) return
         val r = c.contentResolver
         val want = Prefs.bool("dim_system") && Theme.night
@@ -463,7 +481,8 @@ object NightBrightness {
                 dimmed = true
             } else if (!want && dimmed) {
                 // Dag igjen, eller funksjonen er slått av: sett alt tilbake slik det var
-                Settings.System.putInt(r, Settings.System.SCREEN_BRIGHTNESS, Prefs.int("day_brightness", 200))
+                // Aldri nesten svart (en lagret 0 ville gjort skjermen umulig å se)
+                Settings.System.putInt(r, Settings.System.SCREEN_BRIGHTNESS, Prefs.int("day_brightness", 200).coerceAtLeast(20))
                 Settings.System.putInt(r, Settings.System.SCREEN_BRIGHTNESS_MODE, Prefs.int("day_brightness_mode", Settings.System.SCREEN_BRIGHTNESS_MODE_MANUAL))
                 dimmed = false
             }

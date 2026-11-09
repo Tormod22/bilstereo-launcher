@@ -100,8 +100,12 @@ class KeyService : AccessibilityService() {
         override fun onReceive(c: Context, i: Intent) {
             when (i.action) {
                 Intent.ACTION_SCREEN_OFF -> screenOffAt = SystemClock.elapsedRealtime()
-                Intent.ACTION_SCREEN_ON ->
-                    if (screenOffAt != 0L && SystemClock.elapsedRealtime() - screenOffAt > 120_000) Startup.run(c)
+                Intent.ACTION_SCREEN_ON -> {
+                    // Etter dvale: koble til stereoen igjen hvis T'OS hadde gitt opp (com.syu.ms kan ha startet på nytt)
+                    runCatching { Fyt.onWake() }
+                    // FYT melder tenningen: da starter FytMain oppstarten (svart skjerm er ikke at bilen startet)
+                    if (!FytMain.accKnown && screenOffAt != 0L && SystemClock.elapsedRealtime() - screenOffAt > 120_000) Startup.run(c)
+                }
                 UsbManager.ACTION_USB_DEVICE_ATTACHED -> {
                     val d: UsbDevice? = if (Build.VERSION.SDK_INT >= 33) i.getParcelableExtra(UsbManager.EXTRA_DEVICE, UsbDevice::class.java)
                     else @Suppress("DEPRECATION") i.getParcelableExtra(UsbManager.EXTRA_DEVICE)
@@ -180,9 +184,11 @@ class KeyService : AccessibilityService() {
     override fun onKeyEvent(event: KeyEvent): Boolean {
         // Opptak (Kartlegg stereoen): bare skriv ned knappen, og la stereoen gjøre det den pleier
         if (SurveyRecorder.active) { SurveyRecorder.key(event); return false }
+        // Bilen rygger (FYT): stereoen viser kameraet – knappene går til stereoen som original
+        if (FytMain.stayOut) return false
         val code = event.keyCode
         // «Siste rattknapp» på Knapper-siden: neste/forrige/svar … (volum er panelknappen her og vises ikke)
-        if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0 && !isVolume(code)) Steer.noteKey(code)
+        if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0 && !isVolume(code)) runCatching { Steer.noteKey(code) }
         // T'OS-panelet over en annen app: BACK lukker det
         if (code == KeyEvent.KEYCODE_BACK && ShadePanel.shown) {
             if (event.action == KeyEvent.ACTION_UP) ShadePanel.hide()
@@ -282,6 +288,23 @@ class KeyService : AccessibilityService() {
         FytVolume.onWindows(snaps, dm.widthPixels, dm.heightPixels)
     }
 
+    /** FYT sine canbus-vinduer (klima/dører, com.syu.canbus): følg med mens T'OS-kortet ligger over dem (FytCan.kt). */
+    fun checkCanPopup() {
+        if (!FytCanOverlay.watching) return
+        val dm = resources.displayMetrics
+        val snaps = runCatching {
+            windows.orEmpty().filter { it.type == android.view.accessibility.AccessibilityWindowInfo.TYPE_APPLICATION }.mapNotNull { w ->
+                val b = android.graphics.Rect(); w.getBoundsInScreen(b)
+                if (b.height() > dm.heightPixels * 3 / 4) return@mapNotNull null
+                val root = runCatching { w.root }.getOrNull()
+                val pkg = root?.packageName?.toString()
+                @Suppress("DEPRECATION") if (root != null && Build.VERSION.SDK_INT < 33) runCatching { root.recycle() }
+                WinSnap(w.type, w.title?.toString(), pkg, b.left, b.top, b.right, b.bottom, w.layer, w.isActive, w.isFocused)
+            }
+        }.getOrNull()
+        FytCanOverlay.onWindows(snaps, dm.widthPixels, dm.heightPixels)
+    }
+
     private val labels = HashMap<String, String>()
     private fun label(pkg: String): String = labels.getOrPut(pkg) {
         runCatching { packageManager.getApplicationLabel(packageManager.getApplicationInfo(pkg, 0)).toString() }.getOrDefault("")
@@ -351,9 +374,13 @@ class KeyService : AccessibilityService() {
     override fun onAccessibilityEvent(event: AccessibilityEvent) {
         // Opptak (Kartlegg stereoen): skriv ned alt, og la stereoen være i fred
         if (SurveyRecorder.active) { SurveyRecorder.event(this, event); return }
+        // Bilen rygger (FYT): ikke dekk over eller bytt ut noe (kamerabildet er stereoens)
+        if (FytMain.stayOut) return
         val type = event.eventType
         if (type == AccessibilityEvent.TYPE_NOTIFICATION_STATE_CHANGED) lastNoteAt = SystemClock.elapsedRealtime()
-        if (type == AccessibilityEvent.TYPE_WINDOWS_CHANGED && FytVolume.watching) checkFytPopup()
+        // FYT-delene er nye og ikke prøvd på stereoen: en feil der skal ikke ta ned knappestyringen (og T'OS)
+        if (type == AccessibilityEvent.TYPE_WINDOWS_CHANGED && FytVolume.watching) runCatching { checkFytPopup() }
+        if (type == AccessibilityEvent.TYPE_WINDOWS_CHANGED && FytCanOverlay.watching) runCatching { checkCanPopup() }
         if (type == AccessibilityEvent.TYPE_WINDOWS_CHANGED || type == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) noteShade(event)
         if (type != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) return
         val pkg = event.packageName?.toString() ?: return
@@ -361,9 +388,11 @@ class KeyService : AccessibilityService() {
         // FYT sitt volumvindu (com.syu.ms, «Popup Window» med tallet): T'OS-linja over det. Det er ikke en app som kom fram.
         if (FytVolumeLogic.isPopupEvent(pkg, cls)) {
             val texts = runCatching { event.text.mapNotNull { it?.toString() } }.getOrDefault(emptyList())
-            FytVolume.onPopupEvent(this, texts)
+            runCatching { FytVolume.onPopupEvent(this, texts) }
             return
         }
+        // FYT sine canbus-vinduer (klima/dører/radar fra com.syu.canbus) er heller ikke en app som kom fram
+        if (FytCanLogic.isPopupEvent(pkg, cls)) { runCatching { FytCanOverlay.onPopupEvent() }; return }
         // Androids fanevisning (nylige apper, «No recent items») kom fram: vis T'OS sin «Siste apper» i stedet.
         // Sjekkes før systemvinduene under, fordi den på eldre Android ligger i SystemUI. Av: fanelista er bare innom.
         if (pkg != packageName && Prefs.bool("tos_recents", true) && isStockRecentsEvent(pkg, cls, event)) {
@@ -408,6 +437,9 @@ class KeyService : AccessibilityService() {
         // Appen ble åpnet av T'OS selv (f.eks. «Start radio», «Telefon», stereoens egen startskjerm fra app-lista):
         // ikke send tilbake så lenge du er i den
         if (state.owned) { rememberLastApp(pkg); return }
+
+        // FYT: stereoens BT-app viser sitt eget samtalebilde – T'OS sin samtaleskjerm i stedet (FytPhone.kt)
+        if (runCatching { FytPhone.shouldCover(pkg) }.getOrDefault(false)) { Phone.openCallScreen(this); return }
 
         val now = SystemClock.elapsedRealtime()
         val key = Buttons.keyForPkg(this, pkg)
@@ -462,10 +494,13 @@ class KeyService : AccessibilityService() {
         // FM-radio: stereoen har allerede startet radio-appen – behold radioen, vis T'OS sin radio-side.
         // FYT: RADIO-knappen har allerede gjort radioen til lydkilden – vis den i T'OS (via FYT-tjenesten), også for «Radio-side»
         if (action == Action.RADIO || (key == PanelKey.RADIO && action == Action.RADIO_PAGE && HwRadio.fyt)) {
-            lastRedirect = now; HwRadio.adopt(this, pkg); return
+            // Samme tak som de andre omdirigeringene: radio-appen og T'OS skal ikke sende hverandre i ring
+            if (redirects.allow(now)) { lastRedirect = now; HwRadio.adopt(this, pkg) }
+            return
         }
         // FYT sin BT-app viser også samtalebildet: vent litt, så FYT rekker å si fra om en samtale før T'OS bytter bort
         if (pkg == FytKeys.BT && Fyt.btReady) {
+            if (!redirects.allow(now)) return
             lastRedirect = now
             handler.postDelayed({ if (front.current == pkg && !Buttons.inCall(this)) redirect(pkg, key, action) }, 400)
             return

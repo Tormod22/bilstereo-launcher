@@ -35,7 +35,7 @@ object NaviPopup {
     fun possible(c: Context) = KeyService.instance != null || Settings.canDrawOverlays(c)
 
     fun show(c: Context, label: String, pkg: String) {
-        if (!enabled) return
+        if (!enabled || FytMain.stayOut) return
         val svc = KeyService.instance
         val (ctx, type) = when {
             svc != null -> svc to WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY

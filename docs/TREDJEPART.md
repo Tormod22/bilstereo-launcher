@@ -39,4 +39,22 @@ kommando-/meldingskoder) er hentet fra disse åpne prosjektene, som har kartlagt
   tilbakemeldingene – verifisert der mot Joying com.syu.ms 2.23.0711.1001). FinalMain (FYT-Launcher-Mod): U_PLAYER_CMD 37.
   andreknieriem/open-headunit – https://github.com/andreknieriem/open-headunit, AGPL-3.0: bare kunnskapen om at hoved u=133
   er en knapp (fra com.syu.steer), ingen kode.
+- Lyden (`FytSound.kt`, lydmodulen 4): FinalSound.java i vasyl91/FYT-Launcher-Mod (app/src/main/java/com/syu/module/sound/:
+  alle C_/U_-kodene, VOL_UP/DOWN/MUTE/UNMUTE/MUTE_SWITCH, navnene på forhåndsvalgene) og cssbruno/cabin (Unlicense)
+  app/src/main/kotlin/com/cabin/platform/SyuSoundProtocol.kt + SyuSoundController.kt (lydbrikke-ID 6/7/11 → antall bånd og
+  område, formatet på balanse/fader [bal, fade], bånd [nr, verdi], forhåndsvalg, loudness, subwoofer – verifisert der mot
+  Joying sin Equalizer 2023-08-31). Demp/opphev (c=0 [−3]/[−4]): PimpinPumpkin/FytRadio SyuRadioBridge.kt.
+- BT-telefonen (`FytPhone.kt`): alle U_/C_/KEY_/PHONE_STATE_-kodene fra FinalBt i FYT-Launcher-Mod
+  (app/src/main/java/com/syu/ipc/FinalBt.java), BT-musikkens tid/album fra samme prosjekt
+  (com/fyt/car/StockBtSource.java og com/android/launcher66/Launcher.java: u=2 lengde i ms, u=28 posisjon i ms, u=26 album),
+  og fyt-dialer (C_DIAL/C_PICKUP/C_HANG, «ringer bare når HFP er tilkoblet»). Formatet på telefonboka (u=22) og parede
+  enheter (u=5) finnes ikke i noen åpen kilde – T'OS tolker dem forsiktig og logger dem i kartleggingen.
+- Hovedmodulen (`FytMain.kt`: lys, rygging, tenning, lysstyrke, håndbrekk, tastelyd, navigasjonsmiks):
+  liyunkuai/FYTUSBDVR – https://github.com/liyunkuai/FYTUSBDVR (src/com/syu/module/main/FinalMain.java og
+  module/sound/FinalSound.java: alle C_/U_-kodene med forklaring), vasyl91/FYT-Launcher-Mod
+  (app/src/main/java/com/syu/ipc/data/FinalMain.java, com/syu/car/CarStates.java, com/android/launcher66/settings/
+  HeadlightNightMode.java, DayNightBrightness.java og WakeSignals.java: U_LAMPLET 4 = lysene, U_BACKCAR 12 = rygger,
+  U_ACC_ON 50 = tenningen, U_BLACK_SCREEN 3, lysstyrke med C_BRIGHT_LEVEL 10 [0–100]), Altair571/tarmac –
+  https://github.com/Altair571/tarmac (docs/HEADUNIT_FYT_DUDU.md: kringkastingen «com.syu.ms» med «cmd.acc»), og
+  iamvivekkaushik/Revv – https://github.com/iamvivekkaushik/Revv (docs/FYT_BLUETOOTH.md: ryggebildet ved U_BACKCAR ≠ 0).
 Ingen kode er kopiert; bare tallene og formatet.

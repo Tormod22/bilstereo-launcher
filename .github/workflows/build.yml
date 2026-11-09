@@ -63,8 +63,89 @@ jobs:
           echo "TOS_KEYSTORE_PASSWORD=$PW" >> "$GITHUB_ENV"
           echo "TOS_KEY_PASSWORD=$KP" >> "$GITHUB_ENV"
 
+      # Røyktestene (Robolectric) trenger en Android-kopi (~160 MB) fra Maven Central. Den lagres mellom byggene, og hentes
+      # på forhånd med nye forsøk: Maven Central svarer av og til «429 – for mange forespørsler», og det skal ikke stoppe
+      # oppdateringen. Brukes ny Robolectric-versjon, må navnet i «case» under oppdateres (ellers henter Robolectric selv).
+      - name: Finn Robolectric-versjon
+        id: robo
+        run: |
+          V="$(grep -oP 'org\.robolectric:robolectric:\K[0-9.]+' app/build.gradle.kts | head -1 || true)"
+          case "$V" in
+            4.13) A=13-robolectric-9030017-i6 ;;   # sdk 33 (@Config(sdk = [33]) i alle røyktestene)
+            *) A="" ;;
+          esac
+          echo "version=$V" >> "$GITHUB_OUTPUT"
+          echo "artifact=$A" >> "$GITHUB_OUTPUT"
+
+      - name: Lagre Robolectric sin Android-kopi mellom byggene
+        uses: actions/cache@v4
+        with:
+          path: ~/.m2/repository/org/robolectric
+          key: robolectric-${{ steps.robo.outputs.version }}-${{ steps.robo.outputs.artifact }}
+
+      - name: Hent Robolectric sin Android-kopi (med nye forsøk)
+        if: steps.robo.outputs.artifact != ''
+        env:
+          A: ${{ steps.robo.outputs.artifact }}
+        run: |
+          F="android-all-instrumented-$A"
+          D="$HOME/.m2/repository/org/robolectric/android-all-instrumented/$A"
+          if [ -s "$D/$F.jar" ]; then echo "Finnes allerede (fra lagringen)"; exit 0; fi
+          B="https://repo1.maven.org/maven2/org/robolectric/android-all-instrumented/$A/$F"
+          T="$(mktemp -d)"
+          sha() { sha512sum "$1" | cut -d' ' -f1; }
+          want() { tr -d ' \r\n' < "$1" | cut -c1-128; }
+          for n in 1 2 3 4 5; do
+            ok=1
+            for x in pom pom.sha512 jar jar.sha512; do
+              curl -fsSL --retry 4 --retry-delay 15 --retry-all-errors -o "$T/$F.$x" "$B.$x" || ok=0
+            done
+            if [ "$ok" = 1 ] && [ "$(sha "$T/$F.jar")" = "$(want "$T/$F.jar.sha512")" ] && [ "$(sha "$T/$F.pom")" = "$(want "$T/$F.pom.sha512")" ]; then
+              mkdir -p "$D" && mv "$T"/* "$D"/ && echo "Hentet $F" && exit 0
+            fi
+            echo "Forsøk $n mislyktes – venter litt"; sleep $((n * 30))
+          done
+          # Ikke stopp her: Robolectric prøver selv under testene, og teststeget under prøver igjen ved nettfeil
+          echo "::warning::Fikk ikke hentet $F fra Maven Central på forhånd"
+
+      # Nytt forsøk BARE når det som feilet var nedlasting/nett (429, tidsavbrudd …) – aldri når en test faktisk feiler
       - name: Kjør tester
-        run: gradle testDebugUnitTest --no-daemon
+        run: |
+          set -o pipefail   # uten dette ville «| tee» skjult at gradle feilet
+          for n in 1 2 3; do
+            rm -rf app/build/test-results/testDebugUnitTest
+            if gradle testDebugUnitTest --no-daemon 2>&1 | tee "$RUNNER_TEMP/test.log"; then exit 0; fi
+            KIND="$(python3 - "$RUNNER_TEMP/test.log" <<'PY'
+          import glob, re, sys, xml.etree.ElementTree as ET
+          net = re.compile(r"Failed to fetch maven artifact|response code: (429|5\d\d)|status code (429|5\d\d)|Too Many Requests|"
+                           r"UnknownHostException|SocketTimeoutException|ConnectException|Connection reset|Premature EOF|SSLException")
+          real = netfail = 0
+          for p in glob.glob("app/build/test-results/testDebugUnitTest/*.xml"):
+              for tc in ET.parse(p).getroot().iter("testcase"):
+                  for f in list(tc.iter("failure")) + list(tc.iter("error")):
+                      if net.search((f.get("message") or "") + (f.text or "")): netfail += 1
+                      else: real += 1
+          log = open(sys.argv[1], errors="replace").read()
+          gradle_net = re.search(r"Could not (resolve|GET|HEAD|download)|Received status code (429|5\d\d)|Read timed out|Connection reset", log)
+          if real: print("test")                     # en ekte testfeil: ikke prøv igjen
+          elif netfail or gradle_net: print("net")   # bare nedlasting/nett feilet
+          else: print("other")                       # f.eks. kompileringsfeil
+          PY
+            )"
+            if [ "$KIND" != "net" ]; then
+              echo "::error title=Testene feilet::Se «Kjør tester» over (og testrapporten under Artifacts)."; exit 1
+            fi
+            echo "::warning::Nedlasting/nett feilet under testene (forsøk $n) – prøver igjen"; sleep $((n * 60))
+          done
+          echo "::error title=Nettfeil::Fikk ikke lastet ned det testene trenger etter 3 forsøk (Maven Central). Kjør bygget på nytt senere."; exit 1
+
+      - name: Last opp testrapporten
+        if: failure()
+        uses: actions/upload-artifact@v6
+        with:
+          name: testrapport
+          path: app/build/reports/tests/testDebugUnitTest
+          if-no-files-found: ignore
 
       - name: Bygg APK
         # versionCode = 1000 + byggnummer (settes i app/build.gradle.kts fra GITHUB_RUN_NUMBER).

@@ -87,6 +87,8 @@ object NetRadio {
         stop(c)
         // Nettradio i stedet for FM: slå av stereoens radio, så de ikke spiller oppå hverandre
         if (HwRadio.wanted) HwRadio.powerOff(c, keep = Media.NET_RADIO)   // nettradioen tar lyden selv
+        // FM-radioen som stereoen selv startet (RADIO-knappen): bytt stereoens lydkilde til Android, ellers spiller begge
+        else if (FytRadio.onAir) runCatching { FytRadio.onRadioOff(); Fyt.androidSource() }
         audio = am(c)
         current = s; buffering = false; error = null; prepared = false; preparedAt = 0L
         Prefs.set("radio_last", s.name)
@@ -391,6 +393,7 @@ object HwRadio {
     fun powerOff(c: Context, keep: String? = null) {
         val a = c.applicationContext
         handler.removeCallbacksAndMessages(null)
+        runCatching { FytRadio.onRadioOff() }   // søk/innstilling stopper, lyden på igjen hvis T'OS skrudde den av
         val viaFyt = fyt && enginePkg == null
         val pkg = enginePkg ?: radioPackage(a)
         wanted = false
@@ -410,6 +413,7 @@ object HwRadio {
         if (!wanted) return
         val a = c.applicationContext
         handler.removeCallbacksAndMessages(null)
+        runCatching { FytRadio.onRadioOff() }   // søk/innstilling stopper, lyden på igjen hvis T'OS skrudde den av
         val viaFyt = fyt && enginePkg == null
         val pkg = enginePkg ?: radioPackage(a)
         wanted = false

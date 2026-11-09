@@ -15,8 +15,8 @@ android {
         // På GitHub: byggnummeret (1000 + nr.) så hver nye versjon alltid får høyere tall enn den forrige.
         // Lokalt: tallet under. (versionName = «x.y» lokalt, «x.y.nr» på GitHub.)
         val ciRun = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull()
-        versionCode = if (ciRun != null) 1000 + ciRun else 30
-        versionName = if (ciRun != null) "5.8.$ciRun" else "5.8"
+        versionCode = if (ciRun != null) 1000 + ciRun else 31
+        versionName = if (ciRun != null) "5.9.$ciRun" else "5.9"
         // Bilstereoen har ARM-prosessor; dropper x86 for å holde appen mindre (kartmotoren har egne biblioteker)
         ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a") }
     }
@@ -55,7 +55,14 @@ android {
         unitTests.isReturnDefaultValues = true
         // Robolectric (ScreensSmokeTest): ekte Android-ressurser og manifest i JVM-testene
         unitTests.isIncludeAndroidResources = true
-        unitTests.all { it.maxHeapSize = "2g" }
+        unitTests.all {
+            it.maxHeapSize = "2g"
+            // En feilet test skal vises med hele feilmeldingen i GitHub-loggen (ikke bare «FAILED»)
+            it.testLogging {
+                events("failed")
+                exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
+            }
+        }
     }
 }
 

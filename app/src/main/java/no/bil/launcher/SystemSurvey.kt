@@ -266,13 +266,18 @@ object SystemSurvey {
             }
         }
         part("Bluetooth") { append(BtLink.report(c)) }
+        part("FYT-canbus (bil-data: dører, klima – com.syu.canbus)") { append(FytCan.report()) }
         part("FYT-tjenesten (com.syu.ms: radio, BT-telefon, lydkilde, volum)") {
             append(Fyt.report(c))
+            append(FytPhone.report())
             val d = FytKeys.defaults(c)
             appendLine("Knapper T'OS kjenner igjen uten læring (FYT): " + (if (d.isEmpty()) "ingen" else d.entries.joinToString { "${it.key.label} → ${it.value}" }))
             appendLine("FYT sin navigasjonsapp (sys.navi.packagename): ${FytKeys.naviPackage() ?: "ukjent"}")
             appendLine("Kartapper («geo:»): ${NaviKey.geoApps(c).sorted().joinToString().ifEmpty { "ingen" }}")
         }
+        part("FYT-radioen (radio-modul 1, T'OS sin radio)") { append(FytRadio.report()) }
+        part("FYT-lyd (lydmodulen 4: volum, equalizer, balanse/fader, loudness)") { append(FytSound.report()) }
+        part("Selvtest (siste resultat)") { append(SelfTest.lastText(c)) }
         part("FYT-statuslinjen (show_navigationbar)") {
             appendLine("show_navigationbar = ${FytBars.current(c)}  (1 = stereoens linje vises, 0 = skjult)")
             appendLine("navigationbar_config = ${runCatching { Settings.System.getString(c.contentResolver, "navigationbar_config") }.getOrNull()}")

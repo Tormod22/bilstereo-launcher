@@ -2,7 +2,6 @@ package no.bil.launcher
 
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -39,10 +38,7 @@ class ScreensSmokeTest2 {
         }
     }
 
-    private fun settle(ms: Long = 1_500) {
-        rule.mainClock.advanceTimeBy(ms); rule.waitForIdle()
-        rule.mainClock.advanceTimeBy(ms); rule.waitForIdle()
-    }
+    private fun settle(ms: Long = 1_500) = rule.settle(ms)
 
     private fun show(s: Screen) { rule.runOnUiThread { Nav.screen = s }; settle() }
 
@@ -84,10 +80,7 @@ class ScreensSmokeTest2 {
 class RecentsSmokeTest {
     @get:Rule val rule = androidx.compose.ui.test.junit4.createComposeRule()
 
-    private fun settle() {
-        rule.mainClock.advanceTimeBy(500); rule.waitForIdle()
-        rule.mainClock.advanceTimeBy(500); rule.waitForIdle()
-    }
+    private fun settle() = rule.settle(500)
 
     @Test fun sisteApperAlleTilstander() {
         rule.mainClock.autoAdvance = false
@@ -101,14 +94,15 @@ class RecentsSmokeTest {
         }
         settle()
         // «Lukk alle» spør først («Trykk igjen»), så lukkes alt
-        rule.onNodeWithText("Lukk alle").performClick()
+        rule.awaitText("Lukk alle").performClick()
         settle()
-        rule.onNodeWithText("Trykk igjen for å lukke alle").performClick()
+        rule.awaitText("Trykk igjen for å lukke alle").performClick()
         settle()
-        check(closedAll) { "«Lukk alle» skal lukke etter andre trykk" }
+        rule.awaitUntil("at «Lukk alle» lukker etter andre trykk") { closedAll }
         rule.runOnUiThread { state = Triple(emptyList(), true, true) }
         settle()
-        rule.onNodeWithText("Ingen apper i bakgrunnen").assertExists()
+        // Tomtilstanden kan komme et par bilder senere (animasjon ut av lista) – vent til den er der
+        rule.awaitText("Ingen apper i bakgrunnen")
         rule.runOnUiThread { state = Triple(emptyList(), false, true) }
         settle()
     }
@@ -120,10 +114,7 @@ class RecentsSmokeTest {
 class ShadePanelSmokeTest {
     @get:Rule val rule = androidx.compose.ui.test.junit4.createComposeRule()
 
-    private fun settle() {
-        rule.mainClock.advanceTimeBy(500); rule.waitForIdle()
-        rule.mainClock.advanceTimeBy(500); rule.waitForIdle()
-    }
+    private fun settle() = rule.settle(500)
 
     private val long = "Veldig lang varseltekst som aldri tar slutt ".repeat(6)
 
@@ -144,17 +135,17 @@ class ShadePanelSmokeTest {
         }
         settle()
         // «Fjern alle» spør først
-        rule.onNodeWithText("Fjern alle").performClick()
+        rule.awaitText("Fjern alle").performClick()
         settle()
-        rule.onNodeWithText("Trykk igjen for å fjerne alle").performClick()
+        rule.awaitText("Trykk igjen for å fjerne alle").performClick()
         settle()
-        check(cleared) { "«Fjern alle» skal fjerne etter andre trykk" }
+        rule.awaitUntil("at «Fjern alle» fjerner etter andre trykk") { cleared }
         rule.runOnUiThread { state = emptyList<NoteUi>() to true }
         settle()
-        rule.onNodeWithText("Ingen varsler").assertExists()
+        rule.awaitText("Ingen varsler")
         rule.runOnUiThread { state = emptyList<NoteUi>() to false }
         settle()
-        rule.onNodeWithText("Slå på varseltilgang for å se varslene her").assertExists()
+        rule.awaitText("Slå på varseltilgang for å se varslene her")
     }
 
     @Test fun helePanelet() {
@@ -162,7 +153,7 @@ class ShadePanelSmokeTest {
         rule.runOnUiThread { TosNotifications.items = notes(4); TosNotifications.connected = true }
         rule.setContent { QuickPanel(onClose = {}, onGo = {}) }
         settle()
-        rule.onNodeWithText("Varsler").assertExists()
+        rule.awaitText("Varsler")
     }
 }
 

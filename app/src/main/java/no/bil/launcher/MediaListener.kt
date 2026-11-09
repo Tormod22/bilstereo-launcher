@@ -112,7 +112,7 @@ object Call {
 
     /** Avvis samtalen (gir false hvis verken varselet eller FYT-stereoen kan avvise). */
     fun decline(): Boolean = declineAction?.let { runCatching { it.send() }.isSuccess } == true ||
-        (Fyt.btReady && Fyt.inCall && Fyt.reject())
+        (Fyt.btReady && Fyt.inCall && FytPhone.reject())
 
     internal fun setActions(n: Notification) {
         val acts = n.actions.orEmpty()
@@ -304,7 +304,7 @@ object Media {
                 NetRadio.stop(a)
                 NowPlaying.preferredPkg = pkg
                 if (HwRadio.wanted) HwRadio.powerOff(a, keep = pkg)
-                runCatching { Steer.claimSource(pkg) }
+                runCatching { Steer.claimSource(pkg, explicit = true) }
                 pauseOthers(keep = pkg)
                 val s = NowPlaying.sessions.firstOrNull { it.packageName == pkg }
                 if (s != null) {
@@ -354,7 +354,7 @@ object Media {
     }
 
     /** Neste/forrige på FM-radioen når den styres via MCU (uten mediaøkt). */
-    private fun fmWithoutSession() = HwRadio.wanted && (HwRadio.mcuActive || HwRadio.fyt) && NowPlaying.pkg != HwRadio.enginePkg
+    private fun fmWithoutSession() = (HwRadio.wanted && (HwRadio.mcuActive || HwRadio.fyt) && NowPlaying.pkg != HwRadio.enginePkg) || FytRadio.onAir
 
     private fun key(context: Context, code: Int) {
         val am = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
@@ -364,26 +364,28 @@ object Media {
 
     fun playPause(c: Context) {
         if (NetRadio.active) { NetRadio.toggle(c); return }
+        // FYT-radioen er lydkilden: spill/pause = lyd av/på (musikkortet viser radioen)
+        if (FytRadio.onAir) { FytRadio.toggleMute(); return }
         val t = NowPlaying.controller?.transportControls
-        if (t == null && fytBtMusic()) { Fyt.btavPlayPause(); return }
+        if (fytBtMusic()) { Fyt.btavPlayPause(); return }
         if (t != null) { if (NowPlaying.playing) t.pause() else t.play() } else key(c, KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE)
     }
-    /** FYT-stereo med BT-musikk som lydkilde (styres via com.syu.ms, ikke via en mediaøkt). */
-    private fun fytBtMusic() = Fyt.btReady && Fyt.appId == 3
+    /** FYT-stereo med BT-musikk som lydkilde (styres via com.syu.ms, ikke via en mediaøkt) – det samme musikkortet viser. */
+    private fun fytBtMusic() = fytBtMusicShown
 
     fun play(c: Context) {
         NowPlaying.controller?.transportControls?.play() ?: key(c, KeyEvent.KEYCODE_MEDIA_PLAY)
     }
     fun next(c: Context) {
         if (NetRadio.active) { NetRadio.step(c, 1); return }
-        if (fmWithoutSession()) { HwRadio.seekUp(); return }
-        if (NowPlaying.controller == null && fytBtMusic()) { Fyt.btavNext(); return }
+        if (fmWithoutSession()) { if (FytRadio.active) FytRadio.next(up = true) else HwRadio.seekUp(); return }
+        if (fytBtMusic()) { Fyt.btavNext(); return }
         NowPlaying.controller?.transportControls?.skipToNext() ?: key(c, KeyEvent.KEYCODE_MEDIA_NEXT)
     }
     fun previous(c: Context) {
         if (NetRadio.active) { NetRadio.step(c, -1); return }
-        if (fmWithoutSession()) { HwRadio.seekDown(); return }
-        if (NowPlaying.controller == null && fytBtMusic()) { Fyt.btavPrev(); return }
+        if (fmWithoutSession()) { if (FytRadio.active) FytRadio.next(up = false) else HwRadio.seekDown(); return }
+        if (fytBtMusic()) { Fyt.btavPrev(); return }
         NowPlaying.controller?.transportControls?.skipToPrevious() ?: key(c, KeyEvent.KEYCODE_MEDIA_PREVIOUS)
     }
 }

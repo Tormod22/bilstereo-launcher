@@ -34,6 +34,8 @@ internal object FytVolumeLogic {
     const val HIDE_MS = 2000L
     /** Aldri lenger enn dette etter siste endring (om vinduslista skulle henge). */
     const val MAX_SHOW_MS = 10_000L
+    /** Aldri lenger enn dette totalt, selv om volumet endres hele tiden (et vindu som aldri går bort er verre enn ingen). */
+    const val ABS_MAX_MS = 60_000L
     /** Så lenge etter en FYT-endring regnes et ukjent «Popup Window» som FYT sitt. */
     const val RECENT_MS = 2500L
     const val POPUP_TITLE = "popup window"
@@ -97,7 +99,8 @@ internal object FytVolumeLogic {
     }
 
     /** Skal linja bort nå? 2 s etter siste endring når FYT-vinduet er borte, og uansett etter [MAX_SHOW_MS]. */
-    fun shouldHide(now: Long, lastChange: Long, popupPresent: Boolean): Boolean {
+    fun shouldHide(now: Long, lastChange: Long, popupPresent: Boolean, shownAt: Long = lastChange): Boolean {
+        if (now - shownAt >= ABS_MAX_MS) return true
         val since = now - lastChange
         if (since < 0) return false
         return since >= MAX_SHOW_MS || (since >= HIDE_MS && !popupPresent)
@@ -109,11 +112,12 @@ object FytVolume {
 
     /** På FYT styrer stereoen volumet selv (volumhjulet → com.syu.ms): T'OS viser bare sin linje over FYT sitt vindu. */
     val active get() = Fyt.connected && Fyt.volume >= 0
-    private val enabled get() = Prefs.bool("tos_volume", true)
+    private val enabled get() = Prefs.bool("tos_volume", true) && Fyt.enabled
 
     var level = -1; private set
     var muted = false; private set
     private var lastChange = 0L
+    private var shownAt = 0L
     private var lastFytAt = 0L
     private var popupPresent = false
     private var popup: WinSnap? = null
@@ -137,6 +141,13 @@ object FytVolume {
         if (level > Prefs.int("fyt_vol_seen", 0)) Prefs.setQuiet("fyt_vol_seen", level)
         if (!changed || c == null) return
         lastFytAt = SystemClock.elapsedRealtime()
+        // T'OS sin egen glidebryter (FytSound): ingen ekstra linje. Ligger linja allerede over FYT-vinduet, følger den
+        // med; inne i T'OS vises T'OS sitt vanlige volumvindu. Dukker FYT-vinduet opp likevel, dekkes det (onPopupEvent).
+        if (FytSound.ownRecently()) {
+            if (update()) { lastChange = lastFytAt; KeyService.instance?.checkFytPopup() }
+            else if (TosOverlay.appShown && !Nav.quick) VolumeUi.show(if (muted) 0 else level, max)
+            return
+        }
         show(c)
     }
 
@@ -145,6 +156,7 @@ object FytVolume {
         popupPresent = true
         val n = FytVolumeLogic.levelFromText(texts) ?: return
         if (Fyt.connected) { if (slot != null || level < 0) return } else level = n
+        if (FytSound.ownRecently()) VolumeUi.hide()      // T'OS-linja dekker FYT-vinduet – ikke to linjer
         show(c)
     }
 
@@ -158,7 +170,7 @@ object FytVolume {
     }
 
     private fun show(c: Context) {
-        if (!enabled || SurveyRecorder.active) return
+        if (!enabled || SurveyRecorder.active || FytMain.stayOut) return
         lastChange = SystemClock.elapsedRealtime()
         if (!update()) build(c)
         KeyService.instance?.checkFytPopup()
@@ -169,8 +181,10 @@ object FytVolume {
     private val tick = object : Runnable {
         override fun run() {
             if (slot == null) return
-            KeyService.instance?.checkFytPopup()
-            if (FytVolumeLogic.shouldHide(SystemClock.elapsedRealtime(), lastChange, popupPresent)) hide()
+            // En feil i vinduslista skal ikke stoppe nedtellingen (da ville linja blitt stående for alltid)
+            runCatching { KeyService.instance?.checkFytPopup() }
+            val now = SystemClock.elapsedRealtime()
+            if (FytMain.stayOut || runCatching { FytVolumeLogic.shouldHide(now, lastChange, popupPresent, shownAt) }.getOrDefault(true)) hide()
             else h.postDelayed(this, 250)
         }
     }
@@ -244,6 +258,7 @@ object FytVolume {
         }
         if (runCatching { wm.addView(view, lp(type, b)) }.isFailure) return
         slot = wm to WeakReference(view)
+        shownAt = SystemClock.elapsedRealtime()
         fillRef = WeakReference(fl); trackRef = WeakReference(track); numRef = WeakReference(nv); titleRef = WeakReference(tv)
         shownBox = b
         setFill(fl, track)

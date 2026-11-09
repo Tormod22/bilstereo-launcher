@@ -94,6 +94,8 @@ fun BluetoothScreen(onClose: () -> Unit) {
                 val (head, sub) = btTexts(status)
                 Text(head, color = TextPrimary, fontSize = 22.sp, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Text(sub, color = TextMuted, fontSize = 14.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                // FYT-stereoen: telefonen er koblet til stereoens egen BT-brikke – koble fra/til her
+                FytBtCard()
                 if (status.devices.isNotEmpty()) {
                     Spacer(Modifier.height(4.dp))
                     Text("Kjente enheter", color = TextMuted, fontSize = 13.sp)
@@ -113,10 +115,10 @@ fun BluetoothScreen(onClose: () -> Unit) {
                 // Musikk fra telefonen over Bluetooth
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     Text("Musikk", color = TextMuted, fontSize = 14.sp, modifier = Modifier.weight(1f))
-                    RoundIcon(Icons.Default.SkipPrevious, 48.dp, desc = "Forrige sang") { Media.previous(context) }
-                    RoundIcon(if (musicPlaying) Icons.Default.Pause else Icons.Default.PlayArrow, 56.dp, outlined = true,
-                        desc = if (musicPlaying) "Pause" else "Spill") { Media.playPause(context) }
-                    RoundIcon(Icons.Default.SkipNext, 48.dp, desc = "Neste sang") { Media.next(context) }
+                    RoundIcon(Icons.Default.SkipPrevious, 48.dp, desc = musicPrevLabel) { Media.previous(context) }
+                    RoundIcon(musicPlayIcon, 56.dp, outlined = true,
+                        desc = musicPlayLabel) { Media.playPause(context) }
+                    RoundIcon(Icons.Default.SkipNext, 48.dp, desc = musicNextLabel) { Media.next(context) }
                 }
             }
 
@@ -330,7 +332,9 @@ fun SteerScreen(onClose: () -> Unit) {
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 if (!Fyt.connected) {
-                    Text("Får ikke kontakt med stereoen", color = TextPrimary, fontSize = 18.sp, fontWeight = FontWeight.Medium)
+                    // Hovedbryteren av: si det, i stedet for at det ser ut som stereoen ikke svarer
+                    Text(if (!Fyt.enabled) "Stereo-funksjoner (FYT) er slått av" else "Får ikke kontakt med stereoen", color = TextPrimary, fontSize = 18.sp, fontWeight = FontWeight.Medium)
+                    if (!Fyt.enabled) Text("Slå dem på i Innstillinger → Om stereoen for å lære knappene fra T'OS.", color = TextMuted, fontSize = 14.sp)
                     Text("Rattknappene læres i stereoen selv. Bruk stereoens eget oppsett: trykk en funksjon, hold inne " +
                         "rattknappen til tallet endrer seg, og trykk ✓.", color = TextMuted, fontSize = 14.sp)
                 } else {
@@ -357,8 +361,9 @@ fun SteerScreen(onClose: () -> Unit) {
             // Høyre: flisene (det rattet har først, så valgfrie)
             Column(Modifier.weight(0.64f).fillMaxHeight().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 (SteerAdc.main + SteerAdc.extra).chunked(3).forEach { row ->
-                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        row.forEach { f -> SteerTile(f, Modifier.weight(1f)) }
+                    // Like høye fliser i raden, også når en tekst går over to linjer (stor tekst på stereoen)
+                    Row(Modifier.height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        row.forEach { f -> SteerTile(f, Modifier.weight(1f).fillMaxHeight()) }
                         repeat(3 - row.size) { Spacer(Modifier.weight(1f)) }
                     }
                 }
@@ -382,7 +387,7 @@ private fun SteerTile(f: SteerAdc.Fn, modifier: Modifier) {
         else -> "Ikke lært"
     }
     Column(
-        modifier.height(104.dp).clip(RoundedCornerShape(20.dp))
+        modifier.heightIn(min = 104.dp).clip(RoundedCornerShape(20.dp))
             .background(if (waiting) TextPrimary else Card)
             .then(if (lit) Modifier.border(2.dp, PingGreen, RoundedCornerShape(20.dp)) else Modifier)
             .clickable { if (waiting) FytSteer.cancelWait() else FytSteer.learn(f.slot) }
@@ -394,7 +399,8 @@ private fun SteerTile(f: SteerAdc.Fn, modifier: Modifier) {
                 maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
             if (lit) PingDot()
         }
-        if (f.wheel.isNotEmpty()) Text("Rattet: ${f.wheel}", color = if (waiting) Bg else TextMuted, fontSize = 13.sp, maxLines = 1)
+        if (f.wheel.isNotEmpty()) Text("Rattet: ${f.wheel}", color = if (waiting) Bg else TextMuted, fontSize = 13.sp, maxLines = 2,
+            overflow = TextOverflow.Ellipsis)
         Text(sub, color = if (waiting) Bg else if (value != null) TextPrimary else TextMuted, fontSize = 13.sp, maxLines = 1,
             overflow = TextOverflow.Ellipsis)
     }

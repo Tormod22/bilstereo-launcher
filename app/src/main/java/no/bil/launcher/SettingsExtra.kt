@@ -327,6 +327,15 @@ fun BtPanel() {
         }
     }
     msg?.let { Text(it, color = TextPrimary, fontSize = 14.sp, modifier = Modifier.padding(bottom = 8.dp)) }
+    if (Fyt.btReady) {
+        // FYT-stereoen: telefonen er koblet til stereoens egen BT-brikke (Android ser den bare som «paret»)
+        Section("Stereoens Bluetooth (FYT)")
+        FytBtCard(Modifier.padding(bottom = 8.dp))
+        ToggleRow("Telefonen i T'OS (FYT)", "fyt_phone", true,
+            "Ringe, kontakter og siste anrop via stereoens Bluetooth – stereoens telefon-app trengs ikke. Av = som før.")
+        ToggleRow("Samtaleskjermen i T'OS (FYT)", "fyt_call_screen", true,
+            "Når det ringer, eller du ringer ut, vises T'OS sin samtaleskjerm i stedet for stereoens egen.")
+    }
     if (status.devices.isNotEmpty()) {
         Section("Kjente enheter")
         status.devices.forEach { d ->
@@ -510,6 +519,39 @@ private fun localIp(c: Context): String? = runCatching {
         ?.firstOrNull { it is java.net.Inet4Address && !it.isLoopbackAddress }?.hostAddress
 }.getOrNull()
 
+/** Stegene i førstegangsoppsettet. Hvilke som vises avgjøres av [setupSteps] (ren logikk, testet). */
+internal enum class SetupStep { HOME, DIALER, KEYS, NOTES, USAGE, LOCATION, BT, STEER, BAR, SELFTEST, UPDATES, OVERLAY, WRITE, RESTORE }
+
+/**
+ * Hvilke steg oppsettet viser. På en FYT-stereo (bekreftet på brukerens LEHX: ekte Android 10) er T'OS allerede startskjerm og
+ * telefon-app – de stegene vises bare hvis de mangler. Der trengs ikke «Vis over andre apper» eller «Styre lysstyrken» (lysstyrken går
+ * via stereoen), og Bluetooth-tillatelsen finnes bare på Android 12+. I stedet: lær rattknappene, skjul stereoens statuslinje
+ * ([barKnown] = innstillingen finnes) og kjør selvtesten.
+ */
+internal fun setupSteps(fyt: Boolean, sdk: Int, isHome: Boolean, dialerAvailable: Boolean, dialerDone: Boolean, barKnown: Boolean): List<SetupStep> {
+    val s = mutableListOf<SetupStep>()
+    if (fyt) {
+        if (!isHome) s += SetupStep.HOME
+        if (dialerAvailable && !dialerDone) s += SetupStep.DIALER
+        s += listOf(SetupStep.KEYS, SetupStep.NOTES, SetupStep.USAGE, SetupStep.LOCATION, SetupStep.STEER)
+        if (barKnown) s += SetupStep.BAR
+        s += listOf(SetupStep.SELFTEST, SetupStep.UPDATES, SetupStep.RESTORE)
+    } else {
+        s += listOf(SetupStep.LOCATION, SetupStep.HOME, SetupStep.KEYS, SetupStep.NOTES)
+        if (sdk >= 31) s += SetupStep.BT
+        if (dialerAvailable) s += SetupStep.DIALER
+        s += listOf(SetupStep.UPDATES, SetupStep.USAGE, SetupStep.OVERLAY, SetupStep.WRITE, SetupStep.RESTORE)
+    }
+    return s
+}
+
+/** Selvtesten (Screen.SELFTEST) hvis den finnes i denne versjonen, ellers Innstillinger → Sikkerhetskopi og hjelp. */
+internal fun openSelfTest() {
+    Prefs.set("setup_selftest", true)
+    val st = Screen.entries.firstOrNull { it.name == "SELFTEST" }
+    if (st != null) Nav.screen = st else { Prefs.set("settings_cat", "BACKUP"); Nav.screen = Screen.SETTINGS }
+}
+
 /** Forklarer hver tillatelse og hvorfor T'OS trenger den, med en knapp rett til riktig sted. (Idé fra OpenLauncher.) */
 @Composable
 fun SetupScreen(onClose: () -> Unit) {
@@ -528,10 +570,16 @@ fun SetupScreen(onClose: () -> Unit) {
     }
     val btPerms = if (Build.VERSION.SDK_INT >= 31) arrayOf(Manifest.permission.BLUETOOTH_CONNECT, Manifest.permission.BLUETOOTH_SCAN) else emptyArray()
     var withPc by remember { mutableStateOf(false) }
+    val fyt = remember { Fyt.present(context) }
+    val bar = remember(tick) { FytBars.current(context) }
+    val dialerAvailable = remember(tick) { Phone.dialerAvailable(context) }
+    val dialerDone = remember(tick) { Phone.isDialer(context) && Phone.missingPermissions(context).isEmpty() }
+    var barAdb by remember { mutableStateOf(false) }
+    val steps = setupSteps(fyt, Build.VERSION.SDK_INT, isHome, dialerAvailable, dialerDone, bar != null)
 
-    @Composable fun Step(icon: ImageVector, title: String, why: String, done: Boolean, optional: Boolean = false, action: () -> Unit) {
+    @Composable fun Step(icon: ImageVector, title: String, why: String, done: Boolean, optional: Boolean = false, verb: String = "Slå på", action: () -> Unit) {
         Row(
-            Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(Card).padding(horizontal = 18.dp, vertical = 12.dp),
+            Modifier.fillMaxWidth().heightIn(min = 72.dp).clip(RoundedCornerShape(18.dp)).background(Card).padding(horizontal = 18.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp),
         ) {
             Icon(if (done) Icons.Default.CheckCircle else icon, if (done) "Klar" else null, tint = if (done) TextPrimary else TextMuted, modifier = Modifier.size(26.dp))
@@ -539,58 +587,83 @@ fun SetupScreen(onClose: () -> Unit) {
                 Text(title + if (optional) " (valgfritt)" else "", color = TextPrimary, fontSize = 16.sp)
                 Text(why, color = TextMuted, fontSize = 13.sp)
             }
-            if (!done) Pill("Slå på", strong = !optional) { action() } else Text("✓ Klar", color = TextMuted, fontSize = 14.sp)
+            // Ferdige steg kan åpnes igjen (rattknapper/selvtest kan man ville gjøre på nytt)
+            if (!done) Pill(verb, strong = !optional) { action() } else Text("✓ Klar", color = TextMuted, fontSize = 14.sp)
         }
         Spacer(Modifier.height(8.dp))
     }
 
     // Lukkes oppsettet med X, kommer det ikke tilbake av seg selv (finnes under Innstillinger → Om stereoen)
     Page("Velkommen til T'OS", { Prefs.set("setup_done", true); onClose() }, extra = { Pill("Ferdig", Icons.Default.Check, strong = true) { Prefs.set("setup_done", true); onClose() }; Spacer(Modifier.width(12.dp)) }) {
-        Text("Slå på det du vil bruke. «Slå på» åpner Androids egen side for akkurat den tillatelsen (det kan ikke unngås for en vanlig app). " +
-            "Vil du slippe Android-menyene helt: bruk PC-en nederst.", color = TextMuted, fontSize = 15.sp, modifier = Modifier.padding(bottom = 12.dp))
+        Text(
+            (if (fyt && isHome) "T'OS er startskjermen${if (dialerDone) " og telefon-appen" else ""} på stereoen. Gjør stegene under én gang. " else "Slå på det du vil bruke. ") +
+                "«Slå på» åpner Androids egen side for akkurat den tillatelsen (det kan ikke unngås). Vil du slippe Android-menyene helt: bruk PC-en nederst.",
+            color = TextMuted, fontSize = 15.sp, modifier = Modifier.padding(bottom = 12.dp),
+        )
         Column(Modifier.verticalScroll(rememberScrollState())) {
-            val fine = remember(tick) { context.hasPermission(Manifest.permission.ACCESS_FINE_LOCATION) }
-            val coarseOnly = !fine && context.hasPermission(Manifest.permission.ACCESS_COARSE_LOCATION)
-            Step(Icons.Default.LocationOn, "Posisjon",
-                if (coarseOnly) "Bare «omtrentlig» er tillatt – velg «Nøyaktig» for fart, fartsgrense og turmåler." else "Fart, kart, fartsgrense, nattmodus og turmåler.", fine) {
-                // Android 12+ krever at nøyaktig og omtrentlig spørres om sammen (ellers skjer ingenting).
-                // Android 13+: også lov til å vise det stille varselet «T'OS bruker posisjon».
-                val ask = mutableListOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION)
-                if (Build.VERSION.SDK_INT >= 33) ask += Manifest.permission.POST_NOTIFICATIONS
-                askPerms.launch(ask.toTypedArray())
-            }
-            Step(Icons.Default.Home, "T'OS som startskjerm", "Hjem-knappen og MENU åpner T'OS.", isHome) {
-                context.go(Intent(Settings.ACTION_HOME_SETTINGS)) || context.go(Intent(Settings.ACTION_MANAGE_DEFAULT_APPS_SETTINGS))
-            }
-            Step(Icons.Default.Tune, "Knappestyring", "Knappene på stereoen og rattet, og Waze-popupen. Slå på «T'OS knapper». Er valget grått: Apper → T'OS → ⋮ → «Tillat begrensede innstillinger».",
-                remember(tick) { Buttons.serviceEnabled(context) }) {
-                context.go(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
-            }
-            Step(Icons.Default.MusicNote, "Sangtittel og cover", "Viser hva som spiller, neste sving fra Google Maps og hvem som ringer.", remember(tick) { MediaListener.enabled(context) }) {
-                openNotificationAccess(context)
-            }
-            if (btPerms.isNotEmpty()) Step(Icons.Default.Bluetooth, "Bluetooth", "Se tilkoblet telefon, pare enheter, batterispenning fra OBD-brikke.", remember(tick) { btPerms.all { context.hasPermission(it) } }) {
-                askPerms.launch(btPerms)
-            }
-            if (remember(tick) { Phone.dialerAvailable(context) }) Step(Icons.Default.Phone, "T'OS som telefon-app",
-                "Samtaler vises i T'OS i stedet for stereoens egen telefonskjerm. Ring, kontakter og siste anrop inne i T'OS.",
-                remember(tick) { Phone.isDialer(context) && Phone.missingPermissions(context).isEmpty() }, optional = true) {
-                val missing = Phone.missingPermissions(context)
-                if (!Phone.isDialer(context)) Phone.dialerRoleIntent(context)?.let { dialerRole.launch(it) }
-                else if (missing.isNotEmpty()) askPerms.launch(missing.toTypedArray())
-            }
-            Step(Icons.Default.SystemUpdate, "Installere oppdateringer", "Oppdateringsknappen i T'OS. Første oppdatering ber om ett «Installer»-trykk, senere går det av seg selv.",
-                remember(tick) { Updater.canInstall(context) }, optional = true) { Updater.openInstallPermission(context) }
-            Step(Icons.Default.History, "Siste apper", "Full liste i «Siste apper» (apper du har brukt). Uten dette viser T'OS bare apper den selv har sett.",
-                remember(tick) { RecentApps.hasUsageAccess(context) }, optional = true) { RecentApps.openUsageAccess(context) }
-            Step(Icons.Default.Layers, "Vis over andre apper", "Reserve for Waze-popupen hvis knappestyring er av.", remember(tick) { Settings.canDrawOverlays(context) }, optional = true) {
-                context.go(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:${context.packageName}")))
-            }
-            Step(Icons.Default.LightMode, "Styre lysstyrken", "Demper hele stereoen om natten. Også tastelyd og 24-timers klokke.", remember(tick) { Settings.System.canWrite(context) }, optional = true) {
-                context.go(Intent(Settings.ACTION_MANAGE_WRITE_SETTINGS, Uri.parse("package:${context.packageName}")))
-            }
-            Step(Icons.Default.Backup, "Hente gamle innstillinger", "Har du lagret innstillingene før, hent dem under Innstillinger → Sikkerhetskopi.", Prefs.bool("setup_restored"), optional = true) {
-                Prefs.set("setup_restored", true); Prefs.set("settings_cat", "BACKUP"); Nav.screen = Screen.SETTINGS
+            for (step in steps) when (step) {
+                SetupStep.LOCATION -> {
+                    val fine = remember(tick) { context.hasPermission(Manifest.permission.ACCESS_FINE_LOCATION) }
+                    val coarseOnly = !fine && context.hasPermission(Manifest.permission.ACCESS_COARSE_LOCATION)
+                    Step(Icons.Default.LocationOn, "Posisjon",
+                        if (coarseOnly) "Bare «omtrentlig» er tillatt – velg «Nøyaktig» for fart, fartsgrense og turmåler." else "Fart, kart, fartsgrense, nattmodus og turmåler.", fine) {
+                        // Android 12+ krever at nøyaktig og omtrentlig spørres om sammen (ellers skjer ingenting).
+                        // Android 13+: også lov til å vise det stille varselet «T'OS bruker posisjon».
+                        val ask = mutableListOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION)
+                        if (Build.VERSION.SDK_INT >= 33) ask += Manifest.permission.POST_NOTIFICATIONS
+                        askPerms.launch(ask.toTypedArray())
+                    }
+                }
+                SetupStep.HOME -> Step(Icons.Default.Home, "T'OS som startskjerm", "Hjem-knappen og MENU åpner T'OS.", isHome) {
+                    context.go(Intent(Settings.ACTION_HOME_SETTINGS)) || context.go(Intent(Settings.ACTION_MANAGE_DEFAULT_APPS_SETTINGS))
+                }
+                SetupStep.KEYS -> Step(Icons.Default.Tune, "Knappestyring",
+                    "Knappene på stereoen og rattet, volumlinja og nedtrekksmenyen i T'OS-stil. Slå på «T'OS knapper»." +
+                        if (Build.VERSION.SDK_INT >= 33) " Er valget grått: Apper → T'OS → ⋮ → «Tillat begrensede innstillinger»." else "",
+                    remember(tick) { Buttons.serviceEnabled(context) }) {
+                    context.go(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+                }
+                SetupStep.NOTES -> Step(Icons.Default.MusicNote, "Varseltilgang", "Sangtittel og cover, varsler i nedtrekksmenyen, neste sving fra kartet og hvem som ringer.",
+                    remember(tick) { MediaListener.enabled(context) }) { openNotificationAccess(context) }
+                SetupStep.BT -> Step(Icons.Default.Bluetooth, "Bluetooth", "Se tilkoblet telefon, pare enheter, batterispenning fra OBD-brikke.", remember(tick) { btPerms.all { context.hasPermission(it) } }) {
+                    askPerms.launch(btPerms)
+                }
+                SetupStep.DIALER -> Step(Icons.Default.Phone, "T'OS som telefon-app",
+                    "Samtaler vises i T'OS i stedet for stereoens egen telefonskjerm. Ring, kontakter og siste anrop inne i T'OS.",
+                    dialerDone, optional = true) {
+                    val missing = Phone.missingPermissions(context)
+                    if (!Phone.isDialer(context)) Phone.dialerRoleIntent(context)?.let { dialerRole.launch(it) }
+                    else if (missing.isNotEmpty()) askPerms.launch(missing.toTypedArray())
+                }
+                SetupStep.UPDATES -> Step(Icons.Default.SystemUpdate, "Installere oppdateringer", "Oppdateringsknappen i T'OS. Første oppdatering ber om ett «Installer»-trykk, senere går det av seg selv.",
+                    remember(tick) { Updater.canInstall(context) }, optional = true) { Updater.openInstallPermission(context) }
+                SetupStep.USAGE -> Step(Icons.Default.History, "Tilgang til appbruk", "Full liste i «Siste apper». Uten dette viser T'OS bare apper den selv har sett.",
+                    remember(tick) { RecentApps.hasUsageAccess(context) }, optional = !fyt) { RecentApps.openUsageAccess(context) }
+                SetupStep.STEER -> Step(Icons.Default.TouchApp, "Lær rattknappene",
+                    "Rattknappene må læres i stereoen én gang: trykk en flis, hold inne knappen på rattet, og lagre.",
+                    FytSteer.learned.values.any { SteerAdc.isLearnedValue(it) }, verb = "Åpne") { Nav.screen = Screen.STEER }
+                SetupStep.BAR -> Step(Icons.Default.VisibilityOff, "Skjul stereoens statuslinje",
+                    if (barAdb) "Android lar ikke T'OS gjøre dette selv. Med PC: ${FytBars.ADB_HIDE}  (angre: ${FytBars.ADB_SHOW})"
+                    else "Linja øverst i andre apper (hjem, klokke, volum). T'OS har sin egen.",
+                    bar == 0, optional = true, verb = "Skjul") {
+                    when {
+                        FytBars.set(context, show = false) -> Prefs.set("perm_v", System.currentTimeMillis())
+                        FytBars.hideButtonInstalled(context) && FytBars.openHideButton(context) -> {}
+                        else -> { barAdb = true; withPc = true }
+                    }
+                }
+                SetupStep.SELFTEST -> Step(Icons.Default.TaskAlt, "Kjør selvtest",
+                    "Sjekker at T'OS får kontakt med stereoen (radio, Bluetooth, lyd, knapper) og sier hva som mangler.",
+                    Prefs.bool("setup_selftest"), verb = "Kjør") { openSelfTest() }
+                SetupStep.OVERLAY -> Step(Icons.Default.Layers, "Vis over andre apper", "Reserve for Waze-popupen hvis knappestyring er av.", remember(tick) { Settings.canDrawOverlays(context) }, optional = true) {
+                    context.go(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:${context.packageName}")))
+                }
+                SetupStep.WRITE -> Step(Icons.Default.LightMode, "Styre lysstyrken", "Demper hele stereoen om natten. Også tastelyd og 24-timers klokke.", remember(tick) { Settings.System.canWrite(context) }, optional = true) {
+                    context.go(Intent(Settings.ACTION_MANAGE_WRITE_SETTINGS, Uri.parse("package:${context.packageName}")))
+                }
+                SetupStep.RESTORE -> Step(Icons.Default.Backup, "Hente gamle innstillinger", "Har du lagret innstillingene før, hent dem under Innstillinger → Sikkerhetskopi.", Prefs.bool("setup_restored"), optional = true, verb = "Åpne") {
+                    Prefs.set("setup_restored", true); Prefs.set("settings_cat", "BACKUP"); Nav.screen = Screen.SETTINGS
+                }
             }
 
             // Alternativ: alt på én gang fra en PC, uten å se Android-menyene på stereoen

@@ -13,7 +13,7 @@ import androidx.compose.runtime.setValue
 
 /* ======================= Skjermene i T'OS ======================= */
 
-enum class Screen { DASH, APPS, BT, KEYS, MUSIC, MAP, NAV, RADIO, CAR, PHONE, SETTINGS, CLOCK, TUNING, SETUP, RECENTS, STEER }
+enum class Screen { DASH, APPS, BT, KEYS, MUSIC, MAP, NAV, RADIO, CAR, PHONE, SETTINGS, CLOCK, TUNING, SETUP, RECENTS, STEER, SELFTEST, HELP }
 
 /** Hvilken skjerm som vises. Kan settes fra knappetjenesten, derfor et globalt objekt. */
 object Nav {
@@ -212,7 +212,7 @@ object Buttons {
         // Musikk i stedet for FM-radioen: slå av radioen, så de ikke spiller oppå hverandre
         if (HwRadio.wanted) HwRadio.powerOff(c)
         // FYT: Android-appen blir lydkilden (ellers går rattknappene til stereoens egen musikkspiller, som MUSIC-knappen valgte)
-        runCatching { Steer.claimSource(musicTarget(c)) }
+        runCatching { Steer.claimSource(musicTarget(c), explicit = true) }
         val pkg = Prefs.str("music_pkg")
         if (pkg.isNotBlank() && AppRepository.isInstalled(c, pkg)) AppRepository.launch(c, pkg)
         else AppRepository.launchTile(c, Tiles.byPrefix("Mus"))
