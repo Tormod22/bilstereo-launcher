@@ -354,7 +354,7 @@ object Media {
     }
 
     /** Neste/forrige på FM-radioen når den styres via MCU (uten mediaøkt). */
-    private fun fmWithoutSession() = HwRadio.wanted && (HwRadio.mcuActive || HwRadio.fyt) && NowPlaying.pkg != HwRadio.enginePkg
+    private fun fmWithoutSession() = (HwRadio.wanted && (HwRadio.mcuActive || HwRadio.fyt) && NowPlaying.pkg != HwRadio.enginePkg) || FytRadio.onAir
 
     private fun key(context: Context, code: Int) {
         val am = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
@@ -364,6 +364,8 @@ object Media {
 
     fun playPause(c: Context) {
         if (NetRadio.active) { NetRadio.toggle(c); return }
+        // FYT-radioen er lydkilden: spill/pause = lyd av/på (musikkortet viser radioen)
+        if (FytRadio.onAir) { FytRadio.toggleMute(); return }
         val t = NowPlaying.controller?.transportControls
         if (t == null && fytBtMusic()) { Fyt.btavPlayPause(); return }
         if (t != null) { if (NowPlaying.playing) t.pause() else t.play() } else key(c, KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE)
@@ -376,13 +378,13 @@ object Media {
     }
     fun next(c: Context) {
         if (NetRadio.active) { NetRadio.step(c, 1); return }
-        if (fmWithoutSession()) { HwRadio.seekUp(); return }
+        if (fmWithoutSession()) { if (FytRadio.active) FytRadio.next(up = true) else HwRadio.seekUp(); return }
         if (NowPlaying.controller == null && fytBtMusic()) { Fyt.btavNext(); return }
         NowPlaying.controller?.transportControls?.skipToNext() ?: key(c, KeyEvent.KEYCODE_MEDIA_NEXT)
     }
     fun previous(c: Context) {
         if (NetRadio.active) { NetRadio.step(c, -1); return }
-        if (fmWithoutSession()) { HwRadio.seekDown(); return }
+        if (fmWithoutSession()) { if (FytRadio.active) FytRadio.next(up = false) else HwRadio.seekDown(); return }
         if (NowPlaying.controller == null && fytBtMusic()) { Fyt.btavPrev(); return }
         NowPlaying.controller?.transportControls?.skipToPrevious() ?: key(c, KeyEvent.KEYCODE_MEDIA_PREVIOUS)
     }

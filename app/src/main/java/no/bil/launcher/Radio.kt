@@ -391,6 +391,7 @@ object HwRadio {
     fun powerOff(c: Context, keep: String? = null) {
         val a = c.applicationContext
         handler.removeCallbacksAndMessages(null)
+        runCatching { FytRadio.onRadioOff() }   // søk/innstilling stopper, lyden på igjen hvis T'OS skrudde den av
         val viaFyt = fyt && enginePkg == null
         val pkg = enginePkg ?: radioPackage(a)
         wanted = false
@@ -410,6 +411,7 @@ object HwRadio {
         if (!wanted) return
         val a = c.applicationContext
         handler.removeCallbacksAndMessages(null)
+        runCatching { FytRadio.onRadioOff() }   // søk/innstilling stopper, lyden på igjen hvis T'OS skrudde den av
         val viaFyt = fyt && enginePkg == null
         val pkg = enginePkg ?: radioPackage(a)
         wanted = false

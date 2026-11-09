@@ -70,8 +70,8 @@ object Fyt {
     private val subscribe = mapOf(
         // + rattknappene: u=37 spillerkommando, 42 stemmekommando, 60 retningsknapp, 133 knapp (SteerLogic)
         M_MAIN to (0..20).toList() + SteerLogic.MAIN_EVENT_CODES,
-        // Radio: bånd, frekvens, kanal, PTY, RDS-tekst, stasjonsnavn, RDS av/på, frekvensområde, stereo, søk, PS-tekst
-        M_RADIO to listOf(0, 1, 2, 3, 5, 13, 14, 15, 16, 21, 22, 26),
+        // Radio: alle kodene i FinalRadio (0–26: bånd, frekvens, område, kanaler, RDS, stereo, søk, PS …) – se FytRadio
+        M_RADIO to (0..26).toList(),
         // BT: ID3 tittel/artist, telefonens navn/nummer/tilstand, ringe-/taletid, BT-musikk spiller, HFP, PBAP
         M_BT to listOf(0, 1, 6, 7, 8, 9, 11, 12, 13, 18, 29, 31),
         // Lyd: volum, demping, modul
@@ -235,6 +235,7 @@ object Fyt {
         val steer = if (initial) null else SteerLogic.fromFyt(m, u, ints)
         main.post {
             apply(m, u, ints, strs)
+            if (m == M_RADIO) runCatching { FytRadio.onUpdate(u, ints, strs) }
             if (steer != null) runCatching { Steer.onFyt(steer) }
         }
     }
@@ -375,6 +376,9 @@ object Fyt {
      * spilte i kartleggingen). Da sender ikke stereoen rattknappene til sin egen musikkspiller lenger. Se Steer.claimSource.
      */
     fun androidSource(): Boolean = cmd(M_MAIN, 0, intArrayOf(10))
+
+    /** Rå kommando til en modul (FytRadio: lyd av/på, RDS-brytere). */
+    internal fun moduleCmd(m: Int, code: Int, ints: IntArray? = null): Boolean = cmd(m, code, ints)
 
     /** Rattmodulen (10): læring av rattknappene i stereoen (se FytSteer). Tom liste sendes som tom (ikke null), som cabin. */
     fun steerCmd(code: Int, ints: IntArray): Boolean = cmd(M_STEER, code, ints)
