@@ -21,7 +21,10 @@ class TosApp : Application() {
         Prefs.init(this)
         CrashLog.install(this)
         SafeMode.check(this)
+        // Vakthunder for FYT: lysstyrke som er (nesten) svart rettes før noe annet skjer (FytMain.kt)
+        runCatching { FytMain.sanitizeOnStart() }
         Hub.start(this)
+        runCatching { FytSafety.noticeOnStart() }
     }
 }
 
@@ -56,6 +59,8 @@ object Prefs {
             }
         }.apply()
         bump()
+        // Hovedbryteren for FYT: koble til/fra med en gang, og sett bryterne tilbake (FytSafety)
+        if (k == FytSafetyLogic.MASTER && v is Boolean) runCatching { FytSafety.onMaster(v) }
     }
 
     private val main by lazy { android.os.Handler(android.os.Looper.getMainLooper()) }
@@ -190,10 +195,12 @@ object CrashLog {
     fun install(c: Context) {
         val prev = Thread.getDefaultUncaughtExceptionHandler()
         Thread.setDefaultUncaughtExceptionHandler { t, e ->
-            // Telleren for sikker modus først – den må lagres selv om loggfila ikke kan skrives
-            runCatching { SafeMode.recordCrash(c) }
+            val sw = StringWriter()
+            runCatching { e.printStackTrace(PrintWriter(sw)) }
+            // Telleren for sikker modus først – den må lagres selv om loggfila ikke kan skrives.
+            // Er det FYT-koden som krasjet, telles det også for seg (FytSafety slår da av FYT-funksjonene).
+            runCatching { SafeMode.recordCrash(c, fyt = FytSafetyLogic.isFytCrash(sw.toString())) }
             runCatching {
-                val sw = StringWriter(); e.printStackTrace(PrintWriter(sw))
                 val old = file(c).takeIf { it.exists() }?.readText().orEmpty()
                 file(c).writeText(crashLogAppend(old, "${Date()}\n${t.name}\n$sw"))
             }
@@ -239,11 +246,14 @@ object SafeMode {
     var on by androidx.compose.runtime.mutableStateOf(false)
         private set
 
-    fun recordCrash(c: Context) {
+    @android.annotation.SuppressLint("ApplySharedPref")     // med vilje: prosessen dør rett etter
+    fun recordCrash(c: Context, fyt: Boolean = false) {
         val now = System.currentTimeMillis()
         val times = (sp(c).getString("t", "") ?: "").split(",").mapNotNull { it.toLongOrNull() }.filter { recentCrash(now, it) } + now
+        val old = FytSafetyLogic.parseTimes(sp(c).getString("ft", "")).filter { recentCrash(now, it) }
+        val ft = if (fyt) old + now else old
         // commit (ikke apply): prosessen dør rett etter
-        sp(c).edit().putString("t", times.joinToString(",")).commit()
+        sp(c).edit().putString("t", times.joinToString(",")).putString("ft", ft.joinToString(",")).commit()
     }
 
     fun check(c: Context) {
@@ -251,8 +261,14 @@ object SafeMode {
         val recent = (sp(c).getString("t", "") ?: "").split(",").mapNotNull { it.toLongOrNull() }.count { recentCrash(now, it) }
         on = sp(c).getBoolean("on", false) || recent >= 3
         if (on) sp(c).edit().putBoolean("on", true).apply()
+        // FYT-koden krasjet 2 ganger på 3 min: slå av stereo-funksjonene før noe kobler til stereoen (FytSafety)
+        val ft = FytSafetyLogic.parseTimes(sp(c).getString("ft", ""))
+        if (FytSafetyLogic.shouldTrip(ft, now)) {
+            runCatching { FytSafety.trip("${ft.size} krasj i FYT-koden") }
+            sp(c).edit().remove("ft").apply()
+        }
         // Har T'OS gått 2 minutter uten krasj, er løkka brutt
-        android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({ sp(c).edit().remove("t").apply() }, 120_000)
+        android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({ sp(c).edit().remove("t").remove("ft").apply() }, 120_000)
     }
 
     fun turnOff(c: Context) { sp(c).edit().putBoolean("on", false).remove("t").apply(); on = false }

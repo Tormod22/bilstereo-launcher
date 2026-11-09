@@ -185,7 +185,7 @@ class KeyService : AccessibilityService() {
         if (FytMain.stayOut) return false
         val code = event.keyCode
         // «Siste rattknapp» på Knapper-siden: neste/forrige/svar … (volum er panelknappen her og vises ikke)
-        if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0 && !isVolume(code)) Steer.noteKey(code)
+        if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0 && !isVolume(code)) runCatching { Steer.noteKey(code) }
         // T'OS-panelet over en annen app: BACK lukker det
         if (code == KeyEvent.KEYCODE_BACK && ShadePanel.shown) {
             if (event.action == KeyEvent.ACTION_UP) ShadePanel.hide()
@@ -375,8 +375,9 @@ class KeyService : AccessibilityService() {
         if (FytMain.stayOut) return
         val type = event.eventType
         if (type == AccessibilityEvent.TYPE_NOTIFICATION_STATE_CHANGED) lastNoteAt = SystemClock.elapsedRealtime()
-        if (type == AccessibilityEvent.TYPE_WINDOWS_CHANGED && FytVolume.watching) checkFytPopup()
-        if (type == AccessibilityEvent.TYPE_WINDOWS_CHANGED && FytCanOverlay.watching) checkCanPopup()
+        // FYT-delene er nye og ikke prøvd på stereoen: en feil der skal ikke ta ned knappestyringen (og T'OS)
+        if (type == AccessibilityEvent.TYPE_WINDOWS_CHANGED && FytVolume.watching) runCatching { checkFytPopup() }
+        if (type == AccessibilityEvent.TYPE_WINDOWS_CHANGED && FytCanOverlay.watching) runCatching { checkCanPopup() }
         if (type == AccessibilityEvent.TYPE_WINDOWS_CHANGED || type == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) noteShade(event)
         if (type != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) return
         val pkg = event.packageName?.toString() ?: return
@@ -384,11 +385,11 @@ class KeyService : AccessibilityService() {
         // FYT sitt volumvindu (com.syu.ms, «Popup Window» med tallet): T'OS-linja over det. Det er ikke en app som kom fram.
         if (FytVolumeLogic.isPopupEvent(pkg, cls)) {
             val texts = runCatching { event.text.mapNotNull { it?.toString() } }.getOrDefault(emptyList())
-            FytVolume.onPopupEvent(this, texts)
+            runCatching { FytVolume.onPopupEvent(this, texts) }
             return
         }
         // FYT sine canbus-vinduer (klima/dører/radar fra com.syu.canbus) er heller ikke en app som kom fram
-        if (FytCanLogic.isPopupEvent(pkg, cls)) { FytCanOverlay.onPopupEvent(); return }
+        if (FytCanLogic.isPopupEvent(pkg, cls)) { runCatching { FytCanOverlay.onPopupEvent() }; return }
         // Androids fanevisning (nylige apper, «No recent items») kom fram: vis T'OS sin «Siste apper» i stedet.
         // Sjekkes før systemvinduene under, fordi den på eldre Android ligger i SystemUI. Av: fanelista er bare innom.
         if (pkg != packageName && Prefs.bool("tos_recents", true) && isStockRecentsEvent(pkg, cls, event)) {
@@ -435,7 +436,7 @@ class KeyService : AccessibilityService() {
         if (state.owned) { rememberLastApp(pkg); return }
 
         // FYT: stereoens BT-app viser sitt eget samtalebilde – T'OS sin samtaleskjerm i stedet (FytPhone.kt)
-        if (FytPhone.shouldCover(pkg)) { Phone.openCallScreen(this); return }
+        if (runCatching { FytPhone.shouldCover(pkg) }.getOrDefault(false)) { Phone.openCallScreen(this); return }
 
         val now = SystemClock.elapsedRealtime()
         val key = Buttons.keyForPkg(this, pkg)
@@ -490,10 +491,13 @@ class KeyService : AccessibilityService() {
         // FM-radio: stereoen har allerede startet radio-appen – behold radioen, vis T'OS sin radio-side.
         // FYT: RADIO-knappen har allerede gjort radioen til lydkilden – vis den i T'OS (via FYT-tjenesten), også for «Radio-side»
         if (action == Action.RADIO || (key == PanelKey.RADIO && action == Action.RADIO_PAGE && HwRadio.fyt)) {
-            lastRedirect = now; HwRadio.adopt(this, pkg); return
+            // Samme tak som de andre omdirigeringene: radio-appen og T'OS skal ikke sende hverandre i ring
+            if (redirects.allow(now)) { lastRedirect = now; HwRadio.adopt(this, pkg) }
+            return
         }
         // FYT sin BT-app viser også samtalebildet: vent litt, så FYT rekker å si fra om en samtale før T'OS bytter bort
         if (pkg == FytKeys.BT && Fyt.btReady) {
+            if (!redirects.allow(now)) return
             lastRedirect = now
             handler.postDelayed({ if (front.current == pkg && !Buttons.inCall(this)) redirect(pkg, key, action) }, 400)
             return

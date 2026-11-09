@@ -6,6 +6,7 @@ import android.content.Intent
 import android.content.ServiceConnection
 import android.os.Binder
 import android.os.Handler
+import android.os.HandlerThread
 import android.os.IBinder
 import android.os.Looper
 import android.os.Parcel
@@ -15,9 +16,6 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import java.util.Locale
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
 import java.util.concurrent.ConcurrentHashMap
 
 /* ======================= FYT-stereoen (com.syu.ms «MainServer») ======================= */
@@ -83,22 +81,44 @@ object Fyt {
     )
 
     private val main = Handler(Looper.getMainLooper())
+    /**
+     * Egen bakgrunnstråd for ALT som snakker med com.syu.ms (oppkobling, registrering, kommandoer). Binder-kall kan
+     * henge hvis com.syu.ms er opptatt – på hovedtråden ville det gitt «T'OS svarer ikke» (ANR). Én tråd: kommandoene
+     * kommer fram i samme rekkefølge som de ble sendt.
+     */
+    private val io: Handler by lazy { Handler(HandlerThread("T'OS FYT").apply { isDaemon = true; start() }.looper) }
     @Volatile private var bound = false
     @Volatile private var toolkit: IBinder? = null
     private val modules = ConcurrentHashMap<Int, IBinder>()
     private val callbacks = ConcurrentHashMap<Int, Binder>()
-    private var tries = 0
+    /** Nye forsøk på å koble til (nullstilles når det virker). Ventetiden øker: 5 s, 10 s, 20 s … høyst 5 min. */
+    @Volatile private var tries = 0
+    /** Når tilkoblingene skjedde (for å se om com.syu.ms starter på nytt hele tiden – da venter T'OS lenger). */
+    private val connectTimes = ArrayDeque<Long>()
+    /** Feil i behandlingen av meldinger fra stereoen (fanget – krasjer aldri T'OS). Til kartleggingen. */
+    @Volatile var handlerErrors = 0
+        private set
+    private val errorLines = ArrayDeque<String>()
     /** Når tilbakemeldingene ble registrert: det som kommer de første sekundene er nåverdier, ikke trykk. */
     @Volatile private var setupAt = 0L
+    /** Koblet til bare for å skru på lyden T'OS skrudde av (FYT er ellers av) – se [start]. */
+    @Volatile private var unmuteOnly = false
     private val canbusNoteAt = HashMap<Int, Long>()
     private var canbusLogLines = 0
     /** Appens Context (satt i [start]) – til rattknappene, som kommer fra FYT-tjenesten uten en skjerm. */
     @Volatile var appContext: Context? = null
         private set
 
-    /** Koblet til FYT-tjenesten (com.syu.ms). */
-    var connected by mutableStateOf(false)
-        private set
+    /** Hovedbryteren «Stereo-funksjoner (FYT)» (Prefs «fyt_all», på som standard). Av = T'OS lar stereoen helt i fred. */
+    val enabled: Boolean get() = FytSafetyLogic.masterOn { Prefs.bool(FytSafetyLogic.MASTER, true) }
+
+    /** Selve koblingen til com.syu.ms (uavhengig av hovedbryteren). */
+    private var link by mutableStateOf(false)
+    /**
+     * Koblet til FYT-tjenesten (com.syu.ms) OG hovedbryteren er på. Alt FYT-arbeid i T'OS spør om dette (radio, BT,
+     * telefon, lysstyrke, volum, canbus …) – med bryteren av oppfører T'OS seg som på en stereo uten FYT.
+     */
+    val connected: Boolean get() = link && enabled
     /** Til kartleggingen: hva som skjedde med tilkoblingen. */
     @Volatile var status = "ikke prøvd"
         private set
@@ -146,7 +166,21 @@ object Fyt {
     fun start(c: Context) {
         val a = c.applicationContext
         appContext = a
-        if (bound || connected) return
+        if (!enabled) {
+            status = "slått av (Stereo-funksjoner (FYT) er av i Innstillinger)"
+            // Unntak: T'OS skrudde av lyden (radio-pause) og ble så slått av / krasjet – koble til bare for å skru den på
+            if (!bound && FytRadio.tosMuted && present(a)) {
+                unmuteOnly = true
+                bound = runCatching { a.bindService(Intent(ACTION).setPackage(PKG), conn, Context.BIND_AUTO_CREATE) }.getOrDefault(false)
+                if (bound) status += " – kobler til et øyeblikk for å skru på lyden"
+            }
+            return
+        }
+        val wasUnmuteOnly = unmuteOnly
+        unmuteOnly = false
+        // Koblet til bare for å skru på lyden, og nå slått på igjen: sett opp alt på den samme tilkoblingen
+        if (wasUnmuteOnly && bound) { toolkit?.let { tk -> io.post { runCatching { setup(tk) } } }; return }
+        if (bound || link) return
         if (!present(a)) { status = "com.syu.ms finnes ikke (ikke FYT-stereo)"; return }
         startedAt = SystemClock.elapsedRealtime()
         val i = Intent(ACTION).setPackage(PKG)
@@ -158,26 +192,103 @@ object Fyt {
         }
     }
 
+    private val retry = Runnable { appContext?.let { start(it) } }
+
     private fun retryLater(a: Context) {
-        if (tries++ >= 5) return
-        main.postDelayed({ start(a) }, 5000L * tries)
+        appContext = a
+        val wait = FytSafetyLogic.retryDelay(tries) ?: run { status += " – gir opp til neste omstart"; return }
+        tries++
+        main.removeCallbacks(retry)
+        main.postDelayed(retry, wait)
+    }
+
+    /** Slipp tilkoblingen helt (hovedbryteren slått av, eller den døde) – stereoen fortsetter som om T'OS ikke fantes. */
+    fun stop(reason: String = "slått av") {
+        main.removeCallbacks(retry)
+        val a = appContext
+        if (bound && a != null) runCatching { a.unbindService(conn) }
+        bound = false
+        dropLink()
+        status = reason
+    }
+
+    /** Tilkoblingen er borte: glem modulene og det stereoen sa sist (ingenting skal henge igjen – f.eks. «rygger»). */
+    private fun dropLink() {
+        toolkit = null; modules.clear()
+        main.post {
+            link = false
+            phoneState = -1
+            runCatching { FytPhone.onLinkLost() }
+            runCatching { FytMain.onDisconnected() }
+            runCatching { FytVolume.hide() }
+            runCatching { FytCanOverlay.hide() }
+        }
+    }
+
+    /** Tilkoblingen døde for godt (onBindingDied): koble fra og prøv igjen litt senere. */
+    private fun rebindLater(why: String) {
+        val a = appContext ?: return
+        if (bound) runCatching { a.unbindService(conn) }
+        bound = false
+        dropLink()
+        status = why
+        if (enabled) retryLater(a)
+    }
+
+    private val death = IBinder.DeathRecipient {
+        // com.syu.ms døde. Android kobler vanligvis til igjen av seg selv (onServiceConnected); skjer ikke det innen
+        // 15 s, kobler T'OS fra og prøver på nytt.
+        dropLink()
+        status = "com.syu.ms stoppet – venter på at den starter igjen"
+        main.postDelayed({ if (enabled && !link && toolkit == null) rebindLater("com.syu.ms kom ikke tilbake – prøver på nytt") }, 15_000)
     }
 
     private val conn = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
+            val now = SystemClock.elapsedRealtime()
+            val storm = synchronized(connectTimes) {
+                connectTimes.addLast(now)
+                while (connectTimes.isNotEmpty() && now - connectTimes.first() > FytSafetyLogic.STORM_WINDOW_MS) connectTimes.removeFirst()
+                FytSafetyLogic.isStorm(connectTimes.size)
+            }
+            if (storm) {
+                // com.syu.ms starter på nytt hele tiden: ikke sett opp alt hver gang (ville gjort det enda verre) – vent
+                synchronized(connectTimes) { connectTimes.clear() }
+                main.post { rebindLater("com.syu.ms startet på nytt mange ganger – T'OS venter litt") }
+                return
+            }
             toolkit = service
-            Hub.scope.launchIo { setup(service) }
+            runCatching { service?.linkToDeath(death, 0) }
+            io.post { runCatching { setup(service) } }
         }
 
         override fun onServiceDisconnected(name: ComponentName?) {
-            toolkit = null; modules.clear()
-            main.post { connected = false }
+            dropLink()
             status = "frakoblet (com.syu.ms startet på nytt?) – kobler til igjen av seg selv"
+        }
+
+        override fun onBindingDied(name: ComponentName?) {
+            main.post { rebindLater("tilkoblingen døde – prøver på nytt") }
+        }
+
+        override fun onNullBinding(name: ComponentName?) {
+            status = "com.syu.ms ga ingen tjeneste (null) – T'OS lar stereoen være"
         }
     }
 
     private fun setup(tk: IBinder?) {
         if (tk == null) { status = "tom Binder fra com.syu.ms"; return }
+        if (!enabled) {
+            if (unmuteOnly) {
+                getRemoteModule(tk, M_SOUND)?.let { modules[M_SOUND] = it }
+                main.post {
+                    runCatching { FytRadio.releaseTosMute(force = true) }
+                    // Kommandoen sendes på FYT-tråden – koble fra etter den
+                    io.post { main.post { if (!enabled) stop("slått av (lyden er skrudd på igjen)") } }
+                }
+            }
+            return
+        }
         val found = ArrayList<Int>()
         for (m in 0..17) {
             val b = getRemoteModule(tk, m) ?: continue
@@ -191,21 +302,42 @@ object Fyt {
             val cb = callbacks.getOrPut(m) { callback(m) }
             codes.forEach { register(b, cb, it) }
         }
-        main.post { connected = found.isNotEmpty() }
+        if (found.isNotEmpty()) tries = 0
+        main.post {
+            // Slått av (eller koblet fra) mens oppsettet pågikk: ikke si «tilkoblet»
+            link = found.isNotEmpty() && bound && enabled
+            if (link) guard("oppstart") { FytMain.onConnected() }
+        }
+    }
+
+    /**
+     * Kjør en behandler av en melding fra stereoen. En feil her (ukjent format, uventet tall) skal ALDRI krasje T'OS
+     * – T'OS er startskjermen, og en krasj-løkke ville gjort stereoen ubrukelig. Feilen noteres til kartleggingen.
+     */
+    internal inline fun guard(where: String, block: () -> Unit) {
+        try { block() } catch (t: Throwable) { noteError(where, t) }
+    }
+
+    @PublishedApi internal fun noteError(where: String, t: Throwable) {
+        handlerErrors++
+        val line = "FEIL i $where: ${t.javaClass.simpleName}: ${t.message.orEmpty().take(120)} @ " +
+            t.stackTrace.take(3).joinToString(" < ") { "${it.className.substringAfterLast('.')}.${it.methodName}:${it.lineNumber}" }
+        synchronized(errorLines) { errorLines.addLast(line); while (errorLines.size > 20) errorLines.removeFirst() }
+        runCatching { SurveyRecorder.note("FYT  $line") }
     }
 
     private fun callback(module: Int) = object : Binder() {
         init { attachInterface(null, CALLBACK) }
         override fun onTransact(code: Int, data: Parcel, reply: Parcel?, flags: Int): Boolean {
             if (code != FIRST_CALL_TRANSACTION) return super.onTransact(code, data, reply, flags)
-            runCatching {
+            try {
                 data.enforceInterface(CALLBACK)
                 val u = data.readInt()
                 val ints = data.createIntArray()
                 val flts = data.createFloatArray()
                 val strs = data.createStringArray()
-                onUpdate(module, u, ints, flts, strs)
-            }
+                if (enabled) onUpdate(module, u, ints, flts, strs)
+            } catch (t: Throwable) { noteError("melding fra ${FytLogic.moduleName(module)}", t) }
             return true
         }
     }
@@ -237,10 +369,11 @@ object Fyt {
         if (canbusDue) SurveyRecorder.note("FYT  $line")
         val steer = if (initial) null else SteerLogic.fromFyt(m, u, ints)
         main.post {
-            apply(m, u, ints, strs)
-            if (m == M_RADIO) runCatching { FytRadio.onUpdate(u, ints, strs) }
-            if (steer != null && !FytMain.stayOut) runCatching { Steer.onFyt(steer) }   // ikke mens bilen rygger
-            if (m == M_CANBUS) runCatching { FytCan.onUpdate(u, ints) }      // dører/klima (FytCan.kt)
+            if (!enabled) return@post
+            guard("${FytLogic.moduleName(m)} u=$u") { apply(m, u, ints, strs) }
+            if (m == M_RADIO) guard("radio u=$u") { FytRadio.onUpdate(u, ints, strs) }
+            if (steer != null && !FytMain.stayOut) guard("ratt") { Steer.onFyt(steer) }   // ikke mens bilen rygger
+            if (m == M_CANBUS) guard("canbus u=$u") { FytCan.onUpdate(u, ints) }      // dører/klima (FytCan.kt)
         }
     }
 
@@ -299,19 +432,28 @@ object Fyt {
 
     /* ---------- Kommandoer ---------- */
 
-    private fun cmd(m: Int, code: Int, ints: IntArray? = null, strs: Array<String?>? = null): Boolean {
+    /**
+     * Send en kommando. Sendes på FYT-tråden (aldri på hovedtråden – se [io]), enveis (oneway: venter ikke på svar).
+     * true = modulen finnes og kommandoen er sendt av gårde (ikke at stereoen gjorde det – det sier tilbakemeldingene).
+     */
+    private fun cmd(m: Int, code: Int, ints: IntArray? = null, strs: Array<String?>? = null, force: Boolean = false): Boolean {
+        if (!enabled && !force) return false
         val b = modules[m] ?: return false
-        val data = Parcel.obtain()
-        return try {
-            data.writeInterfaceToken(MODULE)
-            data.writeInt(code)
-            data.writeIntArray(ints)
-            data.writeFloatArray(null)
-            data.writeStringArray(strs)
-            b.transact(IBinder.FIRST_CALL_TRANSACTION, data, null, IBinder.FLAG_ONEWAY)
-            SurveyRecorder.note("FYT  T'OS sendte ${FytLogic.moduleName(m)}.cmd($code, ${ints?.toList()}, ${strs?.toList()})")
-            true
-        } catch (t: Throwable) { false } finally { data.recycle() }
+        val i = ints?.copyOf(); val s = strs?.copyOf()
+        io.post {
+            val data = Parcel.obtain()
+            try {
+                data.writeInterfaceToken(MODULE)
+                data.writeInt(code)
+                data.writeIntArray(i)
+                data.writeFloatArray(null)
+                data.writeStringArray(s)
+                b.transact(IBinder.FIRST_CALL_TRANSACTION, data, null, IBinder.FLAG_ONEWAY)
+                SurveyRecorder.note("FYT  T'OS sendte ${FytLogic.moduleName(m)}.cmd($code, ${i?.toList()}, ${s?.toList()})")
+            } catch (_: Throwable) {
+            } finally { data.recycle() }
+        }
+        return true
     }
 
     private fun getRemoteModule(tk: IBinder, m: Int): IBinder? {
@@ -339,6 +481,8 @@ object Fyt {
 
     /** get(kode) på en modul (bare til kartleggingen – FYT svarer ofte bare via tilbakemeldingene). */
     private fun get(m: Int, code: Int): String? {
+        // Toveis kall (venter på svar): aldri på hovedtråden
+        if (Looper.myLooper() == Looper.getMainLooper()) return "hoppet over (hovedtråden)"
         val b = modules[m] ?: return null
         val data = Parcel.obtain(); val reply = Parcel.obtain()
         return try {
@@ -386,7 +530,7 @@ object Fyt {
     fun androidSource(): Boolean = cmd(M_MAIN, 0, intArrayOf(10))
 
     /** Rå kommando til en modul (FytRadio: lyd av/på, RDS-brytere). */
-    internal fun moduleCmd(m: Int, code: Int, ints: IntArray? = null): Boolean = cmd(m, code, ints)
+    internal fun moduleCmd(m: Int, code: Int, ints: IntArray? = null, force: Boolean = false): Boolean = cmd(m, code, ints, force = force)
     /** Lydmodulen (4): volum og lydbildet (se FytSound). */
     fun soundCmd(code: Int, ints: IntArray): Boolean = cmd(M_SOUND, code, ints)
 
@@ -403,6 +547,9 @@ object Fyt {
     fun report(c: Context): String = buildString {
         appendLine("FYT-stereo (com.syu.ms finnes): ${present(c)}")
         appendLine("Tilkobling: $status")
+        appendLine("Stereo-funksjoner (FYT) i T'OS: ${if (enabled) "på" else "AV"}  ${FytSafety.summary()}")
+        appendLine("Feil fanget i meldingene fra stereoen: $handlerErrors")
+        synchronized(errorLines) { errorLines.toList() }.forEach { appendLine("  $it") }
         if (connected) {
             appendLine("Kilde (app-id): $appId = ${FytLogic.sourceName(appId)}")
             appendLine("Radio: bånd=$radioBandRaw frekvens=$radioFreqRaw → ${FytLogic.freqLabel(radioBandRaw, radioFreqRaw)}  PS=«${radioPs.orEmpty()}»  RT=«${radioText.orEmpty()}»  stereo=$radioStereo")
@@ -421,11 +568,6 @@ object Fyt {
         appendLine("Meldinger fra stereoen (${lines.size}, nyeste nederst):")
         lines.takeLast(450).forEach { appendLine("  $it") }
     }
-}
-
-/** Kjør på IO uten å vente (liten hjelper, så Fyt ikke trenger egne coroutine-importer overalt). */
-private fun CoroutineScope.launchIo(block: () -> Unit) {
-    launch(Dispatchers.IO) { runCatching { block() } }
 }
 
 /** Ren logikk for FYT-meldingene. Testes i FytLogicTest. */

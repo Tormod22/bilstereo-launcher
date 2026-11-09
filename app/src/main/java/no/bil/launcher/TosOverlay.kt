@@ -146,11 +146,15 @@ internal object TosOverlay {
     private var notice: Slot? = null
     private var cover: Slot? = null
     private var coverArmed = false
+    /** Når teppet kom (elapsedRealtime). Det forlenges ved nye kall, men aldri forbi [COVER_ABS_MS] totalt. */
+    private var coverAt = 0L
     private val hideVol = Runnable { vol?.remove(); vol = null }
     private val hideNotice = Runnable { notice?.remove(); notice = null }
-    private val hideCover = Runnable { cover?.remove(); cover = null; coverArmed = false }
+    private val hideCover = Runnable { cover?.remove(); cover = null; coverArmed = false; coverAt = 0L }
 
     private const val TRACK_DP = 260f
+    /** Teppet (svart skjerm) står aldri lenger enn dette, selv om det bes om igjen og igjen (f.eks. en omdirigeringsløkke). */
+    const val COVER_ABS_MS = 4_000L
     private const val TITLE_MUSIC = "Volum"
     private const val TITLE_CALL = "Samtale"
     private const val TITLE_MUTED = "Lyd av"
@@ -275,6 +279,9 @@ internal object TosOverlay {
         if (FytMain.stayOut) return
         h.post {
             h.removeCallbacks(hideCover)
+            val now = SystemClock.elapsedRealtime()
+            val wait = coverWait(now, if (cover?.ref?.get() == null) 0L else coverAt, maxMs)
+            if (wait == null) { hideCover.run(); return@post }       // har stått lenge nok: bort, og ikke et nytt nå
             if (cover?.ref?.get() == null) {
                 val (ctx, type) = host(c) ?: return@post
                 val wm = ctx.getSystemService(Context.WINDOW_SERVICE) as WindowManager
@@ -290,9 +297,10 @@ internal object TosOverlay {
                 if (!add(wm, view, lp)) return@post
                 cover = Slot(wm, view)
                 coverArmed = false
+                coverAt = now
             }
             // Fast øvre grense: et teppe som henger igjen ville gjort skjermen svart
-            h.postDelayed(hideCover, maxMs.coerceIn(200, 2500))
+            h.postDelayed(hideCover, wait)
         }
     }
 
@@ -309,6 +317,17 @@ internal object TosOverlay {
         h.removeCallbacks(hideVol); hideVol.run()
         h.removeCallbacks(hideNotice); hideNotice.run()
         if (coverArmed && cover != null) { h.removeCallbacks(hideCover); h.postDelayed(hideCover, 150) }
+    }
+
+    /**
+     * Hvor lenge teppet skal stå nå: [maxMs] (200–2500 ms), men aldri så teppet står mer enn [COVER_ABS_MS] totalt
+     * fra det kom ([shownAt], 0 = ikke framme). null = har stått lenge nok – fjern det. Testes i FytSafetyTest.
+     */
+    internal fun coverWait(now: Long, shownAt: Long, maxMs: Long): Long? {
+        val want = maxMs.coerceIn(200, 2500)
+        if (shownAt <= 0L || now < shownAt) return want
+        val left = COVER_ABS_MS - (now - shownAt)
+        return if (left <= 0) null else minOf(want, left)
     }
 
     fun hideAll() = h.post {

@@ -229,13 +229,16 @@ internal object FytCanLogic {
     const val AIR_MIN_MS = 4000L
     const val DOOR_MIN_MS = 6000L
     const val MAX_MS = 12_000L
+    /** Aldri lenger enn dette totalt, selv om meldingene fortsetter (et kort som aldri går bort er verre enn ingen). */
+    const val ABS_MAX_MS = 60_000L
     /** Så lenge etter en melding regnes et nytt canbus-vindu som klima/dør (ellers kan det være radaren – røres ikke). */
     const val RECENT_MS = 2500L
     /** Meldinger de første sekundene etter tilkobling er nåverdier, ikke endringer. */
     const val SETTLE_MS = 3000L
 
     /** Skal kortet bort? Tidligst etter [minMs] (og bare når FYT-vinduet er borte), senest etter [MAX_MS]. */
-    fun shouldHide(now: Long, lastChange: Long, popupPresent: Boolean, minMs: Long): Boolean {
+    fun shouldHide(now: Long, lastChange: Long, popupPresent: Boolean, minMs: Long, shownAt: Long = lastChange): Boolean {
+        if (now - shownAt >= ABS_MAX_MS) return true
         val since = now - lastChange
         if (since < 0) return false
         return since >= MAX_MS || (since >= minMs && !popupPresent)
@@ -254,7 +257,7 @@ object FytCan {
     val protocol get() = if (canId >= 0) FytCanLogic.CanId(canId).protocol else 0
     /** En canbus-boks er valgt i stereoen (protokoll ≠ 0) og T'OS har fått id-en. */
     val active get() = canId >= 0 && protocol != 0
-    private val enabled get() = Prefs.bool("tos_canbus", true)
+    private val enabled get() = Prefs.bool("tos_canbus", true) && Fyt.enabled
 
     fun airTemp(left: Boolean): String? = FytCanLogic.tempText(if (left) air.tempL else air.tempR, protocol, air.fahrenheit)
 
@@ -315,6 +318,7 @@ object FytCanOverlay {
     private var kind: Kind? = null
     private var slot: Pair<WindowManager, WeakReference<View>>? = null
     private var lastChange = 0L
+    private var shownAt = 0L
     private var popup: FytVolumeLogic.Box? = null
     private var popupPresent = false
 
@@ -352,18 +356,22 @@ object FytCanOverlay {
     }
 
     private fun show(c: Context, k: Kind) {
+        // Bilen rygger: ingenting over kamerabildet
+        if (FytMain.stayOut) return
         lastChange = SystemClock.elapsedRealtime()
-        if (kind != k || slot == null) { hide(); kind = k; build(c) } else refresh()
-        KeyService.instance?.checkCanPopup()
+        if (kind != k || slot == null) { hide(); kind = k; build(c); shownAt = lastChange } else refresh()
+        runCatching { KeyService.instance?.checkCanPopup() }
         h.removeCallbacks(tick); h.postDelayed(tick, 300)
     }
 
     private val tick = object : Runnable {
         override fun run() {
             if (slot == null) return
-            KeyService.instance?.checkCanPopup()
+            // En feil i vinduslista skal ikke stoppe nedtellingen (da ville kortet blitt stående for alltid)
+            runCatching { KeyService.instance?.checkCanPopup() }
             val min = if (kind == Kind.DOOR) FytCanLogic.DOOR_MIN_MS else FytCanLogic.AIR_MIN_MS
-            if (FytCanLogic.shouldHide(SystemClock.elapsedRealtime(), lastChange, popupPresent, min)) hide()
+            val now = SystemClock.elapsedRealtime()
+            if (FytMain.stayOut || runCatching { FytCanLogic.shouldHide(now, lastChange, popupPresent, min, shownAt) }.getOrDefault(true)) hide()
             else h.postDelayed(this, 300)
         }
     }

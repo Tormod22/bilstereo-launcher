@@ -305,7 +305,11 @@ object FytPhone {
     /** Brukeren trykket «Skjul» under denne samtalen: ikke hent samtaleskjermen fram igjen av seg selv. */
     @Volatile var userHid = false
         private set
-    private var lastCover = 0L
+    /**
+     * Høyst hvert 1,5 s, og høyst 4 ganger på 30 s (så 60 s pause): kjemper stereoens BT-app og T'OS sin
+     * samtaleskjerm om skjermen, skal det ikke bli en evig løkke – da får stereoens samtalebilde stå.
+     */
+    private val coverLimiter = RedirectLimiter(minGapMs = 1500, maxInWindow = 4, windowMs = 30_000, pauseMs = 60_000)
     private var pendingDial: String? = null
     private var pendingDialAt = 0L
     private val nameCache = HashMap<String, String?>()
@@ -427,6 +431,16 @@ object FytPhone {
     /** Koble til [mac] (UVERIFISERT: C_CONNECT_DEVICE med MAC-en slik FYT selv sender den). */
     fun connect(mac: String): Boolean = enabled && Fyt.btCmd(FytPhoneLogic.C_CONNECT_DEVICE, strs = arrayOf(mac.filter { it.isLetterOrDigit() }.uppercase()))
 
+    /**
+     * Tilkoblingen til stereoen er borte (Fyt.dropLink): en FYT-samtale T'OS viste kan ikke lenger følges – ta den
+     * bort, så samtaleskjermen/banneret ikke blir stående for alltid. (Kobler stereoen til igjen midt i en samtale,
+     * melder den tilstanden på nytt, og samtalen vises igjen.)
+     */
+    internal fun onLinkLost() {
+        track = null
+        if (call != null) call = null
+    }
+
     /** «Skjul» på samtaleskjermen. */
     fun onUserHide() { if (call != null) userHid = true }
 
@@ -439,10 +453,7 @@ object FytPhone {
         val c = call ?: return false
         if (c.state == CallState.ENDED || userHid || Phone.callScreenVisible) return false
         if (!runCatching { Prefs.bool("fyt_call_screen", true) }.getOrDefault(true)) return false
-        val now = SystemClock.elapsedRealtime()
-        if (now - lastCover < 1500) return false
-        lastCover = now
-        return true
+        return coverLimiter.allow(SystemClock.elapsedRealtime())
     }
 
     /** Til kartleggingen. */

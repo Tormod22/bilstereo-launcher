@@ -175,8 +175,11 @@ object FytMain {
     /** Liten logg (til kartleggingen): rygging, ACC, lys. */
     private val events = ArrayDeque<String>()
 
-    /** T'OS holder seg unna: ikke legg noe over skjermen og ikke bytt ut apper (rygging + 2 s etterpå). */
-    val stayOut: Boolean get() = FytMainLogic.stayOut(reversing, reverseAt, reverseEndAt, SystemClock.elapsedRealtime())
+    /**
+     * T'OS holder seg unna: ikke legg noe over skjermen og ikke bytt ut apper (rygging + 2 s etterpå). Utløper av seg
+     * selv etter 10 min (står «rygger» fast), og gjelder ikke når FYT-tjenesten er borte / FYT er slått av.
+     */
+    val stayOut: Boolean get() = FytMainLogic.stayOut(reversing && Fyt.connected, reverseAt, reverseEndAt, SystemClock.elapsedRealtime())
 
     /** Stereoen melder tenningen – da startes «når bilen starter» av ACC, ikke av at skjermen kom på. */
     val accKnown get() = acc != null
@@ -261,7 +264,41 @@ object FytMain {
         }
     }
 
+    /* ---------- Vakthunder (FytSafety) ---------- */
+
+    /** Ved oppstart av T'OS (TosApp): lagret lysstyrke under 5 (nesten svart skjerm) rettes til 50 – og sendes når stereoen svarer. */
+    @Volatile private var restoreBright = false
+    fun sanitizeOnStart() {
+        for (k in listOf("fyt_bright_last", "fyt_bright_day", "fyt_bright_night")) {
+            FytSafetyLogic.safeLevel(Prefs.int(k, -1))?.let { Prefs.setQuiet(k, it); restoreBright = true }
+        }
+    }
+
+    /** Fyt har koblet til com.syu.ms (hovedtråden). */
+    internal fun onConnected() {
+        if (restoreBright && brightReady) {
+            restoreBright = false
+            sendLevel(FytSafetyLogic.SAFE_LEVEL); note("lysstyrke var under ${FytMainLogic.MIN_LEVEL} – satt til ${FytSafetyLogic.SAFE_LEVEL}")
+        }
+        // Lyden ble skrudd av av T'OS (pause på radioen) og T'OS startet på nytt før den ble skrudd på igjen: skru på
+        releaseTosMute("T'OS startet")
+    }
+
+    /** Tilkoblingen til stereoen er borte: ingenting fra den gamle tilstanden skal holde T'OS passiv. */
+    internal fun onDisconnected() {
+        if (reversing) { reversing = false; reverseEndAt = 0L; note("rygging glemt (stereoen frakoblet)") }
+        h.removeCallbacks(sendPending); pendingLevel = -1
+    }
+
+    /** Lyden er av fordi T'OS skrudde den av (radioen på pause): skru den på igjen. */
+    private fun releaseTosMute(why: String) {
+        if (runCatching { FytRadio.releaseTosMute() }.getOrDefault(false)) note("lyd på igjen ($why) – T'OS hadde skrudd den av")
+    }
+
     private fun onAcc(on: Boolean, source: String) {
+        // Ny tenning (av/på): «rygger» fra forrige tur gjelder ikke lenger
+        if (acc != null && acc != on && reversing) { reversing = false; reverseEndAt = 0L }
+        if (FytMainLogic.edge(acc, on) == FytMainLogic.Edge.ON) releaseTosMute("tenning på")
         when (FytMainLogic.edge(acc, on)) {
             FytMainLogic.Edge.NONE -> { if (acc == null) note("tenning ${if (on) "på" else "av"} ($source, nåverdi)") }
             FytMainLogic.Edge.OFF -> {
@@ -303,8 +340,10 @@ object FytMain {
     private val sendPending = Runnable { if (pendingLevel >= 0) { val l = pendingLevel; pendingLevel = -1; sendNow(l) } }
 
     private fun sendNow(level: Int) {
-        lastSentLevel = level; lastSentAt = SystemClock.elapsedRealtime()
-        Fyt.moduleCmd(Fyt.M_MAIN, FytMainLogic.C_BRIGHT_LEVEL, intArrayOf(level))
+        // Aldri under 5 (kan slå baklyset helt av på noen FYT – da ser sjåføren ingenting)
+        val l = level.coerceIn(FytMainLogic.MIN_LEVEL, 100)
+        lastSentLevel = l; lastSentAt = SystemClock.elapsedRealtime()
+        Fyt.moduleCmd(Fyt.M_MAIN, FytMainLogic.C_BRIGHT_LEVEL, intArrayOf(l))
     }
 
     /** Send et nivå (høyst hvert 150. ms mens glideren dras; siste verdi kommer alltid fram). */
