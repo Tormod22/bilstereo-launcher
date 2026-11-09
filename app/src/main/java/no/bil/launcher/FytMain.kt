@@ -185,7 +185,7 @@ object FytMain {
     val brightReady get() = Fyt.connected && Prefs.bool("fyt_bright", true)
 
     /** Natt følger lysene (valg i Innstillinger → Skjerm, på som standard). */
-    val byLights get() = Prefs.bool("night_lights", true)
+    val byLights get() = Prefs.bool("night_lights", false)
 
     /** Natt etter lysene, eller null (lysene ikke kjent / valget av) – da avgjør sola. Brukes av [Theme.update]. */
     fun lightsNight(): Boolean? = if (byLights) lights else null
