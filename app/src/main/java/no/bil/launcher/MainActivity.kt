@@ -344,6 +344,7 @@ fun Root() {
                         Screen.SETUP -> SetupScreen(home)
                         Screen.RECENTS -> RecentsScreen(home)
                         Screen.STEER -> SteerScreen(home)
+                        Screen.SELFTEST -> SelfTestScreen(home)
                         Screen.CLOCK -> {}
                     }
                 }
