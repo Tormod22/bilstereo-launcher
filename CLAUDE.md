@@ -31,7 +31,69 @@ Snakk norsk med brukeren. Han er ikke utvikler – forklar enkelt, ikke bruk fag
 - Løsningen han godkjente: **tre ting** – (1) bilkort med klokke, stort bilbilde og fart som stort tall, (2) ekte kart, (3) én rad nederst: musikk/telefon/apper. Ingen kalender, ingen vær.
 - Kalkulator skal være skjult i app-skuffen (`HiddenApps` i `Apps.kt`).
 
-## Nåværende tilstand (v5.8)
+## Nåværende tilstand (v5.9)
+- v5.9 «NATTA» (9. nov, 02:24–06:00, brukeren sov – «jobb med å gjøre det til et komplett OS»): 4 runder med parallelle grener
+  (worktrees), flettet og testet. ALT UVERIFISERT på stereoen – BE BRUKEREN: oppdater, kjør «Selvtest av stereoen» (Innstillinger →
+  Sikkerhetskopi og hjelp) med Rattknapp/Lysene/Test radio, og send resultatet + en ny kartlegging med opptak. Hovedbryteren
+  «Stereo-funksjoner (FYT)» (Om stereoen) slår av alt FYT hvis noe oppfører seg rart.
+  (radio) Radioen helt i T'OS på FYT (`FytRadio.kt`; Fyt.kt abonnerer på radio-kodene 0–26 → FytRadio.onUpdate). Koder fra
+  FinalRadio.java (FYT-Launcher-Mod): u=0 bånd (65536–65538 = FM1–FM3, 0/1 = AM1/AM2), 1 frekvens (FM i 10 kHz), 2 = OMRÅDE (ikke bånd),
+  3 valgt kanal, 4 kanalens frekvens, 5 PTY, 6 AF, 7 TA nå, 8 TP, 9 TA på/av, 13 RT, 14 = kanalens navn (ikke PS), 15 RDS,
+  16 [min, maks, trinn, antall], 21 stereo, 22 søk, 23 LOC, 26 PS. T'OS har EGNE forvalg (6 per bank FM1/FM2/FM3/AM, Prefs
+  «fyt_presets_<bank>»), gå til frekvens = [1, verdi] (huskes i «fyt_radio_direct»), ellers trinn for trinn. «Søk etter stasjoner» =
+  T'OS søker selv rundt båndet. Radio-siden: stor frekvens + stasjon, ‹‹ ‹ › ››, FM1/FM2/FM3/AM, 6 forvalg (trykk = gå, hold = lagre),
+  RDS-linje, TA/AF/LOC bare når meldt. Musikkortet viser radioen når FYT-kilden er radio; Media.next/previous = neste forvalg/søk.
+  Rattknapper på radio: stereoen selv. Kartleggingen: del «FYT-radioen». Tester FytRadioTest (6) + FytRadioSmokeTest (2).
+  UVERIFISERT: alt unntatt frekvens/bånd/PS.
+  (lyd) LYD på FYT (`FytSound.kt`, lydmodul 4 – erstatter com.syu.eq). Kilder: FinalSound (FYT-Launcher-Mod) + cabin SyuSoundProtocol
+  (Unlicense): brikke u=1 6/7 = 32 bånd 0–24 (her: 6), 11 = 36 bånd + subwoofer; u=8 [bal,fade] 0–16 → c=3; u=9 [bånd,verdi] → c=1;
+  u=10 profil 0–8 → c=2; u=11 loudness → c=5; c=0 [−1/−2/−5] vol opp/ned/demp, [−3/−4] demp/opphev. Hurtigpanelets volum og
+  Innstillinger → Lyd styrer nå FYT-volumet (setVolume i steg, venter på u=2; absolutt volum ikke bekreftet). Ny «Lydbilde»:
+  lydprofil, Bass/Mellomtone/Diskant (båndene delt i tre), Loudness, balanse/fader-felt, «Nullstill». Vises bare når stereoen har
+  meldt verdiene. Kartlegging: «FYT-lyd». Tester FytSoundTest (8) + røyktest. UVERIFISERT: steg, retning balanse/fader, båndrekkefølge.
+  (telefon) BT-telefonen er T'OS på FYT (`FytPhone.kt`): samtaler fra BT-modul 2 (u=9: 3 ringer ut/4 ringer inn/5 samtale) blir
+  T'OS-samtaler i `Phone.calls` (id FytPhone.CALL_ID, bare når Telecom ikke har en) → CallScreen/PhoneCallBanner, skjermen åpnes selv
+  («fyt_call_screen»). Svar C_PICKUP 9, Avvis C_REJECT_RING 11, Legg på C_HANG 10, tonevalg C_KEY 6 (KEY_N0–9 = 2–11, */# gjettet).
+  KeyService: com.syu.bt under samtale → T'OS-samtaleskjermen. Egen anropsliste (Prefs «fyt_calls»), telefonbok C_DOWNLOAD_BOOK 26 /
+  U_BOOK 22 («fyt_book», format uverifisert). «Stereoens Bluetooth»-kort (koble fra/til, parede). BT-musikk fra FYT (u=0/1/26/2/28/13)
+  på musikksiden. Kilder: FinalBt (FYT-Launcher-Mod), fyt-dialer. Tester FytPhoneTest (9) + FytCallScreenSmokeTest (1).
+  (hoved) `FytMain.kt` = hovedmodul 0 (+ lyd 4): u=4 U_LAMPLET lys (natt etter lysene, valg «night_lights», AV som standard – i Norge
+  kjøres det med lys hele dagen), lysstyrke hoved cmd 10 C_BRIGHT_LEVEL [5–100] fra gliderne/NightBrightness (trenger ikke WRITE_SETTINGS;
+  «fyt_bright», u=31/32/33), rygging u=12 U_BACKCAR → `FytMain.stayOut` (T'OS helt passiv + ingen overlegg, rygger + 2 s, maks 10 min),
+  tenning u=50 U_ACC_ON (av → Trip.flush + Parking.saveNow; på → Startup.run), håndbrekk u=7 (bare tilstand, ingen lås), tastelyd
+  (lyd c8/u4) og navigasjonsmiks (lyd c9/u14) når meldt. Kilder: FYTUSBDVR, vasyl91 (CarStates/HeadlightNightMode/DayNightBrightness/
+  WakeSignals), tarmac, Revv. Test FytMainTest (7). UVERIFISERT på denne stereoen.
+  (canbus) `FytCan.kt` = canbus-modul 7: id u=1000 = bil × 65536 + protokoll (0 = ingen boks). DENNE BILEN: persist.syu.canbusidtype
+  196608 = bil 3, protokoll 0 → trolig INGEN canbus-boks (rattet er analogt). Dører kode 0–5, klima 10–28 (grader bare protokoll 294);
+  T'OS-kort over FYT sin klimastripe/dørvindu bare når protokoll ≠ 0 (bryter «tos_canbus»), radar dekkes ALDRI. «Bilen»-kort på Bil og tur.
+  Kilder: com.syu.canbus dekompilert i vasyl91/FYT-Launcher-Mod, FYTCanbusMonitor. Test FytCanTest (7).
+  (gjennomgang) 6 feil rettet i nattens kode: avbrutt tuning/søk ryddet bort ny jobb, demping ble stående når stereoen byttet kilde
+  (FytRadio.watchSource), FM-bank nullstilt ved AM→FM, volumløkka gikk ett steg for langt, telefonbok med nummer først, musikkort vs.
+  knapper uenige om BT-musikk. Totalt 224 tester.
+  (design) Førstegangsoppsettet er FYT-bevisst (`setupSteps()`): Knappestyring, Varseltilgang, Appbruk, Posisjon, «Lær rattknappene»
+  (→ STEER), «Skjul stereoens statuslinje» (FytBars → HideButton → ADB), «Kjør selvtest»; startskjerm/telefon-app bare når de mangler.
+  Musikkortet: BT-merke for FYT-BT-musikk, radiosymbol, «Lyd av/på» og «Neste/Forrige stasjon» på FYT-radio. Tekstskala 1,25: rettet
+  kuttet tekst (rattknapp-fliser, BT-linja). Tester SetupLogicTest (3) + FontScaleSmokeTest (TOS_SHOTS=<mappe> lagrer bilder).
+  (selvtest) «Selvtest av stereoen» (`SelfTest.kt`, Screen.SELFTEST; Innstillinger → Sikkerhetskopi og hjelp, over «Kartlegg
+  stereoen»): ✓/✗/? per funksjon, «N av M virker». Bare lesing + små prøver som alltid settes tilbake (lysstyrke +5/tilbake via u=31,
+  volum ett steg/tilbake via u=2 når ≤30, parede telefoner C_QUERY_PAIR→u=5). Valgfritt: «Rattknapp (10 s)», «Lysene (15 s)», «Test
+  radio» (tilbake til forrige kilde). Rører aldri forvalg/EQ/lærte rattknapper. «Send resultatet»; siste resultat i
+  filesDir/selvtest-siste.txt og i kartleggingen. Tester SelfTestTest (7) + SelfTestSmokeTest (2).
+  (sikkerhetsnett) FYT-koden kan aldri gjøre stereoen ubrukelig: alle FYT-meldinger via `Fyt.guard` (feil fanges/telles), alle
+  Binder-kall på egen tråd «T'OS FYT» (get aldri på hovedtråden), linkToDeath/onBindingDied/onNullBinding med økende ventetid
+  (5 s → 5 min, gir opp etter 20), vern mot omstartstormer. Hovedbryter «fyt_all» (Innstillinger → Om stereoen → «Stereo-funksjoner
+  (FYT)», vises når com.syu.ms finnes); `Fyt.connected` = kobling OG bryter. `FytSafety.kt`: 2 FYT-krasj på 3 min → alle FYT-brytere
+  av («fyt_safe_off») + melding; slås hovedbryteren på igjen, settes de tilbake. Vakthunder: lysstyrke aldri < 5 (lagret < 5 → 50),
+  Android-lysstyrke aldri < 20, demping T'OS satt («fyt_tos_muted») oppheves ved tilkobling/tenning/bryter av, overlegg maks 60 s,
+  svart teppe maks 4 s, samtaleskjerm-omdirigering maks 4 på 30 s. Tester FytSafetyTest (11). Totalt 248 tester.
+  (samspill) 11 feil rettet: samtaleskjermen venter til rygging er ferdig (`Phone.openCallScreenAuto`), ny FYT-samtale opphever
+  T'OS-demping, rattknapper ett trykk = én handling (`SteerLogic.OnePress`, 250 ms), svar/legg på i FYT-samtale gjør stereoen selv,
+  `claimSource(explicit = true)` fra MUSIC tar også FYT-radioen, `FytMain.accKnown` krever tilkobling, tenning av stopper radiosøk,
+  `Fyt.onWake` kobler til igjen etter dvale, hovedbryter av → dagnivå på lysstyrken tilbake, selvtestens radioprøve venter på samtale,
+  volumprøven hoppes over ved rygging. ÅPENT: nettradio valgt mens FYT-radioen spiller slår ikke av FYT-radioen. Test IntegrationLogicTest (6).
+  (bruksanvisning) `docs/BRUKSANVISNING.md` (enkel norsk) + kopi i `app/src/main/assets/bruksanvisning.md` (HelpDocTest sjekker at de er
+  like – HUSK å oppdatere begge) vist i T'OS som «Bruksanvisning» (Screen.HELP, `Help.kt`; Innstillinger → Om stereoen og Sikkerhetskopi
+  og hjelp). Oppstartsskjerm (T'OS-merket på svart, 200 + 600 ms, `SplashHost`) ved kald start og etter ≥ 2 min med skjermen av.
 - v5.8: brukeren: «rattknappene gjør ingenting» (Avensis T27: venstre VOL −, demp, VOL +, ▼, ▲, MODE; høyre DISP – virket med
   originalradioen). Han åpnet FYT «Control» (com.syu.steer): 6 tall øverst som endrer seg ved trykk, ALLE funksjoner «NULL» →
   ÅRSAK (bekreftet av bildet): rattknappene er aldri lært i stereoen. Ekstra årsak (gjetning): etter MUSIC-knappen står FYT-kilden
