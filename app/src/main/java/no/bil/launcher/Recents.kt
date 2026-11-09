@@ -64,6 +64,13 @@ internal object RecentsLogic {
         if (p.isEmpty() || t == null) null else RecentUse(p, t)
     }.toList()
 
+    /** Lista uten [pkgs] (apper som er lukket i «Siste apper»). */
+    fun drop(list: List<RecentUse>, pkgs: Collection<String>): List<RecentUse> = list.filter { it.pkg !in pkgs }
+
+    /** Skal [pkg] skrives ned nå? Ikke når den allerede står først fra de siste 30 s (hver skjerm inne i appen gir et signal). */
+    fun shouldRecord(list: List<RecentUse>, pkg: String, now: Long): Boolean =
+        list.firstOrNull()?.let { it.pkg == pkg && now - it.at in 0..30_000 } != true
+
     fun format(list: List<RecentUse>): String = list.joinToString("\n") { "${it.pkg}|${it.at}" }
 
     /**
@@ -187,7 +194,7 @@ object RecentApps {
         synchronized(lock) {
             val cur = ownList()
             // Samme app først i lista nylig: ikke skriv på nytt for hver skjerm inne i appen
-            if (cur.firstOrNull()?.let { it.pkg == pkg && now - it.at in 0..30_000 } == true) return
+            if (!RecentsLogic.shouldRecord(cur, pkg, now)) return
             val next = RecentsLogic.add(cur, pkg, now, max = 30)
             own = next
             runCatching { Prefs.setQuiet(KEY, RecentsLogic.format(next)) }
@@ -203,6 +210,13 @@ object RecentApps {
         val cur = dismissed().filterValues { now - it < 2 * RecentsLogic.WINDOW_MS }.toMutableMap()
         pkgs.forEach { cur[it] = now }
         runCatching { Prefs.setQuiet(KEY_DISMISSED, RecentsLogic.format(cur.map { RecentUse(it.key, it.value) })) }
+        // Ut av T'OS sin egen liste også: ellers ble en app som ble åpnet igjen innen 30 s ikke skrevet ned på nytt
+        // ([record] hopper over samme app rett etter seg selv), og den dukket ikke opp i «Siste apper» igjen
+        synchronized(lock) {
+            val next = RecentsLogic.drop(ownList(), pkgs)
+            own = next
+            runCatching { Prefs.setQuiet(KEY, RecentsLogic.format(next)) }
+        }
         version++
     }
 

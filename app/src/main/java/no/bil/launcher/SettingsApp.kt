@@ -34,6 +34,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -87,7 +88,9 @@ private fun say(text: String) = Notify.show(text)
 
 @Composable
 fun SettingsScreen(onClose: () -> Unit) {
-    var cat by remember { mutableStateOf(SetCat.entries.firstOrNull { it.name == Prefs.str("settings_cat") } ?: SetCat.NET) }
+    // Kategorien følger innstillingen hele tiden (ikke bare når siden åpnes): «Wi-Fi» i hurtigpanelet, «Hjem» uten adresse
+    // o.l. setter den mens Innstillinger allerede er åpen – før ble siden stående på kategorien du var i
+    val cat = SetCat.entries.firstOrNull { it.name == Prefs.str("settings_cat") } ?: SetCat.NET
     var query by remember { mutableStateOf("") }
     val shown = remember(query) { settingsSearch(query) }
     Page("Innstillinger", onClose) {
@@ -98,7 +101,7 @@ fun SettingsScreen(onClose: () -> Unit) {
                     Field(query, "Søk i innstillinger", Modifier.fillMaxWidth().padding(bottom = 4.dp)) {
                         query = it
                         // Bare ett treff: vis det med en gang
-                        settingsSearch(it).singleOrNull()?.let { c -> cat = c; Prefs.set("settings_cat", c.name) }
+                        settingsSearch(it).singleOrNull()?.let { c -> Prefs.set("settings_cat", c.name) }
                     }
                 }
                 if (shown.isEmpty()) item { Text("Ingen treff", color = TextMuted, fontSize = 14.sp, modifier = Modifier.padding(12.dp)) }
@@ -107,13 +110,14 @@ fun SettingsScreen(onClose: () -> Unit) {
                     items(cats) { c ->
                         val on = c == cat
                         Row(
-                            Modifier.fillMaxWidth().height(50.dp).clip(RoundedCornerShape(14.dp))
+                            Modifier.fillMaxWidth().heightIn(min = 50.dp).clip(RoundedCornerShape(14.dp))
                                 .background(if (on) Line else Panel)
-                                .clickable { cat = c; Prefs.set("settings_cat", c.name) }.padding(horizontal = 12.dp),
+                                .clickable { Prefs.set("settings_cat", c.name) }.padding(horizontal = 12.dp, vertical = 4.dp),
                             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp),
                         ) {
                             Icon(c.icon, null, tint = if (on) TextPrimary else TextMuted, modifier = Modifier.size(22.dp))
-                            Text(c.label, color = if (on) TextPrimary else TextMuted, fontSize = 15.sp, maxLines = 1)
+                            // Stor tekst (1,25): «Sikkerhetskopi og hjelp» fikk ikke plass på én linje og ble kuttet midt i et ord
+                            Text(c.label, color = if (on) TextPrimary else TextMuted, fontSize = 15.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
                         }
                     }
                 }

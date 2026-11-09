@@ -153,8 +153,14 @@ object MapTiles {
         val conn = url.openConnection() as HttpURLConnection
         conn.setRequestProperty("User-Agent", "BilstereoLauncher/1.0")
         conn.connectTimeout = 5000; conn.readTimeout = 5000
-        return runCatching { BitmapFactory.decodeStream(conn.inputStream) }.getOrNull()?.also {
-            cache.put(key, it)
+        // Strømmen lukkes alltid (før ble den liggende åpen – 25 forbindelser hvert minutt til de ble ryddet av seg selv),
+        // og bare et ekte svar (200) blir en flis – en feilside fra serveren skal ikke tolkes som kart.
+        return try {
+            if (conn.responseCode != HttpURLConnection.HTTP_OK) { conn.disconnect(); null }
+            else conn.inputStream.use { BitmapFactory.decodeStream(it) }?.also { cache.put(key, it) }
+        } catch (_: Exception) {
+            runCatching { conn.disconnect() }
+            null
         }
     }
 }
