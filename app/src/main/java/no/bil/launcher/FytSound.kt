@@ -178,6 +178,9 @@ internal object FytSoundLogic {
         return when { d > 0 -> "+$d"; d < 0 -> "−${-d}"; else -> "0" }
     }
 
+    /** Svarte stereoen på steget (volumet endret seg fra [before] til [now])? */
+    fun stepAnswered(before: Int, now: Int): Boolean = before >= 0 && now != before
+
     /** Ett steg mot målet: +1, −1 eller 0 (framme). */
     fun stepToward(level: Int, target: Int): Int = when { target > level -> 1; target < level -> -1; else -> 0 }
 
@@ -237,9 +240,12 @@ object FytSound {
         val i0 = ints?.firstOrNull()
         when (u) {
             FytSoundLogic.U_VOL -> if (i0 != null && i0 >= 0) {
+                val before = level
                 level = i0
                 if (live) Ui.volume = if (muted) 0 else i0
-                if (target >= 0 && waiting) { misses = 0; pump() }
+                // Neste steg bare når tallet faktisk endret seg: sender stereoen samme tall to ganger (ekko), ville T'OS ellers
+                // sendt et nytt steg før det forrige var gjort – og gått forbi målet. Uendret tall: tidsfristen tar det.
+                if (target >= 0 && waiting && FytSoundLogic.stepAnswered(before, i0)) { misses = 0; pump() }
                 return
             }
             FytSoundLogic.U_MUTE -> if (i0 != null) { muted = i0 != 0; if (live && level >= 0) Ui.volume = if (muted) 0 else level; return }

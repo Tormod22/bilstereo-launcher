@@ -185,6 +185,17 @@ internal object FytPhoneLogic {
     fun parseBook(strs: Array<String?>?): List<Contact> {
         val p = parts(strs)
         val out = ArrayList<Contact>()
+        // Kommer nummeret først, gjelder det hele meldingen: «nummer, navn, nummer, navn …» (før fikk andre nummer
+        // det første navnet)
+        if (p.firstOrNull()?.let(::looksLikeNumber) == true) {
+            var pending: String? = null
+            for (s in p) {
+                if (looksLikeNumber(s)) { pending?.let { out += Contact(favText(it), favText(it)) }; pending = s }
+                else { pending?.let { out += Contact(favText(s), favText(it)) }; pending = null }
+            }
+            pending?.let { out += Contact(favText(it), favText(it)) }
+            return out.filter { it.number.isNotBlank() }
+        }
         var name: String? = null
         var orphan: String? = null       // nummer som kom før navnet
         for (s in p) {
@@ -449,8 +460,13 @@ object FytPhone {
     internal fun setCallForTest(c: PhoneCall?) { call = c; track = null; userHid = false }
 }
 
-/** Musikken fra telefonen spiller via stereoens BT-brikke (lydkilde 3 = BT-musikk), og T'OS viser den. */
-internal val fytBtMusicShown: Boolean get() = Fyt.btReady && Fyt.appId == 3 && !NetRadio.active
+/**
+ * Musikken fra telefonen spiller via stereoens BT-brikke (lydkilde 3 = BT-musikk), og T'OS viser den. Musikkortet og
+ * knappene (Media.playPause/next/previous) bruker begge denne, så kortet aldri viser BT-musikken mens knappene styrer en
+ * (pauset) Spotify-økt. Spiller en Android-app nå (ikke FYT sin egen), er det den som vises og styres.
+ */
+internal val fytBtMusicShown: Boolean get() = Fyt.btReady && Fyt.appId == 3 && !NetRadio.active &&
+    !(NowPlaying.playing && NowPlaying.pkg?.startsWith("com.syu.") != true)
 
 /**
  * Stereoens Bluetooth på Bluetooth-siden: telefonen FYT er koblet til, koble fra/til, og parede enheter.

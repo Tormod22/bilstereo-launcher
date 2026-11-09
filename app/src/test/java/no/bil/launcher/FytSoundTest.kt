@@ -1,6 +1,7 @@
 package no.bil.launcher
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -79,6 +80,10 @@ class FytSoundTest {
         assertEquals(1, FytSoundLogic.stepToward(3, 10))
         assertEquals(-1, FytSoundLogic.stepToward(10, 3))
         assertEquals(0, FytSoundLogic.stepToward(7, 7))
+        // Neste steg bare når stereoen svarte med et nytt tall (samme tall to ganger = ekko, ikke svar)
+        assertTrue(FytSoundLogic.stepAnswered(7, 8))
+        assertFalse(FytSoundLogic.stepAnswered(8, 8))
+        assertFalse(FytSoundLogic.stepAnswered(-1, 8))
         assertEquals(0, FytSoundLogic.axisFrom(-0.2f)); assertEquals(16, FytSoundLogic.axisFrom(1.5f))
         assertEquals(8, FytSoundLogic.axisFrom(0.5f))
         assertEquals(0.5f, FytSoundLogic.axisFraction(8), 0.001f)

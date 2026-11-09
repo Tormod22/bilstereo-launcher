@@ -72,6 +72,9 @@ class FytPhoneTest {
         // Flere nummer per navn, og mange par i én melding
         assertEquals(listOf(Contact("Ola", "111"), Contact("Ola", "222"), Contact("Kari", "333")),
             L.parseBook(arrayOf("Ola", "111", "222", "Kari", "333")))
+        // Nummer først i hele meldingen: hvert nummer får navnet etter seg (før fikk 222 navnet «Ola»)
+        assertEquals(listOf(Contact("Ola", "111"), Contact("Kari", "222")), L.parseBook(arrayOf("111", "Ola", "222", "Kari")))
+        assertEquals(listOf(Contact("111", "111"), Contact("Kari", "222")), L.parseBook(arrayOf("111", "222", "Kari")))
         // Skilletegn i én tekst
         assertEquals(listOf(Contact("Per", "444 55 666")), L.parseBook(arrayOf("Per\t444 55 666")))
         // Bare nummer: nummeret blir navnet; tomt og navn uten nummer gir ingenting

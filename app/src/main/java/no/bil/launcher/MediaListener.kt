@@ -367,11 +367,11 @@ object Media {
         // FYT-radioen er lydkilden: spill/pause = lyd av/på (musikkortet viser radioen)
         if (FytRadio.onAir) { FytRadio.toggleMute(); return }
         val t = NowPlaying.controller?.transportControls
-        if (t == null && fytBtMusic()) { Fyt.btavPlayPause(); return }
+        if (fytBtMusic()) { Fyt.btavPlayPause(); return }
         if (t != null) { if (NowPlaying.playing) t.pause() else t.play() } else key(c, KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE)
     }
-    /** FYT-stereo med BT-musikk som lydkilde (styres via com.syu.ms, ikke via en mediaøkt). */
-    private fun fytBtMusic() = Fyt.btReady && Fyt.appId == 3
+    /** FYT-stereo med BT-musikk som lydkilde (styres via com.syu.ms, ikke via en mediaøkt) – det samme musikkortet viser. */
+    private fun fytBtMusic() = fytBtMusicShown
 
     fun play(c: Context) {
         NowPlaying.controller?.transportControls?.play() ?: key(c, KeyEvent.KEYCODE_MEDIA_PLAY)
@@ -379,13 +379,13 @@ object Media {
     fun next(c: Context) {
         if (NetRadio.active) { NetRadio.step(c, 1); return }
         if (fmWithoutSession()) { if (FytRadio.active) FytRadio.next(up = true) else HwRadio.seekUp(); return }
-        if (NowPlaying.controller == null && fytBtMusic()) { Fyt.btavNext(); return }
+        if (fytBtMusic()) { Fyt.btavNext(); return }
         NowPlaying.controller?.transportControls?.skipToNext() ?: key(c, KeyEvent.KEYCODE_MEDIA_NEXT)
     }
     fun previous(c: Context) {
         if (NetRadio.active) { NetRadio.step(c, -1); return }
         if (fmWithoutSession()) { if (FytRadio.active) FytRadio.next(up = false) else HwRadio.seekDown(); return }
-        if (NowPlaying.controller == null && fytBtMusic()) { Fyt.btavPrev(); return }
+        if (fytBtMusic()) { Fyt.btavPrev(); return }
         NowPlaying.controller?.transportControls?.skipToPrevious() ?: key(c, KeyEvent.KEYCODE_MEDIA_PREVIOUS)
     }
 }

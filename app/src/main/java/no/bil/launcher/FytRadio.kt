@@ -9,6 +9,7 @@ import androidx.compose.runtime.setValue
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
+import kotlinx.coroutines.job
 import kotlinx.coroutines.launch
 
 /* ======================= FM/AM-radioen på FYT-stereoen (radio-modulen i com.syu.ms) ======================= */
@@ -68,6 +69,8 @@ object FytRadio {
     var tuningTo by mutableIntStateOf(0); private set
     private var job: Job? = null
     private var mutedByUs = false
+    /** Følger lydkilden mens T'OS søker/stiller inn eller har skrudd av lyden (se [watchSource]). */
+    private var watch: Job? = null
 
     /** Testene: later som stereoen har sendt dette (null = ekte data). */
     internal data class Fake(val freqRaw: Int, val ps: String?, val rt: String?, val stereo: Boolean, val onAir: Boolean)
@@ -104,7 +107,7 @@ object FytRadio {
         val i0 = ints?.firstOrNull()
         val s0 = strs?.firstOrNull()?.trim()?.takeIf { it.isNotEmpty() }
         when (u) {
-            0 -> if (i0 != null) { if (i0 != bandRaw && FytRadioLogic.fmBank(i0) != null) userBank = null; bandRaw = i0 }
+            0 -> if (i0 != null) { if (FytRadioLogic.dropUserBank(bandRaw, i0)) userBank = null; bandRaw = i0 }
             1 -> freqAt = SystemClock.elapsedRealtime()
             2 -> if (i0 != null) area = i0
             3 -> if (i0 != null) channel = i0
@@ -180,11 +183,30 @@ object FytRadio {
     /** Spill/pause på radioen = lyd av/på (å slippe kilden ville startet forrige app igjen – FytRadio NOTES.md). */
     fun toggleMute() {
         val mute = !Fyt.muted
-        if (Fyt.moduleCmd(Fyt.M_SOUND, 0, intArrayOf(if (mute) -3 else -4))) mutedByUs = mute
+        if (Fyt.moduleCmd(Fyt.M_SOUND, 0, intArrayOf(if (mute) -3 else -4))) { mutedByUs = mute; if (mute) watchSource() }
+    }
+
+    /**
+     * Bytter stereoen selv lydkilde (MUSIC-/BT-knappen, FYT sin egen app) mens T'OS søker/stiller inn eller har skrudd av
+     * lyden, sier ingen fra til T'OS (HwRadio.powerOff/yieldTo kalles ikke). Da ville søket gått videre i blinde og
+     * musikken vært stille (dempingen i FYT gjelder alle kilder). Sjekker kilden hvert halve sekund så lenge det trengs.
+     */
+    private fun watchSource() {
+        if (watch?.isActive == true) return
+        watch = Hub.scope.launch {
+            var wasOn = Fyt.radioOnAir
+            while (isActive && (job?.isActive == true || mutedByUs)) {
+                delay(500)
+                if (Fyt.radioOnAir) wasOn = true
+                else if (wasOn) { watch = null; onRadioOff(); return@launch }
+            }
+            if (watch == coroutineContext.job) watch = null
+        }
     }
 
     /** Radioen slås av / en annen kilde tar over: stopp det T'OS holdt på med, og skru på lyden igjen hvis T'OS tok den. */
     fun onRadioOff() {
+        watch?.cancel(); watch = null
         stopJob()
         if (mutedByUs) { mutedByUs = false; Fyt.moduleCmd(Fyt.M_SOUND, 0, intArrayOf(-4)) }
     }
@@ -206,8 +228,12 @@ object FytRadio {
                 val fm = FytLogic.isFm(Int.MIN_VALUE, target) ?: true
                 if (isFm != fm) { Fyt.radioBand(fm); waitFor(2500) { isFm == fm } }
                 if (!tuneSteps(target)) Notify.show("Fikk ikke stilt inn ${FytLogic.freqLabel(Int.MIN_VALUE, target)}")
-            } finally { tuningTo = 0 }
+            } finally {
+                // Bare når dette fortsatt er jobben: en avbrutt jobb rydder ellers bort en ny innstilling (stopJob har ryddet)
+                if (job == coroutineContext.job) { tuningTo = 0; job = null }
+            }
         }
+        watchSource()
     }
 
     private suspend fun tuneSteps(target: Int): Boolean {
@@ -259,9 +285,11 @@ object FytRadio {
                     scan = Scan(found.size, FytRadioLogic.progress(start, landed, range), landed)
                 }
             } finally {
-                scan = null
-                // Avbrutt (Avbryt, Stopp, annen kilde): forvalgene beholdes som de var
-                if (!isActive) Unit
+                // Avbrutt (Avbryt, Stopp, annen kilde): forvalgene beholdes som de var. stopJob har da ryddet – og et nytt
+                // søk kan allerede ha startet, så scan røres bare når dette fortsatt er jobben.
+                val mine = job == coroutineContext.job
+                if (mine) { scan = null; job = null }
+                if (!isActive || !mine) Unit
                 else if (found.isNotEmpty()) {
                     val banks = FytRadioLogic.fill(found, fm)
                     banks.forEach { (b, l) -> store(b, l) }
@@ -273,6 +301,7 @@ object FytRadio {
                 } else Notify.show("Fant ingen stasjoner. Sjekk at antennen står i.")
             }
         }
+        watchSource()
     }
 
     fun cancel() { if (scan != null) Notify.show("Søket er stoppet"); stopJob() }
@@ -334,6 +363,12 @@ internal object FytRadioLogic {
     data class Range(val min: Int, val max: Int, val step: Int, val fm: Boolean) {
         override fun toString() = "$min–$max trinn $step"
     }
+
+    /**
+     * Skal brukerens FM-bank glemmes når stereoen melder bånd [new] (før: [old])? Bare når stereoen selv byttet mellom
+     * FM1–FM3. Ikke når T'OS bytter fra AM til FM (forvalg i FM2 trykket mens radioen stod på AM) – da skal FM2 vises.
+     */
+    fun dropUserBank(old: Int, new: Int): Boolean = new != old && fmBank(new) != null && fmBank(old) != null
 
     /** u=0: 65536–65538 = FM1–FM3 (FinalRadio BAND_FM_INDEX), 0/1 = AM1/AM2. */
     fun fmBank(bandRaw: Int): String? = if (bandRaw in 65536..65538) "FM${bandRaw - 65535}" else null

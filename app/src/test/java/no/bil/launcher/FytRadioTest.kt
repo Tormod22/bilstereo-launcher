@@ -94,4 +94,15 @@ class FytRadioTest {
         assertEquals("stasjonsnavn", L.updateName(26))
         assertTrue(L.legend().contains("26 stasjonsnavn"))
     }
+
+    @Test fun brukerensFmBankGlemmesBareVedFmTilFm() {
+        // Stereoen byttet selv FM1 → FM2: følg stereoen
+        assertTrue(L.dropUserBank(65536, 65537))
+        // AM → FM (forvalg i FM2 trykket mens radioen stod på AM): FM2 skal fortsatt vises (før: hoppet til FM1)
+        assertFalse(L.dropUserBank(0, 65536))
+        assertFalse(L.dropUserBank(Int.MIN_VALUE, 65536))
+        // Samme bånd igjen, eller til AM
+        assertFalse(L.dropUserBank(65536, 65536))
+        assertFalse(L.dropUserBank(65537, 0))
+    }
 }
