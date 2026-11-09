@@ -273,6 +273,7 @@ fun Progress(modifier: Modifier) {
     if (fytBtMusicShown) { BarOf(modifier, FytPhoneLogic.progress(FytPhone.btavPosMs, FytPhone.btavTotalMs)); return }
     LaunchedEffect(NowPlaying.title, NowPlaying.playing) {
         while (true) {
+            Power.awaitUi()
             val d = NowPlaying.durationMs
             p = if (d > 0 && !NetRadio.active) (NowPlaying.positionMs().toFloat() / d).coerceIn(0f, 1f) else 0f
             delay(1000)
@@ -1106,6 +1107,7 @@ fun ClockScreen(onClose: () -> Unit) {
     var date by remember { mutableStateOf(dateFmt.format(Date()).replaceFirstChar { it.uppercase() }) }
     LaunchedEffect(Unit) {
         while (true) {
+            Power.awaitUi()                 // står stille mens skjermen er av / en annen app vises
             val now = Date()
             time = timeFmt.format(now); date = dateFmt.format(now).replaceFirstChar { it.uppercase() }
             delay(1000L - System.currentTimeMillis() % 1000L)

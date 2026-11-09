@@ -35,7 +35,6 @@ class KeyService : AccessibilityService() {
     private var lastRedirect = 0L
     private val downAt = mutableMapOf<Int, Long>()
     private val longDone = mutableSetOf<Int>()
-    private var screenOffAt = 0L
     private var registered = false
     /** Hvilken app som er framme, og om T'OS selv åpnet den (da sender vi deg ikke tilbake før du har gått ut av den). */
     private val front = FrontTracker()
@@ -99,13 +98,6 @@ class KeyService : AccessibilityService() {
         @SuppressLint("MissingPermission")
         override fun onReceive(c: Context, i: Intent) {
             when (i.action) {
-                Intent.ACTION_SCREEN_OFF -> screenOffAt = SystemClock.elapsedRealtime()
-                Intent.ACTION_SCREEN_ON -> {
-                    // Etter dvale: koble til stereoen igjen hvis T'OS hadde gitt opp (com.syu.ms kan ha startet på nytt)
-                    runCatching { Fyt.onWake() }
-                    // FYT melder tenningen: da starter FytMain oppstarten (svart skjerm er ikke at bilen startet)
-                    if (!FytMain.accKnown && screenOffAt != 0L && SystemClock.elapsedRealtime() - screenOffAt > 120_000) Startup.run(c)
-                }
                 UsbManager.ACTION_USB_DEVICE_ATTACHED -> {
                     val d: UsbDevice? = if (Build.VERSION.SDK_INT >= 33) i.getParcelableExtra(UsbManager.EXTRA_DEVICE, UsbDevice::class.java)
                     else @Suppress("DEPRECATION") i.getParcelableExtra(UsbManager.EXTRA_DEVICE)
@@ -133,7 +125,7 @@ class KeyService : AccessibilityService() {
         if (registered) return
         registered = true
         val f = IntentFilter().apply {
-            addAction(Intent.ACTION_SCREEN_ON); addAction(Intent.ACTION_SCREEN_OFF)
+            // Skjermen på/av (oppstart etter dvale, Fyt.onWake) håndteres av Power – den virker også uten knappestyringen
             addAction(UsbManager.ACTION_USB_DEVICE_ATTACHED); addAction(BluetoothDevice.ACTION_ACL_CONNECTED)
         }
         runCatching { if (Build.VERSION.SDK_INT >= 33) registerReceiver(receiver, f, Context.RECEIVER_EXPORTED) else registerReceiver(receiver, f) }

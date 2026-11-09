@@ -55,6 +55,7 @@ object Hub {
 
     fun start(c: Context) {
         app = c.applicationContext
+        Power.start(app)                        // tenning/skjerm: hva som får gå (Power.kt)
         Trip.restore()
         startGps()
         watchNetwork()
@@ -67,11 +68,21 @@ object Hub {
         // Equalizeren (lydtjenesten) settes etter at første skjermbilde er tegnet – den kan ta litt tid å koble til
         scope.launch { delay(1500); Eq.restore() }
         scope.launch(Dispatchers.IO) { LocalBackup.autoSave(app) }   // daglig kopi av innstillingene i T'OS-mappa
-        scope.launch { while (true) { Theme.update(gps?.lat ?: Prefs.float("park_lat").toDouble().takeIf { it != 0.0 }, gps?.lon ?: Prefs.float("park_lon").toDouble().takeIf { it != 0.0 }); NightBrightness.apply(app); delay(60_000) } }
-        scope.launch { while (true) { readSystem(); delay(10_000) } }
+        // GPS av i dvale (tenning av / skjerm av uten tenning), på igjen når stereoen våkner
+        scope.launch { Power.state.collect { s -> if (s.plan.gps) resumeGps() else pauseGps() } }
+        // Dag/natt hvert minutt – ikke mens skjermen er av (gjøres med en gang den kommer på igjen)
+        scope.launch {
+            Power.every(60_000, { it.theme }) {
+                Theme.update(gps?.lat ?: Prefs.float("park_lat").toDouble().takeIf { it != 0.0 }, gps?.lon ?: Prefs.float("park_lon").toDouble().takeIf { it != 0.0 })
+                NightBrightness.apply(app)
+            }
+        }
+        // CPU-temperatur og minne vises bare i T'OS: les dem bare da
+        scope.launch { Power.every(10_000, { it.ui }) { readSystem() } }
         scope.launch {
             var fails = 0
             while (true) {
+                Power.await { it.updates }      // ikke spør GitHub mens bilen står med tenningen av
                 val info = Updater.check()
                 if (info != null) update = if (info.versionCode > Updater.current(app)) info else null
                 // Fikk ikke svar (nettet fra iPhonen er sjelden klart når bilen starter): prøv igjen om 1 min,
@@ -97,6 +108,8 @@ object Hub {
         gpsNoPermission = !fine && !coarse
         if (gpsNoPermission) return
         hookLifecycle()
+        // Dvale: GPS-en startes når stereoen våkner (Power → resumeGps)
+        if (!Power.plan.gps) return
         GpsService.startIfForeground(app)
         gpsJob?.cancel()
         gpsJob = scope.launch {
@@ -108,19 +121,50 @@ object Hub {
                     Parking.onFix(g)
                     SpeedLimit.onFix(g)
                     Accel.onFix(g)
+                    watchStale()
                 }
                 if (first) Theme.update(g.lat, g.lon)
             }
         }
-        // Fart blir «ukjent» når det ikke har kommet ny måling på 3 s (tunnel, GPS-en mistet satellittene)
-        if (staleJob?.isActive != true) staleJob = scope.launch {
+    }
+
+    /** GPS-en går ikke (dvale) – startes på nytt av [resumeGps]. */
+    private var gpsPaused = false
+
+    private fun resumeGps() {
+        if (!gpsPaused) return
+        gpsPaused = false
+        startGps()
+    }
+
+    /** Tenningen av (eller skjermen av uten tenning): GPS-mottakeren og posisjonstjenesten av, ingen fart som står igjen. */
+    private fun pauseGps() {
+        if (gpsPaused) return
+        gpsPaused = true
+        gpsJob?.cancel(); gpsJob = null          // awaitClose i gpsFlow: removeUpdates
+        staleJob?.cancel(); staleJob = null
+        GpsService.stop(app)
+        gps?.let { g -> if (!g.stale) gps = g.copy(speedKmh = 0, stale = true) }
+        SpeedLimit.over = false
+    }
+
+    /**
+     * Fart blir «ukjent» når det ikke har kommet ny måling på 3 s (tunnel, GPS-en mistet satellittene).
+     * Startes av hver ny måling og stopper seg selv når farten er merket ukjent (ingen sekundtikk uten GPS).
+     */
+    private fun watchStale() {
+        if (staleJob?.isActive == true) return
+        staleJob = scope.launch {
             while (true) {
-                delay(1000)
-                val g = gps ?: continue
-                if (!g.stale && gpsAgeNanos(g.fixNanos, SystemClock.elapsedRealtimeNanos()) > GPS_STALE_NANOS) {
+                val g = gps ?: break
+                if (g.stale) break
+                val age = gpsAgeNanos(g.fixNanos, SystemClock.elapsedRealtimeNanos())
+                if (age > GPS_STALE_NANOS) {
                     gps = g.copy(speedKmh = 0, stale = true)
                     SpeedLimit.over = false
+                    break
                 }
+                delay(((GPS_STALE_NANOS - age) / 1_000_000L).coerceAtLeast(100L) + 50L)
             }
         }
     }
@@ -135,7 +179,7 @@ object Hub {
         lifecycleHooked = true
         a.registerActivityLifecycleCallbacks(object : android.app.Application.ActivityLifecycleCallbacks {
             override fun onActivityResumed(activity: android.app.Activity) {
-                if (!GpsService.running && !gpsNoPermission) GpsService.startIfForeground(app)
+                if (!GpsService.running && !gpsNoPermission && Power.plan.gps) GpsService.startIfForeground(app)
             }
             override fun onActivityCreated(activity: android.app.Activity, savedInstanceState: android.os.Bundle?) {}
             override fun onActivityStarted(activity: android.app.Activity) {}
@@ -580,10 +624,14 @@ object Startup {
         val now = SystemClock.elapsedRealtime()
         if (lastRun != 0L && now - lastRun < 120_000) return
         lastRun = now
+        // Nettradioen spilte da tenningen ble slått av (Power stoppet den): start den igjen i stedet for musikkappen
+        val netRadio = Power.takeNetRadioResume()
         Hub.scope.launch {
             delay(4000)
             if (shouldResumeMusic(Prefs.bool("resume_music", true), NowPlaying.playing, otherAudioActive(c), Buttons.inCall(c))) {
-                if (NowPlaying.hasSession) Media.play(c)
+                val station = if (netRadio) NetRadio.last() else null
+                if (station != null) NetRadio.play(c, station)
+                else if (NowPlaying.hasSession) Media.play(c)
                 else {
                     val tile = Tiles.byPrefix("Mus")
                     val pkg = Prefs.str("music_pkg").ifBlank { null }

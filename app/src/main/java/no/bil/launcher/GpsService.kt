@@ -28,14 +28,26 @@ class GpsService : Service() {
         @Volatile var running = false
             private set
 
-        /** Starter tjenesten hvis T'OS vises nå og har posisjonstillatelse. Feiler stille ellers. */
+        /** Starter tjenesten hvis T'OS har posisjonstillatelse (og vises nå, Android 12+). Feiler stille ellers. */
         fun startIfForeground(c: Context) {
             if (running) return
+            // Dvale (tenning av / skjermen av): ingen posisjon – startes igjen når stereoen våkner og T'OS vises
+            if (!Power.plan.gps) return
             if (!c.hasPermission(Manifest.permission.ACCESS_FINE_LOCATION) && !c.hasPermission(Manifest.permission.ACCESS_COARSE_LOCATION)) return
-            val me = ActivityManager.RunningAppProcessInfo().also { runCatching { ActivityManager.getMyMemoryState(it) } }
-            if (me.importance > ActivityManager.RunningAppProcessInfo.IMPORTANCE_VISIBLE) return
+            // Android 12+ krever at T'OS vises. Android 10/11 (denne stereoen: ekte Android 10) tillater start fra bakgrunnen –
+            // da kommer posisjonen tilbake etter dvale selv om stereoen viser en annen app (CarPlay, Spotify) når den våkner
+            if (Build.VERSION.SDK_INT >= 31) {
+                val me = ActivityManager.RunningAppProcessInfo().also { runCatching { ActivityManager.getMyMemoryState(it) } }
+                if (me.importance > ActivityManager.RunningAppProcessInfo.IMPORTANCE_VISIBLE) return
+            }
             // ForegroundServiceStartNotAllowedException (Android 12+) o.l.: prøv igjen neste gang T'OS vises
             runCatching { androidx.core.content.ContextCompat.startForegroundService(c, Intent(c, GpsService::class.java)) }
+        }
+
+        /** Tenningen av: stopp tjenesten (varselet forsvinner, Android slipper å holde T'OS i forgrunnen). */
+        fun stop(c: Context) {
+            if (!running) return
+            runCatching { c.stopService(Intent(c, GpsService::class.java)) }
         }
     }
 
@@ -80,6 +92,7 @@ class GpsService : Service() {
 
     override fun onDestroy() {
         running = false
+        runCatching { ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE) }
         super.onDestroy()
     }
 }

@@ -36,8 +36,13 @@ import kotlin.math.max
 object IconStyle {
     val dark get() = Prefs.str("icon_style", "DARK") == "DARK"
     private const val PX = 128
-    /** Ferdige symboler per app (pakkenavn), maks 150 – så minnet ikke fylles opp over tid. */
-    private val cache = android.util.LruCache<String, Bitmap>(150)
+    /**
+     * Ferdige symboler per app (pakkenavn), regnet i bytes (24 MB ≈ 380 ikoner à 64 KB), så minnet ikke fylles opp over tid.
+     * Før: maks 150 stykker – med 200+ apper på stereoen ble ikonene regnet ut på nytt hver gang app-lista ble rullet.
+     */
+    private val cache = object : android.util.LruCache<String, Bitmap>(iconCacheBytes()) {
+        override fun sizeOf(key: String, value: Bitmap) = value.byteCount.coerceAtLeast(1)
+    }
 
     /** Ferdig maske: hvit der symbolet er, gjennomsiktig ellers. Farges i Compose. */
     fun glyph(d: Drawable, key: String): Bitmap = cache.get(key) ?: synchronized(this) {
@@ -117,6 +122,10 @@ object IconStyle {
         return Bitmap.createBitmap(out, w, h, Bitmap.Config.ARGB_8888)
     }
 }
+
+/** Plass til ferdige ikonsymboler: en åttendedel av minnet appen får, mellom 4 og 24 MB. Testes i CoreLogicTest. */
+internal fun iconCacheBytes(maxHeap: Long = Runtime.getRuntime().maxMemory()): Int =
+    (maxHeap / 8).coerceIn(4L * 1_048_576, 24L * 1_048_576).toInt()
 
 /** App-ikon i T'OS-stil. [key] = pakkenavn (brukes for å huske ferdig symbol). Regnes ut i bakgrunnen. */
 @Composable

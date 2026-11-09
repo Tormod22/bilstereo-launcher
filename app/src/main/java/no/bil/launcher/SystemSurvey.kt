@@ -265,6 +265,7 @@ object SystemSurvey {
                 appendLine("${sbn.packageName}  kanal=${n?.channelId}  kategori=${n?.category}  pågående=${sbn.isOngoing}  «${SurveyText.clip(title)}»")
             }
         }
+        part("Strøm (tenning/skjerm: hva T'OS lar gå)") { append(Power.report()) }
         part("Bluetooth") { append(BtLink.report(c)) }
         part("FYT-canbus (bil-data: dører, klima – com.syu.canbus)") { append(FytCan.report()) }
         part("FYT-tjenesten (com.syu.ms: radio, BT-telefon, lydkilde, volum)") {
