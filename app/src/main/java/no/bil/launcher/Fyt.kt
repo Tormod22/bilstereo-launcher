@@ -131,6 +131,8 @@ object Fyt {
     private var startedAt = 0L
 
     val radioReady get() = connected && modules.containsKey(M_RADIO)
+    /** Modulene som svarte (til selvtesten). */
+    val moduleIds: List<Int> get() = modules.keys.sorted()
     val btReady get() = connected && modules.containsKey(M_BT)
     /** BT-telefonen er tilkoblet ifølge FYT (null = vet ikke). */
     val phoneConnected: Boolean? get() = FytLogic.phoneConnected(phoneState)
@@ -209,6 +211,7 @@ object Fyt {
     }
 
     private fun onUpdate(m: Int, u: Int, ints: IntArray?, flts: FloatArray?, strs: Array<String?>?) {
+        runCatching { SelfTest.onFyt(m, u, ints) }   // selvtesten teller meldingene (SelfTest.kt)
         val now = SystemClock.elapsedRealtime()
         val event = SteerLogic.isEventCode(m, u)
         // Nåverdien som sendes med en gang ved registreringen er ikke et trykk

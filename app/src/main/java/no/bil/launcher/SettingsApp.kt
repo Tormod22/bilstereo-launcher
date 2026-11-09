@@ -749,6 +749,7 @@ private fun BackupSettings() {
             context.open(Intent.createChooser(i, "Send oppsettrapport"))
         }
     }) { Chevron() }
+    SettingRow("Selvtest av stereoen", "T'OS prøver selv radio, lyd, lys, Bluetooth og rattet – og viser hva som virker", onClick = { Nav.screen = Screen.SELFTEST }) { Chevron() }
     SurveyRows()
     SettingRow("Del feilrapport", "Send til deg selv og lim inn i Claude", onClick = {
         Hub.scope.launch {
