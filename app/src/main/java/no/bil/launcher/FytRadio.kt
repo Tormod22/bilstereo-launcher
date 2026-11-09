@@ -183,7 +183,27 @@ object FytRadio {
     /** Spill/pause på radioen = lyd av/på (å slippe kilden ville startet forrige app igjen – FytRadio NOTES.md). */
     fun toggleMute() {
         val mute = !Fyt.muted
-        if (Fyt.moduleCmd(Fyt.M_SOUND, 0, intArrayOf(if (mute) -3 else -4))) { mutedByUs = mute; if (mute) watchSource() }
+        if (Fyt.moduleCmd(Fyt.M_SOUND, 0, intArrayOf(if (mute) -3 else -4))) {
+            mutedByUs = mute
+            // Huskes over en omstart: krasjer/startes T'OS på nytt mens lyden er av, skrus den på igjen (FytMain.onConnected)
+            Prefs.setQuiet(MUTED_KEY, mute)
+            if (mute) watchSource()
+        }
+    }
+
+    private const val MUTED_KEY = "fyt_tos_muted"
+
+    /** Lyden er av fordi T'OS skrudde den av (også fra en tidligere kjøring). */
+    internal val tosMuted: Boolean get() = mutedByUs || runCatching { Prefs.bool(MUTED_KEY) }.getOrDefault(false)
+
+    /**
+     * Skru på lyden hvis det var T'OS som skrudde den av (også fra en tidligere kjøring). true = sendt.
+     * [force]: også når FYT-funksjonene er slått av (lyden skal aldri bli stående av på grunn av T'OS).
+     */
+    internal fun releaseTosMute(force: Boolean = false): Boolean {
+        if (!tosMuted) return false
+        mutedByUs = false; Prefs.setQuiet(MUTED_KEY, false)
+        return Fyt.moduleCmd(Fyt.M_SOUND, 0, intArrayOf(-4), force = force)
     }
 
     /**
@@ -208,7 +228,7 @@ object FytRadio {
     fun onRadioOff() {
         watch?.cancel(); watch = null
         stopJob()
-        if (mutedByUs) { mutedByUs = false; Fyt.moduleCmd(Fyt.M_SOUND, 0, intArrayOf(-4)) }
+        if (mutedByUs) { mutedByUs = false; Prefs.setQuiet(MUTED_KEY, false); Fyt.moduleCmd(Fyt.M_SOUND, 0, intArrayOf(-4)) }
     }
 
     private suspend fun ensureOn(c: Context) {

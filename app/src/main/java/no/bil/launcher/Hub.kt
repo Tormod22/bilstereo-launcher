@@ -481,7 +481,8 @@ object NightBrightness {
                 dimmed = true
             } else if (!want && dimmed) {
                 // Dag igjen, eller funksjonen er slått av: sett alt tilbake slik det var
-                Settings.System.putInt(r, Settings.System.SCREEN_BRIGHTNESS, Prefs.int("day_brightness", 200))
+                // Aldri nesten svart (en lagret 0 ville gjort skjermen umulig å se)
+                Settings.System.putInt(r, Settings.System.SCREEN_BRIGHTNESS, Prefs.int("day_brightness", 200).coerceAtLeast(20))
                 Settings.System.putInt(r, Settings.System.SCREEN_BRIGHTNESS_MODE, Prefs.int("day_brightness_mode", Settings.System.SCREEN_BRIGHTNESS_MODE_MANUAL))
                 dimmed = false
             }
