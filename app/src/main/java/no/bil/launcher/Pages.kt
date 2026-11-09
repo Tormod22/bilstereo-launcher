@@ -1026,7 +1026,7 @@ fun CarScreen(onClose: () -> Unit) {
                 }
 
                 // Bil-data fra stereoens canbus-boks (FytCan.kt) – bare det bilen faktisk melder
-                if (FytCan.active && (FytCan.doors.known || FytCan.air.known)) CarDataCard()
+                if (FytCan.active && Fyt.connected && (FytCan.doors.known || FytCan.air.known)) CarDataCard()
 
                 Section("Bilbatteri")
                 val bv = CarBattery.volt

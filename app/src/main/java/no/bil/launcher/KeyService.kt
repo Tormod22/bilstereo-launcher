@@ -100,9 +100,12 @@ class KeyService : AccessibilityService() {
         override fun onReceive(c: Context, i: Intent) {
             when (i.action) {
                 Intent.ACTION_SCREEN_OFF -> screenOffAt = SystemClock.elapsedRealtime()
-                Intent.ACTION_SCREEN_ON ->
+                Intent.ACTION_SCREEN_ON -> {
+                    // Etter dvale: koble til stereoen igjen hvis T'OS hadde gitt opp (com.syu.ms kan ha startet på nytt)
+                    runCatching { Fyt.onWake() }
                     // FYT melder tenningen: da starter FytMain oppstarten (svart skjerm er ikke at bilen startet)
                     if (!FytMain.accKnown && screenOffAt != 0L && SystemClock.elapsedRealtime() - screenOffAt > 120_000) Startup.run(c)
+                }
                 UsbManager.ACTION_USB_DEVICE_ATTACHED -> {
                     val d: UsbDevice? = if (Build.VERSION.SDK_INT >= 33) i.getParcelableExtra(UsbManager.EXTRA_DEVICE, UsbDevice::class.java)
                     else @Suppress("DEPRECATION") i.getParcelableExtra(UsbManager.EXTRA_DEVICE)

@@ -194,6 +194,18 @@ object Fyt {
 
     private val retry = Runnable { appContext?.let { start(it) } }
 
+    /**
+     * Skjermen kom på / tenningen på (etter dvale): har T'OS gitt opp å koble til (com.syu.ms var borte lenge), prøv på
+     * nytt fra start. Bare med hovedbryteren på, og ikke når en tilkobling allerede er i gang.
+     */
+    fun onWake() {
+        val a = appContext ?: return
+        if (!enabled || link || bound) return
+        tries = 0
+        main.removeCallbacks(retry)
+        main.post { if (enabled && !link && !bound) start(a) }
+    }
+
     private fun retryLater(a: Context) {
         appContext = a
         val wait = FytSafetyLogic.retryDelay(tries) ?: run { status += " – gir opp til neste omstart"; return }

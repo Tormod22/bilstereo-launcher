@@ -96,6 +96,8 @@ object FytSafety {
         } else {
             // Lyden T'OS skrudde av (radio-pause) skal ikke bli stående av
             runCatching { FytRadio.releaseTosMute(force = true) }
+            // Baklyset T'OS dempet for natten skal heller ikke bli stående mørkt
+            runCatching { FytMain.releaseNightDim(force = true) }
             runCatching { Fyt.stop("slått av i Innstillinger (Stereo-funksjoner (FYT))") }
             runCatching { FytMain.onDisconnected() }
         }

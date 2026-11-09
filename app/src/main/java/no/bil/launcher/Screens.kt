@@ -332,7 +332,9 @@ fun SteerScreen(onClose: () -> Unit) {
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 if (!Fyt.connected) {
-                    Text("Får ikke kontakt med stereoen", color = TextPrimary, fontSize = 18.sp, fontWeight = FontWeight.Medium)
+                    // Hovedbryteren av: si det, i stedet for at det ser ut som stereoen ikke svarer
+                    Text(if (!Fyt.enabled) "Stereo-funksjoner (FYT) er slått av" else "Får ikke kontakt med stereoen", color = TextPrimary, fontSize = 18.sp, fontWeight = FontWeight.Medium)
+                    if (!Fyt.enabled) Text("Slå dem på i Innstillinger → Om stereoen for å lære knappene fra T'OS.", color = TextMuted, fontSize = 14.sp)
                     Text("Rattknappene læres i stereoen selv. Bruk stereoens eget oppsett: trykk en funksjon, hold inne " +
                         "rattknappen til tallet endrer seg, og trykk ✓.", color = TextMuted, fontSize = 14.sp)
                 } else {

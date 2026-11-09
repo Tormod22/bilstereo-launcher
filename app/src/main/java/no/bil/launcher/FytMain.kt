@@ -181,8 +181,11 @@ object FytMain {
      */
     val stayOut: Boolean get() = FytMainLogic.stayOut(reversing && Fyt.connected, reverseAt, reverseEndAt, SystemClock.elapsedRealtime())
 
-    /** Stereoen melder tenningen – da startes «når bilen starter» av ACC, ikke av at skjermen kom på. */
-    val accKnown get() = acc != null
+    /**
+     * Stereoen melder tenningen – da startes «når bilen starter» av ACC, ikke av at skjermen kom på. Bare mens T'OS er
+     * koblet til (med FYT slått av / frakoblet kommer det ingen ACC-meldinger, og da må skjermen-på-reserven gjelde).
+     */
+    val accKnown get() = acc != null && Fyt.connected
 
     /** Lysstyrken styres via stereoen (FYT tilkoblet og valget på). */
     val brightReady get() = Fyt.connected && Prefs.bool("fyt_bright", true)
@@ -204,6 +207,7 @@ object FytMain {
                 override fun onReceive(ctx: Context, i: Intent) {
                     if (!i.hasExtra("cmd.acc")) return
                     val v = i.getIntExtra("cmd.acc", -1)
+                    if (v == 1) runCatching { Fyt.onWake() }
                     if (v == 0 || v == 1) onAcc(v == 1, "kringkasting")
                 }
             }, IntentFilter(Fyt.PKG), ContextCompat.RECEIVER_EXPORTED)
@@ -305,6 +309,8 @@ object FytMain {
                 note("tenning av ($source) – lagrer tur og parkering")
                 runCatching { Trip.flush() }
                 runCatching { Parking.saveNow(Hub.gps) }
+                // Søk/innstilling på radioen skal ikke fortsette i blinde gjennom dvalen (forvalgene røres ikke)
+                runCatching { FytRadio.stopForSleep() }
                 // Etter ACC av er lysene av; MCU-en melder dem først når de endres (vasyl91) – la sola avgjøre til da
                 lights = null
             }
@@ -331,6 +337,18 @@ object FytMain {
 
     /** Valget «Natt når lysene er på» ble endret. */
     fun onLightsSetting() { h.removeCallbacks(refreshTheme); h.post(refreshTheme) }
+
+    /**
+     * FYT-funksjonene slås av (hovedbryteren): hadde T'OS dempet baklyset for natten, settes dagnivået tilbake først
+     * ([force]: sendes selv om bryteren alt er av) – ellers ble skjermen stående mørk til FYT ble slått på igjen.
+     */
+    internal fun releaseNightDim(force: Boolean) {
+        if (!Prefs.bool("fyt_night_dimmed")) return
+        val day = Prefs.int("fyt_bright_day", 80).coerceIn(FytMainLogic.MIN_LEVEL, 100)
+        Prefs.setQuiet("fyt_night_dimmed", false)
+        Fyt.moduleCmd(Fyt.M_MAIN, FytMainLogic.C_BRIGHT_LEVEL, intArrayOf(day), force = force)
+        note("lysstyrke tilbake til dagnivå $day (FYT slås av)")
+    }
 
     /* ---------- Lysstyrke (baklyset via MCU-en) ---------- */
 

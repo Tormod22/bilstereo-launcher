@@ -47,6 +47,7 @@ object Steer {
         private set
     private var seq = 0
     private val dedup = SteerLogic.Dedup()
+    private val onePress = SteerLogic.OnePress()
     private var claimedAt = 0L
 
     /** Har stereoen noen gang (også før denne oppstarten) sendt noe fra rattknappene? */
@@ -63,7 +64,12 @@ object Steer {
 
     /** En rattknapp-melding fra FYT-tjenesten (på hovedtråden). */
     internal fun onFyt(e: SteerLogic.Event) {
-        if (!dedup.allow(e.cmd?.name ?: e.id, SystemClock.elapsedRealtime())) return
+        val now = SystemClock.elapsedRealtime()
+        // u=37 med kilden «Android-app»: stereoen gir selv appen trykket (Route.STEREO). Kom u=133 for det samme trykket
+        // først, skal T'OS ikke også sende det (rekkefølgen varierer) – se SteerLogic.OnePress.
+        val cmd0 = e.cmd
+        if (cmd0 != null && e.code == SteerLogic.U_PLAYER_CMD && Fyt.appId == 10) onePress.handledElsewhere(cmd0, now)
+        if (!dedup.allow(cmd0?.name ?: e.id, now)) return
         record(SteerLogic.label(e))
         // Test på Rattknapper-siden: neste/forrige lyser
         when (e.cmd) { SteerLogic.Cmd.NEXT -> FytSteer.flash(6); SteerLogic.Cmd.PREV -> FytSteer.flash(5); else -> Unit }
@@ -81,15 +87,10 @@ object Steer {
             return
         }
         if (!Prefs.bool("fyt_steer", true)) return
-        when (SteerLogic.route(e, Fyt.appId, inCall, NowPlaying.pkg)) {
-            SteerLogic.Route.APP -> when (e.cmd) {
-                SteerLogic.Cmd.NEXT -> Media.next(c)
-                SteerLogic.Cmd.PREV -> Media.previous(c)
-                SteerLogic.Cmd.PLAY_PAUSE -> Media.playPause(c)
-                SteerLogic.Cmd.PLAY -> if (!NowPlaying.playing) Media.play(c)
-                SteerLogic.Cmd.PAUSE -> if (NowPlaying.playing) Media.playPause(c)
-                else -> Unit
-            }
+        when (SteerLogic.route(e, Fyt.appId, inCall, NowPlaying.pkg, fytCall = Fyt.btReady && Fyt.inCall)) {
+            // Vent litt: kommer det samme trykket også som u=37 (kilde 10) eller som Android-medietast, gjør stereoen/
+            // Android det allerede – da gjør T'OS ingenting (ellers to sanger fram)
+            SteerLogic.Route.APP -> { val cmd = cmd0 ?: return; main.postDelayed({ if (onePress.mayAct(cmd, now)) toApp(c, cmd) }, SteerLogic.HOLD_MS) }
             SteerLogic.Route.PHONE -> when (e.cmd) {
                 SteerLogic.Cmd.ANSWER -> if (Call.canAnswer) Call.answer()
                 SteerLogic.Cmd.HANGUP -> if (Fyt.ringing || Call.name != null) Call.decline() else if (Fyt.btReady && Fyt.inCall) Fyt.hangUp()
@@ -99,20 +100,36 @@ object Steer {
         }
     }
 
-    /** En Android-tastekode som rattknapper ofte sender (neste, forrige, svar …) – bare til «Siste rattknapp». */
+    private fun toApp(c: android.content.Context, cmd: SteerLogic.Cmd) {
+        when (cmd) {
+            SteerLogic.Cmd.NEXT -> Media.next(c)
+            SteerLogic.Cmd.PREV -> Media.previous(c)
+            SteerLogic.Cmd.PLAY_PAUSE -> Media.playPause(c)
+            SteerLogic.Cmd.PLAY -> if (!NowPlaying.playing) Media.play(c)
+            SteerLogic.Cmd.PAUSE -> if (NowPlaying.playing) Media.playPause(c)
+            else -> Unit
+        }
+    }
+
+    /**
+     * En Android-tastekode som rattknapper ofte sender (neste, forrige, svar …) – til «Siste rattknapp». Knappestyringen
+     * lar tasten gå videre til Android (musikkappen får den), så et FYT-trykk for det samme skal ikke også sendes av T'OS.
+     */
     fun noteKey(code: Int) {
         val cmd = SteerLogic.androidCmd(code) ?: return
+        onePress.handledElsewhere(cmd, SystemClock.elapsedRealtime())
         main.post { record("${cmd.label} (tastekode $code)") }
     }
 
     /**
      * En Android-musikkapp ([pkg]) skal spille: gjør den til FYT sin lydkilde, så stereoen ikke sender rattknappene til
-     * sin egen musikkspiller/BT-side. Høyst hvert 3. sekund.
+     * sin egen musikkspiller/BT-side. Høyst hvert 3. sekund. [explicit] = brukeren valgte selv musikken (MUSIC-handlingen,
+     * kildevalget): da også fra FYT-radioen, som ellers ville spilt videre under appen (og fått rattknappene).
      */
-    fun claimSource(pkg: String?) {
+    fun claimSource(pkg: String?, explicit: Boolean = false) {
         val now = SystemClock.elapsedRealtime()
         if (!Fyt.connected || now - claimedAt < 3000) return
-        if (!SteerLogic.shouldClaim(Prefs.bool("fyt_steer", true), Fyt.appId, Fyt.inCall, pkg)) return
+        if (!SteerLogic.shouldClaim(Prefs.bool("fyt_steer", true), Fyt.appId, Fyt.inCall, pkg, explicit)) return
         claimedAt = now
         Fyt.androidSource()
     }
@@ -228,11 +245,13 @@ internal object SteerLogic {
      *    i T'OS, gjør FYT det selv. u=37 med kilden «Android-app» (10): FYT sender trolig selv medieknappen til appen –
      *    T'OS gjør ingenting (ellers to sanger fram). Ellers (kilde 8 musikkspiller, 2 BT-side …): til musikkappen.
      */
-    fun route(e: Event, appId: Int, inCall: Boolean, nowPkg: String?): Route {
+    fun route(e: Event, appId: Int, inCall: Boolean, nowPkg: String?, fytCall: Boolean = false): Route {
         val cmd = e.cmd ?: return Route.NONE
         return when (cmd) {
             Cmd.VOL_UP, Cmd.VOL_DOWN, Cmd.MUTE, Cmd.VOICE -> Route.STEREO
-            Cmd.ANSWER, Cmd.HANGUP -> if (inCall) Route.PHONE else Route.NONE
+            // FYT-samtale: stereoen svarer/legger på selv når rattknappen er lært – T'OS sender ikke det samme en gang til
+            // (et ekstra «legg på» kunne ha lagt på en samtale som nettopp ble besvart)
+            Cmd.ANSWER, Cmd.HANGUP -> if (!inCall) Route.NONE else if (fytCall) Route.STEREO else Route.PHONE
             else -> when {
                 inCall -> Route.NONE
                 appId == 1 || appId == 11 || appId == 3 -> Route.STEREO
@@ -248,8 +267,29 @@ internal object SteerLogic {
      * BT (2 BT-telefon uten samtale, 3 BT-musikk, 8 musikkspiller, 9 videospiller), og aldri for FYT sine egne apper.
      * Radioen tas hånd om av HwRadio.yieldTo.
      */
-    fun shouldClaim(enabled: Boolean, appId: Int, inCall: Boolean, pkg: String?): Boolean =
-        enabled && !inCall && pkg != null && !pkg.startsWith("com.syu.") && pkg != "com.android.bluetooth" && appId in setOf(2, 3, 8, 9)
+    fun shouldClaim(enabled: Boolean, appId: Int, inCall: Boolean, pkg: String?, explicit: Boolean = false): Boolean =
+        enabled && !inCall && pkg != null && !pkg.startsWith("com.syu.") && pkg != "com.android.bluetooth" &&
+            (appId in setOf(2, 3, 8, 9) || (explicit && (appId == 1 || appId == 11)))
+
+    /** Så lenge T'OS venter før det sender neste/forrige til musikkappen (se [OnePress]). */
+    const val HOLD_MS = 250L
+
+    /** Neste/forrige/spill-pause regnes som samme trykk uansett hvilken vei de kom (u=37 «spill» vs. Android «spill/pause»). */
+    private fun group(c: Cmd): Cmd = when (c) { Cmd.PLAY, Cmd.PAUSE -> Cmd.PLAY_PAUSE; else -> c }
+
+    /**
+     * Ett trykk på rattet kan nå T'OS flere veier: u=133 og u=37 (rekkefølgen varierer) og/eller som Android-medietast.
+     * Har stereoen/Android allerede gitt appen trykket ([handledElsewhere]) innen [windowMs] fra trykket, skal T'OS ikke
+     * gjøre det ([mayAct] = false) – ellers hopper musikken to sanger.
+     */
+    class OnePress(private val windowMs: Long = 600) {
+        private val elsewhere = HashMap<Cmd, Long>()
+        fun handledElsewhere(cmd: Cmd, now: Long) { elsewhere[group(cmd)] = now }
+        fun mayAct(cmd: Cmd, pressedAt: Long): Boolean {
+            val t = elsewhere[group(cmd)] ?: return true
+            return kotlin.math.abs(t - pressedAt) >= windowMs
+        }
+    }
 
     /** Tekst til Knapper-siden og kartleggingen. */
     fun label(e: Event): String {

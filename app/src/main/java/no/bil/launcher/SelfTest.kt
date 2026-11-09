@@ -130,9 +130,10 @@ internal object SelfTestLogic {
         if (before + BRIGHT_STEP <= 100) (before + BRIGHT_STEP).coerceAtLeast(FytMainLogic.MIN_LEVEL) else before - BRIGHT_STEP
 
     /** Hvorfor volumprøven hoppes over (null = kan kjøres). */
-    fun volumeSkip(level: Int, muted: Boolean, inCall: Boolean): String? = when {
+    fun volumeSkip(level: Int, muted: Boolean, inCall: Boolean, reversing: Boolean = false): String? = when {
         level < 0 -> "Stereoen har ikke meldt volumet – prøven hoppes over"
         inCall -> "Samtale pågår – volumet røres ikke"
+        reversing -> "Bilen rygger – volumet røres ikke"
         muted -> "Lyden er av – volumet røres ikke"
         level > VOLUME_MAX_FOR_TEST -> "Volumet er høyt ($level) – prøven kjøres bare på $VOLUME_MAX_FOR_TEST eller lavere"
         else -> null
@@ -176,6 +177,9 @@ internal object SelfTestLogic {
     fun lightsChanged(before: Boolean?, now: Boolean?): Boolean = now != null && now != before && !(before == null && !now)
 
     /** Hva radioprøven gjør etterpå: null = ingenting (radioen var på), ellers kilden som slås på igjen (0 = radio av). */
+    /** Radioprøven venter høyst så lenge på at en samtale blir ferdig før kilden settes tilbake. */
+    const val CALL_WAIT_MS = 30 * 60_000L
+
     fun restoreSource(prev: Int): Int? = when (prev) {
         1, 11 -> null
         -1, 0 -> 0
@@ -286,6 +290,10 @@ internal interface SelfProbe {
     fun setSource(id: Int): Boolean
     fun lights(): Boolean?
     fun steerKeyAt(): Long
+    /** Samtale nå (FYT eller Android) – radioprøven bytter ikke kilde midt i en samtale. */
+    fun inCallNow(): Boolean = false
+    /** Bilen rygger (stereoen kan dempe lyden da) – volumprøven hoppes over. */
+    fun reversingNow(): Boolean = false
 }
 
 /** Den ekte stereoen (Fyt, FytMain, FytSound, FytPhone …). */
@@ -342,6 +350,8 @@ internal object FytProbe : SelfProbe {
     }
     override fun lights() = FytMain.lights
     override fun steerKeyAt() = Steer.lastAt
+    override fun inCallNow() = Fyt.inCall || (Fyt.appContext?.let { c -> runCatching { Buttons.inCall(c) }.getOrDefault(false) } ?: false)
+    override fun reversingNow() = FytMain.reversing
 }
 
 object SelfTest {
@@ -434,7 +444,7 @@ object SelfTest {
 
     private suspend fun volumeTest(s: Snapshot) {
         val level = probe.volume().takeIf { it >= 0 } ?: s.volume
-        SelfTestLogic.volumeSkip(level, s.muted, s.inCall)?.let { add(Check("volume", "Volum fra T'OS", Mark.UNKNOWN, it)); return }
+        SelfTestLogic.volumeSkip(level, s.muted, s.inCall || probe.inCallNow(), probe.reversingNow())?.let { add(Check("volume", "Volum fra T'OS", Mark.UNKNOWN, it)); return }
         phase = "Prøver volumet (ett steg) …"
         val dir = SelfTestLogic.volumeDir(level, probe.volumeMax())
         probe.volumeStep(dir)
@@ -529,6 +539,13 @@ object SelfTest {
             })
         } finally {
             if (restore != null) {
+                // Kom det en samtale mens prøven gikk: ikke bytt kilde midt i den – vent til den er over (høyst 30 min)
+                if (probe.inCallNow()) {
+                    phase = "Venter til samtalen er ferdig …"
+                    val t0 = now
+                    while (probe.inCallNow() && now - t0 < SelfTestLogic.CALL_WAIT_MS) delay(500)
+                    delay(1500)   // stereoen setter selv tilbake kilden etter samtalen – gi den tid først
+                }
                 phase = "Tilbake til ${FytLogic.sourceName(prev)} …"
                 delay(400)
                 probe.setSource(restore)

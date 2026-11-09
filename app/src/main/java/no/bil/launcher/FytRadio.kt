@@ -326,6 +326,9 @@ object FytRadio {
 
     fun cancel() { if (scan != null) Notify.show("Søket er stoppet"); stopJob() }
 
+    /** Tenningen av (FytMain): stopp søk/innstilling stille. Dempingen T'OS satt oppheves ved tenning på (FytMain). */
+    internal fun stopForSleep() { stopJob() }
+
     /** Venter til søket har landet på en ny stasjon. Gir frekvensen, eller null når ingenting skjer. */
     private suspend fun awaitSeek(before: Int): Int? {
         val t0 = SystemClock.elapsedRealtime()

@@ -91,7 +91,9 @@ class TosInCallService : InCallService() {
         Phone.routes = audioState.supportedRouteMask
     }
 
+    /** Samtaleskjermen – ikke over ryggebildet (FYT): da kommer den når ryggingen er ferdig (Phone.openCallScreenAuto). */
     private fun showCallScreen() {
+        if (FytMain.stayOut) { Phone.openCallScreenAuto(this); return }
         runCatching {
             startActivity(Intent(this, CallActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP))
         }

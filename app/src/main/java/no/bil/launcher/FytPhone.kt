@@ -364,10 +364,13 @@ object FytPhone {
         track = step.track
         if (before == null && step.track != null) {
             userHid = false; pendingDial = null
+            // T'OS hadde skrudd av lyden (pause på radioen): FYT-dempingen gjelder alt – samtalen skal høres
+            runCatching { FytRadio.releaseTosMute() }
             publish()
             if (enabled && runCatching { Prefs.bool("fyt_call_screen", true) }.getOrDefault(true))
-                // Fra knappestyringen når den kjører (Android 10 lar da T'OS åpne skjermen fra bakgrunnen)
-                (KeyService.instance ?: Fyt.appContext)?.let { c -> main.post { Phone.openCallScreen(c) } }
+                // Fra knappestyringen når den kjører (Android 10 lar da T'OS åpne skjermen fra bakgrunnen).
+                // Rygger bilen, venter skjermen til kamerabildet er borte.
+                (KeyService.instance ?: Fyt.appContext)?.let { c -> main.post { Phone.openCallScreenAuto(c) } }
         } else if (step.track != null) publish()
         step.finished?.let { r ->
             val name = nameOf(r.number)

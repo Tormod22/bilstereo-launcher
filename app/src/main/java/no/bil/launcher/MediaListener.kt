@@ -304,7 +304,7 @@ object Media {
                 NetRadio.stop(a)
                 NowPlaying.preferredPkg = pkg
                 if (HwRadio.wanted) HwRadio.powerOff(a, keep = pkg)
-                runCatching { Steer.claimSource(pkg) }
+                runCatching { Steer.claimSource(pkg, explicit = true) }
                 pauseOthers(keep = pkg)
                 val s = NowPlaying.sessions.firstOrNull { it.packageName == pkg }
                 if (s != null) {
