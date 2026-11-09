@@ -61,13 +61,13 @@ enum class SetCat(val label: String, val icon: ImageVector, val group: String, v
     APPS("Apper", Icons.Default.Apps, "Stereoen", "apper app skjul vis startskjerm carplay car link radio kamera systemapper avinstaller siste nylige bakgrunn lukk"),
     STORAGE("Lagring", Icons.Default.Storage, "Stereoen", "lagring plass minne cache tøm kart minnepinne"),
     TIME("Dato, tid og språk", Icons.Default.Schedule, "Stereoen", "dato tid klokke tidssone 24 timer språk tastatur norsk"),
-    ABOUT("Om stereoen", Icons.Default.Info, "Stereoen", "om versjon oppdatering oppdater stereo android prosessor minne oppsett tillatelser adb pc avansert bruksanvisning hjelp manual"),
+    ABOUT("Om stereoen", Icons.Default.Info, "Stereoen", "om versjon oppdatering oppdater stereo android prosessor minne oppsett tillatelser adb pc avansert bruksanvisning hjelp manual nytt hva er nytt endringer"),
     MAP("Kart og kjøring", Icons.Default.Map, "T'OS", "kart navigasjon adresse hjem jobb waze maps fart fartsgrense popup"),
     MUSIC("Musikk og oppstart", Icons.Default.MusicNote, "T'OS", "musikk spotify oppstart sangtittel cover varseltilgang radio fm radiomotor"),
     PHONE("Telefon", Icons.Default.Phone, "T'OS", "telefon favoritter carplay ring samtale"),
     CAR("Bil", Icons.Default.DirectionsCar, "T'OS", "bil batteri spenning obd eu-kontroll service dekk dekkskift tuning tur"),
     KEYS("Knapper", Icons.Default.Tune, "T'OS", "knapper ratt lær tast menu navi"),
-    BACKUP("Sikkerhetskopi og hjelp", Icons.Default.Backup, "T'OS", "sikkerhetskopi backup lagre hent fil rapport feil krasj sikker modus kartlegg kartlegging opptak bruksanvisning"),
+    BACKUP("Sikkerhetskopi og hjelp", Icons.Default.Backup, "T'OS", "sikkerhetskopi backup lagre hent fil rapport feil krasj sikker modus kartlegg kartlegging opptak bruksanvisning utvikler utvikleren tilbakemelding send alt"),
 }
 
 /** Kategoriene som passer søket (alle ord må finnes i navnet eller søkeordene). Ren logikk, testes. */
@@ -597,6 +597,7 @@ private fun AboutSettings() {
     SettingRow("Minne", Hub.memText)
     SettingRow("Førstegangsoppsett", "Tillatelser – med stereoen eller med PC (uten Android-menyene)", onClick = { Nav.screen = Screen.SETUP }) { Chevron() }
     SettingRow("Bruksanvisning", "Slik bruker du T'OS: knappene, rattet, radio, musikk, telefon og hva du gjør hvis noe er rart", onClick = { Nav.screen = Screen.HELP }) { Chevron() }
+    SettingRow("Hva er nytt", "Det som er nytt i de siste versjonene av T'OS, og hva du kan prøve", onClick = { Nav.screen = Screen.NEWS }) { Chevron() }
     SettingRow("Takk til", "Radiostyring og app-søk bygger på OpenLauncher (MIT). Kart © OpenStreetMap, Protomaps. Se docs/TREDJEPART.md.")
     Section("Avansert")
     var ask by remember { mutableStateOf(false) }
@@ -716,6 +717,10 @@ private fun BackupSettings() {
     var tick by remember { mutableIntStateOf(0) }
     val nb = Locale("nb", "NO")
     fun whenText(f: File) = if (f.exists()) SimpleDateFormat("d. MMM 'kl.' HH:mm", nb).format(Date(f.lastModified())) else null
+
+    // Øverst: alt utvikleren trenger i én fil (selvtest, oppsett, feil, stereoen, siste opptak) – se Feedback.kt
+    Section("Til utvikleren")
+    FeedbackCard()
 
     // I T'OS-mappa: uten Androids filvelger
     Section("På stereoen (T'OS-mappa)")

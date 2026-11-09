@@ -135,6 +135,19 @@ T'OS:
 
 Bruk søkefeltet øverst til venstre for å finne en innstilling raskt.
 
+## Send alt til utvikleren
+
+Virker noe ikke som det skal, eller har du prøvd noe nytt? Da er dette den eneste knappen du trenger.
+
+1. Gå til **Innstillinger → Sikkerhetskopi og hjelp**. Kortet **Send alt til utvikleren** ligger øverst.
+2. Skriv gjerne kort i feltet **Hva skjedde?**, for eksempel «radioen hakket da jeg slo på tenningen». Det er ikke nødvendig.
+3. Trykk **Send**. Vent noen sekunder mens fila lages.
+4. Velg hvordan du vil sende den (e-post eller Google Drive) og send den til utvikleren.
+
+Fila har alt i ett: versjonen, selvtesten, oppsettet, feil T'OS har hatt, det viktigste om stereoen og slutten av siste opptak.
+
+Knappen finnes også på siden **Selvtest av stereoen** og på siden **Hva er nytt**.
+
 ## Selvtest og kartlegging
 
 Disse hjelper oss å finne ut hva som virker på akkurat din stereo.
@@ -176,6 +189,8 @@ T'OS passer også på seg selv:
 3. Første gang kan Android spørre om du vil installere. Trykk **Installer**.
 
 Stereoen må være koblet til internett (for eksempel delt nett fra iPhonen).
+
+Etter en oppdatering står det en stund på forsiden at T'OS er oppdatert. Trykk på linja for å se hva som er nytt og hva du kan prøve. Du finner det også under **Innstillinger → Om stereoen → Hva er nytt**.
 
 ## Med PC (valgfritt)
 

@@ -173,6 +173,7 @@ class SelfTestSmokeTest {
         settle()
         rule.awaitText("1 av 3 virker")
         rule.awaitText("Send resultatet")
+        rule.awaitText("Send alt til utvikleren")
         rule.awaitText("Rattknapp (10 s)")
     }
 }
