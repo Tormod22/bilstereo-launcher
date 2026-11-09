@@ -137,6 +137,13 @@ object FytVolume {
         if (level > Prefs.int("fyt_vol_seen", 0)) Prefs.setQuiet("fyt_vol_seen", level)
         if (!changed || c == null) return
         lastFytAt = SystemClock.elapsedRealtime()
+        // T'OS sin egen glidebryter (FytSound): ingen ekstra linje. Ligger linja allerede over FYT-vinduet, følger den
+        // med; inne i T'OS vises T'OS sitt vanlige volumvindu. Dukker FYT-vinduet opp likevel, dekkes det (onPopupEvent).
+        if (FytSound.ownRecently()) {
+            if (update()) { lastChange = lastFytAt; KeyService.instance?.checkFytPopup() }
+            else if (TosOverlay.appShown && !Nav.quick) VolumeUi.show(if (muted) 0 else level, max)
+            return
+        }
         show(c)
     }
 
@@ -145,6 +152,7 @@ object FytVolume {
         popupPresent = true
         val n = FytVolumeLogic.levelFromText(texts) ?: return
         if (Fyt.connected) { if (slot != null || level < 0) return } else level = n
+        if (FytSound.ownRecently()) VolumeUi.hide()      // T'OS-linja dekker FYT-vinduet – ikke to linjer
         show(c)
     }
 

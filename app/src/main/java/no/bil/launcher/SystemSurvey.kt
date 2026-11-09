@@ -273,6 +273,7 @@ object SystemSurvey {
             appendLine("FYT sin navigasjonsapp (sys.navi.packagename): ${FytKeys.naviPackage() ?: "ukjent"}")
             appendLine("Kartapper («geo:»): ${NaviKey.geoApps(c).sorted().joinToString().ifEmpty { "ingen" }}")
         }
+        part("FYT-lyd (lydmodulen 4: volum, equalizer, balanse/fader, loudness)") { append(FytSound.report()) }
         part("FYT-statuslinjen (show_navigationbar)") {
             appendLine("show_navigationbar = ${FytBars.current(c)}  (1 = stereoens linje vises, 0 = skjult)")
             appendLine("navigationbar_config = ${runCatching { Settings.System.getString(c.contentResolver, "navigationbar_config") }.getOrNull()}")

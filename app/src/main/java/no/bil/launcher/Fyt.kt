@@ -74,8 +74,8 @@ object Fyt {
         M_RADIO to listOf(0, 1, 2, 3, 5, 13, 14, 15, 16, 21, 22, 26),
         // BT: ID3 tittel/artist, telefonens navn/nummer/tilstand, ringe-/taletid, BT-musikk spiller, HFP, PBAP
         M_BT to listOf(0, 1, 6, 7, 8, 9, 11, 12, 13, 18, 29, 31),
-        // Lyd: volum, demping, modul
-        M_SOUND to listOf(1, 2, 3),
+        // Lyd: brikke, volum, demping, equalizer, balanse/fader, loudness … (FytSound)
+        M_SOUND to FytSoundLogic.CODES,
         // Ratt (10): ingen kjente koder – alt logges (kartleggingen viser om rattknappene sender noe her)
         M_STEER to (0..40).toList(),
         // Canbus (7): som FYTCanbusMonitor. Bare til kartleggingen (bil-data og ev. rattknapper fra canbus-boksen)
@@ -288,6 +288,7 @@ object Fyt {
                 }
             }
         }
+        if (m == M_SOUND) runCatching { FytSound.onUpdate(u, ints) }
     }
 
     /* ---------- Kommandoer ---------- */
@@ -375,6 +376,9 @@ object Fyt {
      * spilte i kartleggingen). Da sender ikke stereoen rattknappene til sin egen musikkspiller lenger. Se Steer.claimSource.
      */
     fun androidSource(): Boolean = cmd(M_MAIN, 0, intArrayOf(10))
+
+    /** Lydmodulen (4): volum og lydbildet (se FytSound). */
+    fun soundCmd(code: Int, ints: IntArray): Boolean = cmd(M_SOUND, code, ints)
 
     /** Rattmodulen (10): læring av rattknappene i stereoen (se FytSteer). Tom liste sendes som tom (ikke null), som cabin. */
     fun steerCmd(code: Int, ints: IntArray): Boolean = cmd(M_STEER, code, ints)
