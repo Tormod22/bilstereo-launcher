@@ -91,6 +91,8 @@ class ScreensSmokeTest {
         for (n in listOf(false, true)) {
             night(n)
             show(Screen.HELP)
+            // Teksten leses fra assets i bakgrunnen – vent til den er der (ellers ustabil test)
+            repeat(10) { if (rule.onAllNodesWithText("Forsiden").fetchSemanticsNodes().isEmpty()) settle() }
             assertTrue(rule.onAllNodesWithText("Forsiden").fetchSemanticsNodes().isNotEmpty())
             rule.onAllNodesWithText("Telefon")[0].performClick()
             settle()

@@ -90,7 +90,7 @@ Snakk norsk med brukeren. Han er ikke utvikler – forklar enkelt, ikke bruk fag
   T'OS-demping, rattknapper ett trykk = én handling (`SteerLogic.OnePress`, 250 ms), svar/legg på i FYT-samtale gjør stereoen selv,
   `claimSource(explicit = true)` fra MUSIC tar også FYT-radioen, `FytMain.accKnown` krever tilkobling, tenning av stopper radiosøk,
   `Fyt.onWake` kobler til igjen etter dvale, hovedbryter av → dagnivå på lysstyrken tilbake, selvtestens radioprøve venter på samtale,
-  volumprøven hoppes over ved rygging. ÅPENT: nettradio valgt mens FYT-radioen spiller slår ikke av FYT-radioen. Test IntegrationLogicTest (6).
+  volumprøven hoppes over ved rygging. Nettradio valgt mens FYT-radioen spiller: FytRadio.onRadioOff + Fyt.androidSource (NetRadio.start). Test IntegrationLogicTest (6).
   (bruksanvisning) `docs/BRUKSANVISNING.md` (enkel norsk) + kopi i `app/src/main/assets/bruksanvisning.md` (HelpDocTest sjekker at de er
   like – HUSK å oppdatere begge) vist i T'OS som «Bruksanvisning» (Screen.HELP, `Help.kt`; Innstillinger → Om stereoen og Sikkerhetskopi
   og hjelp). Oppstartsskjerm (T'OS-merket på svart, 200 + 600 ms, `SplashHost`) ved kald start og etter ≥ 2 min med skjermen av.
