@@ -301,14 +301,26 @@ object FytMain {
         if (runCatching { FytRadio.releaseTosMute() }.getOrDefault(false)) note("lyd på igjen ($why) – T'OS hadde skrudd den av")
     }
 
+    /** Da tenningen sist gikk av (SystemClock.elapsedRealtime, 0 = ikke i denne kjøringen av T'OS). */
+    private var accOffAt = 0L
+    private const val ACC_SAVED = "fyt_acc_last"
+
     private fun onAcc(on: Boolean, source: String) {
         // Ny tenning (av/på): «rygger» fra forrige tur gjelder ikke lenger
         if (acc != null && acc != on && reversing) { reversing = false; reverseEndAt = 0L }
-        if (FytMainLogic.edge(acc, on) == FytMainLogic.Edge.ON) releaseTosMute("tenning på")
-        when (FytMainLogic.edge(acc, on)) {
+        // Første melding etter at T'OS ble startet på nytt (FYT kan drepe appen i dvalen): sammenlign med lagret tenning
+        val saved = if (acc == null) runCatching { when (Prefs.int(ACC_SAVED, -1)) { 0 -> false; 1 -> true; else -> null } }.getOrNull() else null
+        val edge = PowerLogic.accEdge(acc, saved, on)
+        // Lyden T'OS skrudde av: bare når kommandoen kan sendes – ellers gjør onConnected det (FytRadio glemmer merket
+        // selv om kommandoen ikke kom fram, og da ble lyden stående av etter dvalen)
+        if (edge == FytMainLogic.Edge.ON && Fyt.connected) releaseTosMute("tenning på")
+        val now = SystemClock.elapsedRealtime()
+        when (edge) {
             FytMainLogic.Edge.NONE -> { if (acc == null) note("tenning ${if (on) "på" else "av"} ($source, nåverdi)") }
             FytMainLogic.Edge.OFF -> {
+                accOffAt = now
                 note("tenning av ($source) – lagrer tur og parkering")
+                // Før GPS-en stoppes (Power går i dvale først når skjermen er av): siste gode posisjon blir parkeringen
                 runCatching { Trip.flush() }
                 runCatching { Parking.saveNow(Hub.gps) }
                 // Søk/innstilling på radioen skal ikke fortsette i blinde gjennom dvalen (forvalgene røres ikke)
@@ -317,11 +329,15 @@ object FytMain {
                 lights = null
             }
             FytMainLogic.Edge.ON -> {
-                note("tenning på ($source) – oppstart")
-                app?.let { a -> runCatching { Startup.run(a) } }
+                // Tenningen blinket (motoren startes): samme tur – ingen ny oppstart midt i musikken
+                if (PowerLogic.startupOnAccOn(accOffAt, now)) {
+                    note("tenning på ($source) – oppstart")
+                    app?.let { a -> runCatching { Startup.run(a) } }
+                } else note("tenning blinket ($source) – samme tur")
             }
         }
         acc = on
+        runCatching { Prefs.setQuiet(ACC_SAVED, if (on) 1 else 0) }   // skrives bare når den endres
         // Strømsparingen (Power.kt): GPS, OBD, versjonssjekk … av/på etter tenningen
         runCatching { Power.refresh() }
     }
