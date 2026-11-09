@@ -237,6 +237,7 @@ object Fyt {
             apply(m, u, ints, strs)
             if (m == M_RADIO) runCatching { FytRadio.onUpdate(u, ints, strs) }
             if (steer != null && !FytMain.stayOut) runCatching { Steer.onFyt(steer) }   // ikke mens bilen rygger
+            if (m == M_CANBUS) runCatching { FytCan.onUpdate(u, ints) }      // dører/klima (FytCan.kt)
         }
     }
 

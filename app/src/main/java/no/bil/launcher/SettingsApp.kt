@@ -320,6 +320,8 @@ private fun ScreenSettings() {
     }
     ToggleRow("Nedtrekksmeny i T'OS-stil", "tos_shade", true,
         "Sveip ned fra toppen viser T'OS sitt panel med varsler, lys og volum i stedet for stereoens")
+    if (FytCan.active) ToggleRow("Klima og dører i T'OS-stil", "tos_canbus", true,
+        "Når klimaet endres eller en dør åpnes, viser T'OS sitt eget kort oppå stereoens. Ryggeradaren vises alltid som før.")
     // FYT: stereoen vet om lysene er på (ILL-ledningen) – da kan natt følge lysene i stedet for sola
     val lightsKnown = FytMain.lights != null || Prefs.bool("fyt_lights_seen")
     ChoiceRow("Nattmodus", "night_mode", listOf("AUTO" to if (lightsKnown && FytMain.byLights) "Automatisk (lysene på bilen)" else "Automatisk (etter sola)",

@@ -266,6 +266,7 @@ object SystemSurvey {
             }
         }
         part("Bluetooth") { append(BtLink.report(c)) }
+        part("FYT-canbus (bil-data: dører, klima – com.syu.canbus)") { append(FytCan.report()) }
         part("FYT-tjenesten (com.syu.ms: radio, BT-telefon, lydkilde, volum)") {
             append(Fyt.report(c))
             append(FytPhone.report())
