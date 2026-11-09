@@ -2,6 +2,9 @@ package no.bil.launcher
 
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.performClick
+import org.junit.Assert.assertTrue
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import org.junit.After
@@ -79,6 +82,19 @@ class ScreensSmokeTest {
             // Kategorien leses når siden åpnes (som når hurtigpanelet åpner Wi-Fi direkte)
             rule.runOnUiThread { Prefs.set("settings_cat", c.name) }
             show(Screen.SETTINGS)
+        }
+        show(Screen.DASH)
+    }
+
+    /** Bruksanvisningen (Innstillinger → Om stereoen): teksten lastes fra assets, og innholdslista hopper i teksten. */
+    @Test fun bruksanvisning() {
+        for (n in listOf(false, true)) {
+            night(n)
+            show(Screen.HELP)
+            assertTrue(rule.onAllNodesWithText("Forsiden").fetchSemanticsNodes().isNotEmpty())
+            rule.onAllNodesWithText("Telefon")[0].performClick()
+            settle()
+            assertTrue(rule.onAllNodesWithText("Telefon").fetchSemanticsNodes().size >= 2)
         }
         show(Screen.DASH)
     }
