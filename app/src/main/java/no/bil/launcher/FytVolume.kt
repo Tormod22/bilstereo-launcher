@@ -166,7 +166,7 @@ object FytVolume {
     }
 
     private fun show(c: Context) {
-        if (!enabled || SurveyRecorder.active) return
+        if (!enabled || SurveyRecorder.active || FytMain.stayOut) return
         lastChange = SystemClock.elapsedRealtime()
         if (!update()) build(c)
         KeyService.instance?.checkFytPopup()

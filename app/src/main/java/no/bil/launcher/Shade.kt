@@ -396,6 +396,7 @@ internal object ShadePanel {
     @SuppressLint("ApplySharedPref")   // commit: merket må være lagret før et eventuelt krasj
     fun show(svc: AccessibilityService): Boolean {
         if (shown) return true
+        if (FytMain.stayOut) return true      // bilen rygger: ikke noe over kamerabildet (og ikke T'OS i stedet)
         val g = guard(svc)
         // Krasjet T'OS mens panelet ble tegnet forrige gang (innen et døgn)? Da brukes reserven.
         val pendingAt = g.getLong("pending_at", 0L)

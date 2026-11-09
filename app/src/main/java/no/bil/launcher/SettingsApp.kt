@@ -214,6 +214,17 @@ private fun SoundSettings() {
         listOf("0" to "Automatisk (${FytVolume.max})", "30" to "30", "35" to "35", "40" to "40", "45" to "45", "50" to "50", "60" to "60"), "0",
         "Bare for hvor full volumlinja blir. Skru helt opp én gang, så finner T'OS det selv.")
     ToggleRow("Lyd når du er over fartsgrensen", "speed_beep", false, "Ett kort pip når du kjører mer enn 3 km/t over grensen")
+    // FYT: stereoens egen tastelyd (pip fra knappene) og navigasjonsmiks – bare når stereoen har meldt dem (FytMain)
+    FytMain.beep?.let { on ->
+        SettingRow("Pip fra stereoens knapper", "Stereoens egen tastelyd (FYT)", onClick = {
+            FytMain.setBeep(!on) { ok -> if (!ok) say("Stereoen svarte ikke – tastelyden er uendret") }
+        }) { Toggle(on) }
+    }
+    FytMain.naviMix?.let { on ->
+        SettingRow("Senk musikken når kartappen snakker", "Stereoens navigasjonsmiks (FYT)", onClick = {
+            FytMain.setNaviMix(!on) { ok -> if (!ok) say("Stereoen svarte ikke – innstillingen er uendret") }
+        }) { Toggle(on) }
+    }
     val tick = rememberResumeTick()
     val canWrite = remember(tick) { Settings.System.canWrite(context) }
     if (canWrite) {
@@ -249,7 +260,28 @@ private fun ScreenSettings() {
             say(if (ok) "Bilbildet er lagret" else "Fikk ikke lest bildet")
         }
     }
-    if (canWrite) {
+    val fytBright = FytMain.brightReady
+    if (fytBright) {
+        // FYT: baklyset styres av stereoen (MCU-en), ikke av Android – T'OS sender lysstyrken dit (FytMain)
+        var b by remember { mutableFloatStateOf(FytMain.fraction()) }
+        SliderRow("Lysstyrke", Icons.Default.LightMode, b, 0.05f..1f) {
+            b = it
+            if (Prefs.float("app_brightness", -1f) >= 0f) Prefs.set("app_brightness", -1f)
+            FytMain.setFromSlider(it)
+        }
+        if (Prefs.bool("dim_system")) {
+            var n by remember { mutableFloatStateOf(Prefs.int("fyt_bright_night", 25) / 100f) }
+            SliderRow("Lysstyrke om natten", Icons.Default.DarkMode, n, 0.05f..1f) {
+                n = it
+                val l = FytMainLogic.levelFor(it)
+                Prefs.setQuiet("fyt_bright_night", l)
+                if (Prefs.bool("fyt_night_dimmed")) FytMain.sendLevel(l)
+            }
+        }
+    }
+    if (Fyt.connected) ToggleRow("Lysstyrke via stereoen (FYT)", "fyt_bright", true,
+        if (FytMain.brightConfirmed) "Stereoen bekrefter lysstyrken T'OS sender" else "Glideren styrer stereoens eget baklys. Virker den ikke, slå av – da prøver T'OS Androids lysstyrke.")
+    if (!fytBright && canWrite) {
         var b by remember { mutableFloatStateOf(runCatching { Settings.System.getInt(context.contentResolver, Settings.System.SCREEN_BRIGHTNESS) }.getOrDefault(150).toFloat()) }
         SliderRow("Lysstyrke", Icons.Default.LightMode, b, 5f..255f) {
             b = it
@@ -259,7 +291,7 @@ private fun ScreenSettings() {
                 Settings.System.putInt(context.contentResolver, Settings.System.SCREEN_BRIGHTNESS, it.toInt())
             }
         }
-    } else {
+    } else if (!fytBright) {
         var b by remember { mutableFloatStateOf(Prefs.float("app_brightness", 0.7f).let { if (it < 0) 0.7f else it }) }
         SliderRow("Lysstyrke (T'OS)", Icons.Default.LightMode, b, 0.05f..1f) { b = it; Prefs.set("app_brightness", it) }
         SettingRow("Styr lysstyrken for hele stereoen", "Gi T'OS lov til å endre systeminnstillinger (åpner Androids tillatelsesside én gang – eller bruk PC, se Om stereoen → Førstegangsoppsett)", onClick = {
@@ -288,9 +320,17 @@ private fun ScreenSettings() {
     }
     ToggleRow("Nedtrekksmeny i T'OS-stil", "tos_shade", true,
         "Sveip ned fra toppen viser T'OS sitt panel med varsler, lys og volum i stedet for stereoens")
-    ChoiceRow("Nattmodus", "night_mode", listOf("AUTO" to "Automatisk (etter sola)", "DAY" to "Alltid dag", "NIGHT" to "Alltid natt"), "AUTO")
-    SettingRow("Demp hele stereoen om natten", if (canWrite) "Senker lysstyrken etter solnedgang" else "Krever at T'OS får styre lysstyrken (over)",
-        onClick = { if (canWrite) Prefs.set("dim_system", !Prefs.bool("dim_system")) }) { Toggle(Prefs.bool("dim_system") && canWrite) }
+    // FYT: stereoen vet om lysene er på (ILL-ledningen) – da kan natt følge lysene i stedet for sola
+    val lightsKnown = FytMain.lights != null || Prefs.bool("fyt_lights_seen")
+    ChoiceRow("Nattmodus", "night_mode", listOf("AUTO" to if (lightsKnown && FytMain.byLights) "Automatisk (lysene på bilen)" else "Automatisk (etter sola)",
+        "DAY" to "Alltid dag", "NIGHT" to "Alltid natt"), "AUTO")
+    if (lightsKnown) SettingRow("Natt når lysene er på",
+        (when (FytMain.lights) { true -> "Lysene er på nå. "; false -> "Lysene er av nå. "; null -> "" }) +
+            "Står lysene alltid på om dagen, slå dette av – da avgjør sola.",
+        onClick = { Prefs.set("night_lights", !FytMain.byLights); FytMain.onLightsSetting() }) { Toggle(FytMain.byLights) }
+    val canDim = canWrite || fytBright
+    SettingRow("Demp hele stereoen om natten", if (canDim) "Senker lysstyrken når det er natt" else "Krever at T'OS får styre lysstyrken (over)",
+        onClick = { if (canDim) { Prefs.set("dim_system", !Prefs.bool("dim_system")); NightBrightness.apply(context) } }) { Toggle(Prefs.bool("dim_system") && canDim) }
     ChoiceRow("App-ikoner", "icon_style", listOf("DARK" to "Mørke (gråtoner)", "COLOR" to "Originale farger"), "DARK")
     ChoiceRow("Tekststørrelse", "text_scale_s", listOf("1.0" to "Normal", "1.1" to "Stor", "1.2" to "Ekstra stor"), "1.0")
     ChoiceRow("Klokke når bilen står stille", "saver_min", listOf("0" to "Av", "1" to "Etter 1 min", "3" to "Etter 3 min", "5" to "Etter 5 min"), "3")

@@ -184,6 +184,7 @@ internal object TosOverlay {
     /* ---------- Volum ---------- */
 
     fun volume(c: Context, level: Int, max: Int, muted: Boolean, call: Boolean) {
+        if (FytMain.stayOut) return           // bilen rygger (FYT): ingenting over kamerabildet
         h.post { showVolume(c, level, max, muted, call) }
     }
 
@@ -234,6 +235,7 @@ internal object TosOverlay {
     /* ---------- Meldinger ---------- */
 
     fun notice(c: Context, text: String, long: Boolean) {
+        if (FytMain.stayOut) return
         h.post {
             notice?.remove(); notice = null
             h.removeCallbacks(hideNotice)
@@ -270,6 +272,7 @@ internal object TosOverlay {
      * hentes fram, så stereoens egne skjermbilder ikke synes. Fjernes når T'OS er framme ([armUncover] + [tosShown]).
      */
     fun cover(c: Context, text: String? = null, maxMs: Long = 1200) {
+        if (FytMain.stayOut) return
         h.post {
             h.removeCallbacks(hideCover)
             if (cover?.ref?.get() == null) {
