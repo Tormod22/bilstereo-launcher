@@ -2,7 +2,6 @@ package no.bil.launcher
 
 import android.content.Context
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
-import androidx.compose.ui.test.onNodeWithText
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import no.bil.launcher.SelfTestLogic.Echo
 import org.junit.After
@@ -150,23 +149,20 @@ class SelfTestSmokeTest {
         rule.runOnUiThread { SelfTest.resetForTest(); SelfTest.probe = FytProbe; Nav.screen = Screen.DASH; Prefs.set("night_mode", "DAY"); Theme.night = false }
     }
 
-    private fun settle(ms: Long = 1_500) {
-        rule.mainClock.advanceTimeBy(ms); rule.waitForIdle()
-        rule.mainClock.advanceTimeBy(ms); rule.waitForIdle()
-    }
+    private fun settle(ms: Long = 1_500) = rule.settle(ms)
 
     @Test fun utenStereo() {
         rule.runOnUiThread { Nav.screen = Screen.SELFTEST }
         settle()
-        rule.onNodeWithText("Kontakt med stereoen").assertExists()
-        rule.onNodeWithText("Fant ikke com.syu.ms – dette er ikke en FYT-stereo").assertExists()
+        rule.awaitText("Kontakt med stereoen")
+        rule.awaitText("Fant ikke com.syu.ms – dette er ikke en FYT-stereo")
     }
 
     @Test fun medFalskStereo_dagOgNatt() {
         rule.runOnUiThread { SelfTest.probe = FakeProbe(); Nav.screen = Screen.SELFTEST }
         settle()
-        rule.onNodeWithText("Radio (bare lest)").assertExists()
-        rule.onNodeWithText("Bluetooth-telefon").assertExists()
+        rule.awaitText("Radio (bare lest)")
+        rule.awaitText("Bluetooth-telefon")
         // Ferdig resultat (uavhengig av hvor langt klokka har kommet i kjøringen)
         rule.runOnUiThread {
             SelfTest.resetForTest()
@@ -175,8 +171,8 @@ class SelfTestSmokeTest {
             Prefs.set("night_mode", "NIGHT"); Theme.night = true
         }
         settle()
-        rule.onNodeWithText("1 av 3 virker").assertExists()
-        rule.onNodeWithText("Send resultatet").assertExists()
-        rule.onNodeWithText("Rattknapp (10 s)").assertExists()
+        rule.awaitText("1 av 3 virker")
+        rule.awaitText("Send resultatet")
+        rule.awaitText("Rattknapp (10 s)")
     }
 }

@@ -1,10 +1,8 @@
 package no.bil.launcher
 
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
-import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.performClick
-import org.junit.Assert.assertTrue
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import org.junit.After
@@ -47,12 +45,7 @@ class ScreensSmokeTest {
         }
     }
 
-    private fun settle(ms: Long = 1_500) {
-        rule.mainClock.advanceTimeBy(ms)
-        rule.waitForIdle()
-        rule.mainClock.advanceTimeBy(ms)
-        rule.waitForIdle()
-    }
+    private fun settle(ms: Long = 1_500) = rule.settle(ms)
 
     private fun show(s: Screen) {
         rule.runOnUiThread { Nav.screen = s }
@@ -91,12 +84,12 @@ class ScreensSmokeTest {
         for (n in listOf(false, true)) {
             night(n)
             show(Screen.HELP)
-            // Teksten leses fra assets i bakgrunnen – vent til den er der (ellers ustabil test)
-            repeat(10) { if (rule.onAllNodesWithText("Forsiden").fetchSemanticsNodes().isEmpty()) settle() }
-            assertTrue(rule.onAllNodesWithText("Forsiden").fetchSemanticsNodes().isNotEmpty())
+            // Teksten leses fra assets i bakgrunnen (Dispatchers.IO, ekte tid) – vent til den er der (TestWait.kt)
+            rule.awaitUntil("bruksanvisningen lest fra assets («Forsiden»)") { rule.countText("Forsiden") > 0 }
             rule.onAllNodesWithText("Telefon")[0].performClick()
             settle()
-            assertTrue(rule.onAllNodesWithText("Telefon").fetchSemanticsNodes().size >= 2)
+            // Innholdslista hopper (animert rulling) til kapittelet: overskriften «Telefon» kommer i tillegg til lenken
+            rule.awaitUntil("kapittelet «Telefon» etter trykk i innholdslista") { rule.countText("Telefon") >= 2 }
         }
         show(Screen.DASH)
     }
@@ -142,16 +135,16 @@ class ScreensSmokeTest {
             show(Screen.DASH)
             rule.runOnUiThread { Prefs.set("settings_cat", SetCat.SOUND.name) }
             show(Screen.SETTINGS)
-            rule.onNodeWithText("LYDBILDE").assertExists()
-            rule.onNodeWithText("Bass").assertExists()
-            rule.onNodeWithText("Loudness").assertExists()
-            rule.onNodeWithText("Volum  12").assertExists()
-            rule.onNodeWithText("Balanse 0").assertExists()
+            rule.awaitText("LYDBILDE")
+            rule.awaitText("Bass")
+            rule.awaitText("Loudness")
+            rule.awaitText("Volum  12")
+            rule.awaitText("Balanse 0")
             // Glidere og knapper sender (ingen com.syu.ms her – skal ikke krasje)
             rule.runOnUiThread { FytSound.setGroup(0, 15); FytSound.setBalanceFader(3, 12); FytSound.setPreset(2); FytSound.setLoudness(true); FytSound.setVolume(20) }
             settle()
-            rule.onNodeWithText("+3").assertExists()
-            rule.onNodeWithText("Balanse −5").assertExists()
+            rule.awaitText("+3")
+            rule.awaitText("Balanse −5")
             rule.runOnUiThread { FytSound.resetPicture() }
             settle()
             rule.runOnUiThread { Nav.quick = true }
@@ -209,6 +202,6 @@ class CallScreenSmokeTest {
         rule.mainClock.advanceTimeBy(1_000); rule.waitForIdle()
         rule.runOnUiThread { Phone.calls = emptyList() }
         rule.mainClock.advanceTimeBy(2_000); rule.waitForIdle()
-        check(hidden) { "Samtaleskjermen skal lukke seg når det ikke er noen samtaler" }
+        rule.awaitUntil("at samtaleskjermen lukker seg når det ikke er noen samtaler") { hidden }
     }
 }

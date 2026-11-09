@@ -55,7 +55,14 @@ android {
         unitTests.isReturnDefaultValues = true
         // Robolectric (ScreensSmokeTest): ekte Android-ressurser og manifest i JVM-testene
         unitTests.isIncludeAndroidResources = true
-        unitTests.all { it.maxHeapSize = "2g" }
+        unitTests.all {
+            it.maxHeapSize = "2g"
+            // En feilet test skal vises med hele feilmeldingen i GitHub-loggen (ikke bare «FAILED»)
+            it.testLogging {
+                events("failed")
+                exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
+            }
+        }
     }
 }
 

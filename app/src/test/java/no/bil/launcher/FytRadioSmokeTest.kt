@@ -1,7 +1,6 @@
 package no.bil.launcher
 
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
-import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import org.junit.After
@@ -27,15 +26,12 @@ class FytRadioSmokeTest {
         }
     }
 
-    private fun settle(ms: Long = 1_500) {
-        rule.mainClock.advanceTimeBy(ms); rule.waitForIdle()
-        rule.mainClock.advanceTimeBy(ms); rule.waitForIdle()
-    }
+    private fun settle(ms: Long = 1_500) = rule.settle(ms)
 
     @Test fun radioSidenUtenData() {
         rule.runOnUiThread { Nav.screen = Screen.RADIO }
         settle()
-        rule.onNodeWithText("Start radio").assertExists()
+        rule.awaitText("Start radio")
     }
 
     @Test fun radioSidenMedFytData() {
@@ -45,19 +41,19 @@ class FytRadioSmokeTest {
             Nav.screen = Screen.RADIO
         }
         settle()
-        rule.onNodeWithText("101,70").assertExists()
-        rule.onNodeWithText("Søk etter stasjoner").performClick()   // forvalg finnes: må trykkes igjen (ingenting sendes)
+        rule.awaitText("101,70")
+        rule.awaitText("Søk etter stasjoner").performClick()   // forvalg finnes: må trykkes igjen (ingenting sendes)
         settle()
-        rule.onNodeWithText("Trykk igjen – forvalgene byttes ut").assertExists()
-        rule.onNodeWithText("FM2").performClick()
+        rule.awaitText("Trykk igjen – forvalgene byttes ut")
+        rule.awaitText("FM2").performClick()
         settle()
         // Natt, og AM-frekvens uten navn
         rule.runOnUiThread { Prefs.set("night_mode", "NIGHT"); Theme.night = true; FytRadio.fake = FytRadio.Fake(522, null, null, false, onAir = true) }
         settle()
-        rule.onNodeWithText("522").assertExists()
+        rule.awaitText("522")
         // Forsiden: musikkortet viser radioen
         rule.runOnUiThread { FytRadio.fake = FytRadio.Fake(9430, null, null, false, onAir = true); Nav.screen = Screen.DASH }
         settle()
-        rule.onNodeWithText("FM 94,30").assertExists()
+        rule.awaitText("FM 94,30")
     }
 }

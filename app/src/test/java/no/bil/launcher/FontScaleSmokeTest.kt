@@ -11,8 +11,6 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.test.junit4.createComposeRule
-import androidx.compose.ui.test.onNodeWithText
-import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -38,10 +36,7 @@ class FontScaleSmokeTest {
         rule.runOnUiThread { Nav.screen = Screen.DASH; TosKeyboard.close(); Theme.night = false; FytRadio.fake = null }
     }
 
-    private fun settle() {
-        rule.mainClock.advanceTimeBy(800); rule.waitForIdle()
-        rule.mainClock.advanceTimeBy(800); rule.waitForIdle()
-    }
+    private fun settle() = rule.settle(800)
 
     private var page: (@Composable () -> Unit)? by androidx.compose.runtime.mutableStateOf<(@Composable () -> Unit)?>(null)
 
@@ -88,16 +83,16 @@ class FontScaleSmokeTest {
         // Musikkortet på forsiden følger kilden: FYT-radio = radiosymbol, «Lyd av» i stedet for pause, neste = neste stasjon
         rule.runOnUiThread { FytRadio.fake = FytRadio.Fake(10170, "NRK P1", null, stereo = true, onAir = true) }
         show("musikkort_radio") { ActionRow({}, {}, Modifier.size(1000.dp, 110.dp)) }
-        rule.onNodeWithText("NRK P1").assertExists()
-        rule.onNodeWithContentDescription("Neste stasjon").assertExists()
-        rule.onNodeWithContentDescription("Radio").assertExists()
-        rule.onNodeWithContentDescription("Lyd av").assertExists()
+        rule.awaitText("NRK P1")
+        rule.awaitDescription("Neste stasjon")
+        rule.awaitDescription("Radio")
+        rule.awaitDescription("Lyd av")
         rule.runOnUiThread { FytRadio.fake = null }
         show("musikkort") { ActionRow({}, {}, Modifier.size(1000.dp, 110.dp)) }
-        rule.onNodeWithContentDescription("Neste sang").assertExists()
+        rule.awaitDescription("Neste sang")
         // Oppsettet: stegene som alltid vises finnes
         show("oppsett2") { SetupScreen {} }
-        rule.onNodeWithText("Knappestyring").assertExists()
-        rule.onNodeWithText("Varseltilgang").assertExists()
+        rule.awaitText("Knappestyring")
+        rule.awaitText("Varseltilgang")
     }
 }

@@ -158,6 +158,6 @@ class FytCallScreenSmokeTest {
             FytPhone.setCallForTest(null)
         }
         rule.mainClock.advanceTimeBy(2_000); rule.waitForIdle()
-        check(hidden) { "Samtaleskjermen skal lukke seg når FYT-samtalen er borte" }
+        rule.awaitUntil("at samtaleskjermen lukker seg når FYT-samtalen er borte") { hidden }
     }
 }
