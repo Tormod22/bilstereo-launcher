@@ -49,4 +49,12 @@ kommando-/meldingskoder) er hentet fra disse åpne prosjektene, som har kartlagt
   (com/fyt/car/StockBtSource.java og com/android/launcher66/Launcher.java: u=2 lengde i ms, u=28 posisjon i ms, u=26 album),
   og fyt-dialer (C_DIAL/C_PICKUP/C_HANG, «ringer bare når HFP er tilkoblet»). Formatet på telefonboka (u=22) og parede
   enheter (u=5) finnes ikke i noen åpen kilde – T'OS tolker dem forsiktig og logger dem i kartleggingen.
+- Hovedmodulen (`FytMain.kt`: lys, rygging, tenning, lysstyrke, håndbrekk, tastelyd, navigasjonsmiks):
+  liyunkuai/FYTUSBDVR – https://github.com/liyunkuai/FYTUSBDVR (src/com/syu/module/main/FinalMain.java og
+  module/sound/FinalSound.java: alle C_/U_-kodene med forklaring), vasyl91/FYT-Launcher-Mod
+  (app/src/main/java/com/syu/ipc/data/FinalMain.java, com/syu/car/CarStates.java, com/android/launcher66/settings/
+  HeadlightNightMode.java, DayNightBrightness.java og WakeSignals.java: U_LAMPLET 4 = lysene, U_BACKCAR 12 = rygger,
+  U_ACC_ON 50 = tenningen, U_BLACK_SCREEN 3, lysstyrke med C_BRIGHT_LEVEL 10 [0–100]), Altair571/tarmac –
+  https://github.com/Altair571/tarmac (docs/HEADUNIT_FYT_DUDU.md: kringkastingen «com.syu.ms» med «cmd.acc»), og
+  iamvivekkaushik/Revv – https://github.com/iamvivekkaushik/Revv (docs/FYT_BLUETOOTH.md: ryggebildet ved U_BACKCAR ≠ 0).
 Ingen kode er kopiert; bare tallene og formatet.

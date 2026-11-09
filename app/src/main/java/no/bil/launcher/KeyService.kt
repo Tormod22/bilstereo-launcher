@@ -101,7 +101,8 @@ class KeyService : AccessibilityService() {
             when (i.action) {
                 Intent.ACTION_SCREEN_OFF -> screenOffAt = SystemClock.elapsedRealtime()
                 Intent.ACTION_SCREEN_ON ->
-                    if (screenOffAt != 0L && SystemClock.elapsedRealtime() - screenOffAt > 120_000) Startup.run(c)
+                    // FYT melder tenningen: da starter FytMain oppstarten (svart skjerm er ikke at bilen startet)
+                    if (!FytMain.accKnown && screenOffAt != 0L && SystemClock.elapsedRealtime() - screenOffAt > 120_000) Startup.run(c)
                 UsbManager.ACTION_USB_DEVICE_ATTACHED -> {
                     val d: UsbDevice? = if (Build.VERSION.SDK_INT >= 33) i.getParcelableExtra(UsbManager.EXTRA_DEVICE, UsbDevice::class.java)
                     else @Suppress("DEPRECATION") i.getParcelableExtra(UsbManager.EXTRA_DEVICE)
@@ -180,6 +181,8 @@ class KeyService : AccessibilityService() {
     override fun onKeyEvent(event: KeyEvent): Boolean {
         // Opptak (Kartlegg stereoen): bare skriv ned knappen, og la stereoen gjøre det den pleier
         if (SurveyRecorder.active) { SurveyRecorder.key(event); return false }
+        // Bilen rygger (FYT): stereoen viser kameraet – knappene går til stereoen som original
+        if (FytMain.stayOut) return false
         val code = event.keyCode
         // «Siste rattknapp» på Knapper-siden: neste/forrige/svar … (volum er panelknappen her og vises ikke)
         if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0 && !isVolume(code)) Steer.noteKey(code)
@@ -351,6 +354,8 @@ class KeyService : AccessibilityService() {
     override fun onAccessibilityEvent(event: AccessibilityEvent) {
         // Opptak (Kartlegg stereoen): skriv ned alt, og la stereoen være i fred
         if (SurveyRecorder.active) { SurveyRecorder.event(this, event); return }
+        // Bilen rygger (FYT): ikke dekk over eller bytt ut noe (kamerabildet er stereoens)
+        if (FytMain.stayOut) return
         val type = event.eventType
         if (type == AccessibilityEvent.TYPE_NOTIFICATION_STATE_CHANGED) lastNoteAt = SystemClock.elapsedRealtime()
         if (type == AccessibilityEvent.TYPE_WINDOWS_CHANGED && FytVolume.watching) checkFytPopup()

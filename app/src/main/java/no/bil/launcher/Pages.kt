@@ -1081,9 +1081,12 @@ fun QuickPanel(onClose: () -> Unit, onGo: (Screen?) -> Unit = { onClose(); if (i
     LaunchedEffect(Unit) { if (!FytSound.volumeReady) Ui.volume = am.getStreamVolume(AudioManager.STREAM_MUSIC) }
     // Har T'OS lov, styrer glideren hele stereoen; ellers bare T'OS-vinduet
     val canWrite = remember { Settings.System.canWrite(context) }
+    // FYT: baklyset styres av stereoen (MCU-en) – glideren sender lysstyrken dit (FytMain)
+    val fytBright = remember { FytMain.brightReady }
     var bright by remember {
         mutableFloatStateOf(
-            if (canWrite) runCatching { Settings.System.getInt(context.contentResolver, Settings.System.SCREEN_BRIGHTNESS) / 255f }.getOrDefault(0.6f)
+            if (fytBright) FytMain.fraction()
+            else if (canWrite) runCatching { Settings.System.getInt(context.contentResolver, Settings.System.SCREEN_BRIGHTNESS) / 255f }.getOrDefault(0.6f)
             else Prefs.float("app_brightness", -1f).let { if (it < 0) 0.7f else it })
     }
     val sliderColors = SliderDefaults.colors(thumbColor = TextPrimary, activeTrackColor = TextPrimary, inactiveTrackColor = Line)
@@ -1099,7 +1102,10 @@ fun QuickPanel(onClose: () -> Unit, onGo: (Screen?) -> Unit = { onClose(); if (i
                 Icon(Icons.Default.LightMode, null, tint = TextMuted)
                 Slider(bright, {
                     bright = it
-                    if (canWrite) {
+                    if (fytBright) {
+                        if (Prefs.float("app_brightness", -1f) >= 0f) Prefs.set("app_brightness", -1f)
+                        FytMain.setFromSlider(it)
+                    } else if (canWrite) {
                         if (Prefs.float("app_brightness", -1f) >= 0f) Prefs.set("app_brightness", -1f)
                         runCatching {
                             Settings.System.putInt(context.contentResolver, Settings.System.SCREEN_BRIGHTNESS_MODE, Settings.System.SCREEN_BRIGHTNESS_MODE_MANUAL)

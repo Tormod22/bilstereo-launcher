@@ -69,7 +69,7 @@ object Fyt {
     /** Oppdateringskodene T'OS ber om per modul (resten logges bare når de kommer). */
     private val subscribe = mapOf(
         // + rattknappene: u=37 spillerkommando, 42 stemmekommando, 60 retningsknapp, 133 knapp (SteerLogic)
-        M_MAIN to (0..20).toList() + SteerLogic.MAIN_EVENT_CODES,
+        M_MAIN to (0..20).toList() + SteerLogic.MAIN_EVENT_CODES + FytMainLogic.SUBSCRIBE,   // + lys/ACC/lysstyrke (FytMain)
         // Radio: alle kodene i FinalRadio (0–26: bånd, frekvens, område, kanaler, RDS, stereo, søk, PS …) – se FytRadio
         M_RADIO to (0..26).toList(),
         // BT: alle U_-kodene i FinalBt (0–33) – telefon, telefonbok, parede enheter, BT-musikk (se FytPhone.kt)
@@ -236,7 +236,7 @@ object Fyt {
         main.post {
             apply(m, u, ints, strs)
             if (m == M_RADIO) runCatching { FytRadio.onUpdate(u, ints, strs) }
-            if (steer != null) runCatching { Steer.onFyt(steer) }
+            if (steer != null && !FytMain.stayOut) runCatching { Steer.onFyt(steer) }   // ikke mens bilen rygger
         }
     }
 
@@ -247,7 +247,7 @@ object Fyt {
             M_MAIN -> if (u == 0 && i0 != null) {
                 if (appId >= 0 && i0 != appId) FytSteer.flash(1)      // Test på Rattknapper-siden: MODE byttet kilde
                 appId = i0
-            }
+            } else runCatching { FytMain.onMain(u, ints) }       // lys, rygging, tenning, lysstyrke (FytMain.kt)
             M_STEER -> FytSteer.onFeedback(u, ints)
             M_RADIO -> when (u) {
                 0 -> if (i0 != null) radioBandRaw = i0
@@ -290,7 +290,7 @@ object Fyt {
                 }
             }
         }
-        if (m == M_SOUND) runCatching { FytSound.onUpdate(u, ints) }
+        if (m == M_SOUND) { runCatching { FytSound.onUpdate(u, ints) }; runCatching { FytMain.onSound(u, ints) } }
     }
 
     /* ---------- Kommandoer ---------- */
@@ -406,6 +406,7 @@ object Fyt {
             appendLine("BT-musikk: spiller=$btavPlaying  «${btavTitle.orEmpty()}» – «${btavArtist.orEmpty()}»")
             appendLine("Forvalgte kanaler med frekvens/navn: ${radioPresets.size}" + radioPresets.take(12).joinToString("") { "  ${it.number}=${it.label}" })
             appendLine("Volum (lydmodul): $volume  dempet=$muted  høyeste sett=${Prefs.int("fyt_vol_seen", 0)}  T'OS regner med maks ${FytVolume.max}")
+            append(FytMain.report())
             appendLine("Rattknapper: ${Steer.summary()}")
             appendLine("Rattknapp-læring i stereoen (modul 10): ${FytSteer.summary()}")
             appendLine("sys.carlink.type = «${prop("sys.carlink.type")}» (2 = en app har «knappefokus», se open-headunit)")
@@ -546,6 +547,8 @@ internal object FytLogic {
         val base = "${moduleName(m)} u=$u ${payload(ints, flts, strs)}"
         val id = ints?.firstOrNull()
         if (m == 2) FytPhoneLogic.codeName(u).takeIf { it.isNotEmpty() }?.let { return "$base  ($it)" }
+        if (m == 0 && u != 0) FytMainLogic.codeName(u).takeIf { it.isNotEmpty() }?.let { return "$base  ($it)" }
+        if (m == 4) FytMainLogic.soundName(u).takeIf { it.isNotEmpty() }?.let { return "$base  ($it)" }
         return if (m == 0 && u == 0 && id != null) "$base → kilde: ${sourceName(id)}" else base
     }
 }
