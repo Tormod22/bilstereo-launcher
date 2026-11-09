@@ -100,7 +100,10 @@ class FeedbackLogicTest {
         val md = File("src/main/assets/${NewsLogic.ASSET}").readText()
         val titles = HelpDoc.sections(HelpDoc.parse(md)).map { it.second }
         for (v in listOf("T'OS 5.10", "T'OS 5.9", "T'OS 5.8")) assertTrue(v, v in titles)
-        assertEquals("nyeste først", "T'OS 5.10", titles.first())
+        // Nyeste del først, og den må høre til versjonen som bygges (husk nytt.md ved hver versjon).
+        val gradle = File("build.gradle.kts").readText()
+        val version = Regex("""else "([0-9.]+)"""").find(gradle.substringAfter("versionName"))!!.groupValues[1]
+        assertEquals("nyeste først = denne versjonen", "T'OS $version", titles.first())
         assertTrue(md.contains("Send alt til utvikleren"))
     }
 }

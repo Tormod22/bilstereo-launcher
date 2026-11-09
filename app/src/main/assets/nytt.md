@@ -2,7 +2,18 @@
 
 Her står det som er nytt, og hva du kan prøve. Det nyeste står først.
 
-Virker noe ikke som det skal? Gå til **Innstillinger → Sikkerhetskopi og hjelp** og trykk **Send alt til utvikleren**. Skriv gjerne kort hva som skjedde. Da får utvikleren alt han trenger i én fil.
+Virker noe ikke som det skal? Gå til **Innstillinger → Sikkerhetskopi og hjelp** og trykk **Send alt til utvikleren**. Skriv gjerne kort hva som skjedde. Da får utvikleren alt som trengs, i én fil.
+
+## T'OS 5.11
+
+- **Send alt til utvikleren**: én knapp lager én fil med alt utvikleren trenger (selvtest, oppsett, feil og kort kartlegging). Du finner den øverst i **Innstillinger → Sikkerhetskopi og hjelp**, og på Selvtest-siden. Skriv gjerne kort hva som skjedde.
+- **Hva er nytt**: denne siden. Etter en oppdatering står det en linje på forsiden noen ganger. Du finner den også i **Innstillinger → Om stereoen**.
+- Strømsparingen er gjort tryggere: T'OS starter bare én gang per tur, selv om tenningen blinker når motoren starter, og den blir aldri stående i dvale med skjermen på.
+
+Prøv dette:
+
+1. Kjør **Selvtest av stereoen** (Innstillinger → Sikkerhetskopi og hjelp).
+2. Trykk **Send alt til utvikleren** og send fila.
 
 ## T'OS 5.10
 
