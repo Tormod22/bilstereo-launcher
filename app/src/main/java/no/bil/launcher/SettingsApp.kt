@@ -583,6 +583,10 @@ private fun AboutSettings() {
     val v = remember { runCatching { context.packageManager.getPackageInfo(context.packageName, 0).versionName }.getOrNull() }
     SettingRow("T'OS $v", Hub.update?.let { "Ny versjon ${it.versionName} er klar" } ?: Updater.lastError?.let { "Fikk ikke sjekket: $it" } ?: "Du har siste versjon") { UpdateButton() }
     SettingRow("Oppdateringer", "Installeres inne i T'OS. Første gang må du trykke «Installer» én gang; etterpå går det av seg selv (Android 12+).")
+    // Hovedbryter for alt T'OS gjør med FYT-stereoen (radio, telefon, lyd, rattknapper, lysstyrke …). Vises også når den er av,
+    // ellers kunne man ikke slå den på igjen etter at T'OS slo den av etter en feil.
+    if (remember { Fyt.present(context) }) ToggleRow("Stereo-funksjoner (FYT)", "fyt_all", true,
+        "Radio, telefon, lyd, rattknapper og lysstyrke styres av T'OS. Slå av hvis noe oppfører seg rart – da gjør stereoen alt selv.")
     SettingRow("Stereo", "${Build.MANUFACTURER} ${Build.MODEL}")
     SettingRow("Android", "${Build.VERSION.RELEASE} (SDK ${Build.VERSION.SDK_INT})")
     SettingRow("Prosessor", "${Build.HARDWARE} · ${Runtime.getRuntime().availableProcessors()} kjerner · ${Hub.cpuTemp?.let { "$it °C" } ?: "temperatur ukjent"}")
