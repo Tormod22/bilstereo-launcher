@@ -238,15 +238,20 @@ fun Root() {
         }
     }
 
-    // Klokke som skjermsparer når bilen står stille og ingen rører skjermen
+    // Klokke som skjermsparer når bilen står stille og ingen rører skjermen.
+    // Tida regnes fra siste trykk ELLER fra da T'OS kom fram igjen: trykk i andre apper (Spotify, CarPlay) ser ikke T'OS,
+    // så før kom klokka fram med en gang du gikk hjem til forsiden etter noen minutter i en annen app.
+    val resumeTick = rememberResumeTick()
+    var shownAt by remember { mutableLongStateOf(SystemClock.elapsedRealtime()) }
+    LaunchedEffect(resumeTick) { shownAt = SystemClock.elapsedRealtime() }
     LaunchedEffect(Unit) {
         while (true) {
             delay(5000)
             val mins = Prefs.str("saver_min", "3").toIntOrNull() ?: 0
-            val still = (Hub.gps?.speedKmh ?: 0) < 3
             // Ikke over neste sving (navigasjon i kø) eller en app-velger som er åpen
-            if (mins > 0 && still && Nav.screen == Screen.DASH && !Nav.quick && Nav.pick == null && !Ui.pickSlot &&
-                !NavInfo.active && SystemClock.elapsedRealtime() - lastTouch > mins * 60_000L) Nav.screen = Screen.CLOCK
+            val free = Nav.screen == Screen.DASH && !Nav.quick && Nav.pick == null && !Ui.pickSlot && !NavInfo.active
+            if (clockSaverDue(mins, Hub.gps?.speedKmh ?: 0, Notify.appVisible, free, SystemClock.elapsedRealtime(), lastTouch, shownAt))
+                Nav.screen = Screen.CLOCK
         }
     }
 
@@ -384,6 +389,14 @@ fun Root() {
         }
     }
 }
+
+/**
+ * Skal klokka (skjermspareren) vises nå? Bare når T'OS er på skjermen ([visible]), forsiden er fri ([free]), bilen står
+ * (under 3 km/t), og det har gått [mins] minutter siden siste trykk i T'OS OG siden T'OS kom fram igjen ([shownAt]).
+ * Ren logikk, testes i CoreLogicTest.
+ */
+internal fun clockSaverDue(mins: Int, speedKmh: Int, visible: Boolean, free: Boolean, now: Long, lastTouch: Long, shownAt: Long): Boolean =
+    mins > 0 && visible && free && speedKmh < 3 && now - maxOf(lastTouch, shownAt) > mins * 60_000L
 
 /** Samtale som bare FYT-stereoen vet om (BT-brikka): navn eller nummer, ellers null. */
 private fun fytCallName(): String? = if (Fyt.btReady && Fyt.inCall) (Fyt.phoneNumber ?: "Telefonen") else null

@@ -56,7 +56,8 @@ import kotlinx.coroutines.launch
 /* ======================= Logikk ======================= */
 
 enum class KbKind { TEXT, NUMBER, PHONE }
-enum class KbLayer { LETTERS, SYMBOLS }
+/** [MORE]: flere tegn ($ € £ [ ] { } < > ~ | \\ …) – Wi-Fi-passord kan inneholde dem. */
+enum class KbLayer { LETTERS, SYMBOLS, MORE }
 enum class KbShift { OFF, ONCE, LOCK }
 
 sealed interface KbKey {
@@ -109,7 +110,14 @@ internal fun kbRows(kind: KbKind, layer: KbLayer, shift: KbShift): List<List<KbK
         KbLayer.SYMBOLS -> listOf(
             chars("1234567890", false),
             chars("@#&-_/:;()", false),
-            chars("?!'\"+=*%", false) + KbKey.Back,
+            listOf(KbKey.Layer(KbLayer.MORE, "#+=")) + chars("?!'\"+*", false) + KbKey.Back,
+            listOf(KbKey.Layer(KbLayer.LETTERS, "ABC"), KbKey.Ch(","), KbKey.Space, KbKey.Ch("."), KbKey.Done),
+        )
+        // Før manglet $ € £ [ ] { } < > ^ ~ | \ ` helt – et Wi-Fi-passord med slike tegn kunne ikke skrives inn
+        KbLayer.MORE -> listOf(
+            chars("[]{}<>^~|\\", false),
+            chars("\$€£=%`§°±·", false),
+            listOf(KbKey.Layer(KbLayer.SYMBOLS, "123")) + chars("?!'\"+*", false) + KbKey.Back,
             listOf(KbKey.Layer(KbLayer.LETTERS, "ABC"), KbKey.Ch(","), KbKey.Space, KbKey.Ch("."), KbKey.Done),
         )
     }
@@ -232,7 +240,12 @@ private fun KeyboardPanel(b: KbBinding) {
     var layer by remember(b.owner) { mutableStateOf(KbLayer.LETTERS) }
     var shift by remember(b.owner) { mutableStateOf(if (b.autoCap && b.text.isEmpty()) KbShift.ONCE else KbShift.OFF) }
 
-    fun edit(new: String) { b.set(new); shift = kbShiftAfter(shift, new, b.autoCap) }
+    fun edit(new: String) {
+        // Slett holdt inne i et tomt felt: ikke skriv den samme teksten om og om igjen (et innstillingsfelt lagret og tegnet
+        // hele T'OS på nytt ca. 30 ganger i sekundet så lenge fingeren lå på tasten)
+        if (new == b.text) return
+        b.set(new); shift = kbShiftAfter(shift, new, b.autoCap)
+    }
     fun press(k: KbKey) {
         val t = b.text
         when (k) {

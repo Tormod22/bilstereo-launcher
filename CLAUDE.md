@@ -31,7 +31,20 @@ Snakk norsk med brukeren. Han er ikke utvikler – forklar enkelt, ikke bruk fag
 - Løsningen han godkjente: **tre ting** – (1) bilkort med klokke, stort bilbilde og fart som stort tall, (2) ekte kart, (3) én rad nederst: musikk/telefon/apper. Ingen kalender, ingen vær.
 - Kalkulator skal være skjult i app-skuffen (`HiddenApps` i `Apps.kt`).
 
-## Nåværende tilstand (v5.9)
+## Nåværende tilstand (v5.10)
+- v5.10 (9. nov, «forbedre enda mer»: strøm når bilen står + feiljakt i kjernen):
+  (strøm) `Power.kt`: tenning (FYT ACC, `FytMain.accKnown`) × skjerm (egen SCREEN_ON/OFF-mottaker, virker uten knappestyringen) →
+  AWAKE (skjerm på: alt), DARK (tenning på + skjerm av: GPS/tur/OBD/musikk, ingen UI-tikk/versjonssjekk), SLEEP (skjerm av + tenning
+  av etter 3 s, eller ukjent etter 20 s: GPS-lytter + GpsService av, OBD, versjonssjekk, dag/natt, stereospenning, CPU, kartfliser,
+  klokker står; nettradio stoppes bare ved bekreftet tenning av, «power_netradio_resume» → Startup starter den igjen). Skjermen på =
+  alltid AWAKE. Løkkene bruker `Power.every/await/awaitUi`. Startup.run-reserven og Fyt.onWake flyttet fra KeyService til Power.
+  Fart-«ukjent» hendelsesstyrt (`Hub.watchStale`). GpsService kan startes fra bakgrunnen på SDK < 31. Ingen vekkelåser/alarmer.
+  Kartleggingen: del «Strøm». Test PowerLogicTest (8). UVERIFISERT på stereoen.
+  (kjerne) Skjermsparer-klokka regnes fra siste trykk OG fra da T'OS kom fram, bare når T'OS vises (`clockSaverDue`). Forsidekartet
+  henter ikke fliser når T'OS ikke vises (Power.awaitUi); `MapTiles.fetch` lukker forbindelsen og godtar bare HTTP 200. Tastaturet har
+  tegnsiden «#+=» (`KbLayer.MORE`: $ € £ [ ] { } < > ^ ~ | \ `). Slett i tomt felt skriver ikke på nytt. Ikonlageret i bytes
+  (`iconCacheBytes`, 24 MB). Innstillinger følger alltid «settings_cat»; kategorinavn 2 linjer. «Siste apper»: lukket app fjernes også
+  fra T'OS-lista (`RecentsLogic.drop/shouldRecord`). `Updater.check` lukker forbindelsen. Test CoreLogicTest (6). Totalt 275 tester.
 - v5.9 «NATTA» (9. nov, 02:24–06:00, brukeren sov – «jobb med å gjøre det til et komplett OS»): 4 runder med parallelle grener
   (worktrees), flettet og testet. ALT UVERIFISERT på stereoen – BE BRUKEREN: oppdater, kjør «Selvtest av stereoen» (Innstillinger →
   Sikkerhetskopi og hjelp) med Rattknapp/Lysene/Test radio, og send resultatet + en ny kartlegging med opptak. Hovedbryteren

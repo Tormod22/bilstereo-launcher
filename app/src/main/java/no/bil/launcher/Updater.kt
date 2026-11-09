@@ -38,10 +38,12 @@ object Updater {
     suspend fun check(): Info? = withContext(Dispatchers.IO) {
         runCatching {
             val c = open("$BASE/version.json")
-            if (c.responseCode == 404) { c.disconnect(); throw FileNotFoundException() }
-            if (c.responseCode != 200) error("HTTP ${c.responseCode}")
-            val json = JSONObject(c.inputStream.bufferedReader().use { it.readText() })
-            Info(json.getInt("versionCode"), json.getString("versionName"))
+            try {
+                if (c.responseCode == 404) throw FileNotFoundException()
+                if (c.responseCode != 200) error("HTTP ${c.responseCode}")
+                val json = JSONObject(c.inputStream.bufferedReader().use { it.readText() })
+                Info(json.getInt("versionCode"), json.getString("versionName"))
+            } finally { c.disconnect() }   // også ved feil (sjekkes hver gang app-skuffen åpnes)
         }.onSuccess { lastError = null }
             .onFailure {
                 lastError = when (it) {
