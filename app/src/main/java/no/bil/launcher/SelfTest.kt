@@ -610,7 +610,11 @@ fun SelfTestScreen(onClose: () -> Unit) {
     val checks = SelfTest.checks
     val busy = SelfTest.phase != null || SelfTest.live != null
     Page("Selvtest av stereoen", onClose, extra = {
-        if (checks.isNotEmpty() && !busy) { Pill("Send resultatet", Icons.AutoMirrored.Filled.Send) { SelfTest.share(context) }; Spacer(Modifier.width(10.dp)) }
+        if (checks.isNotEmpty() && !busy) {
+            Pill(if (Feedback.working) "Vent …" else "Send alt til utvikleren", Icons.AutoMirrored.Filled.Send, strong = true) { Feedback.runAndShare(context) }
+            Spacer(Modifier.width(10.dp))
+            Pill("Send resultatet") { SelfTest.share(context) }; Spacer(Modifier.width(10.dp))
+        }
     }) {
         Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
             Column(

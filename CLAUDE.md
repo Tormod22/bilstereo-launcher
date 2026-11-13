@@ -31,7 +31,26 @@ Snakk norsk med brukeren. Han er ikke utvikler – forklar enkelt, ikke bruk fag
 - Løsningen han godkjente: **tre ting** – (1) bilkort med klokke, stort bilbilde og fart som stort tall, (2) ekte kart, (3) én rad nederst: musikk/telefon/apper. Ingen kalender, ingen vær.
 - Kalkulator skal være skjult i app-skuffen (`HiddenApps` i `Apps.kt`).
 
-## Nåværende tilstand (v5.10)
+## Nåværende tilstand (v5.11)
+- v5.11 (9. nov, «forbedre enda mer»): (tilbakemelding) «Send alt til utvikleren» (`Feedback.kt`): kort øverst i Innstillinger →
+  Sikkerhetskopi og hjelp (felt «Hva skjedde?» + Send), også på Selvtest- og «Hva er nytt»-siden. Lager ÉN fil
+  `files/tos-tilbakemelding-<dato>.txt` (3 nyeste beholdes) med versjon, sammendrag (FYT tilkoblet, hovedbryter, FYT-brytere,
+  selvtestlinje, sikker modus), notatet, selvtesten, oppsettrapporten, feilrapporten, kort kartlegging (`SystemSurvey.build(compact =
+  true)` = uten getprop/pakkelister/selvtest, `SurveyText.bigParts`) og de siste 300 linjene av siste opptak (leses fra nyeste
+  kartlegging-*.txt med opptak). Sendes som kartleggingen (`SystemSurvey.share` med emne/tittel). BE BRUKEREN BRUKE DENNE i stedet for
+  de tre gamle knappene. «Hva er nytt» (`News`/`NewsLogic`, Screen.NEWS, `assets/nytt.md`, samme visning som bruksanvisningen via
+  `HelpScreen(title, asset, extra)`): forsiden viser «Oppdatert til T'OS x.y …» i 5 oppstarter etter at versionCode endret seg (Prefs
+  «news_seen_code»/«news_left», før påminnelsene), eller til siden åpnes; rad i Om stereoen. HUSK: ny «## T'OS x.y»-del øverst i
+  nytt.md ved hver versjon. Tester FeedbackLogicTest (7) + FeedbackSmokeTest (2).
+  (gjennomgang strøm) Én oppstart per tur: tenning på etter < 3 s av = blink, ingen oppstart (`PowerLogic.startupOnAccOn`); tenningen
+  lagres i Prefs «fyt_acc_last» (0/1), så T'OS som FYT drepte i dvalen får oppstart ved første melding (`accEdge`); `Startup` bruker
+  `PowerLogic.startupDue` (120 s) og avbryter (og nullstiller) hvis tenningen gikk av igjen innen 4 s. Tenning ukjent men sist PÅ
+  (stereoen frakoblet, FYT-bryter på): 2 min før dvale (`SLEEP_GRACE_LOST_ACC_MS`); ventetiden kortes ned når tenningen bekreftes av
+  (`reschedule`). `Power.refresh` spør `isInteractive` hvis den tror skjermen er av (aldri fast i dvale). Dvale uten tenning lagrer tur
+  og parkering før GPS-en stoppes. Lyd T'OS skrudde av skrus på ved tenning på bare når stereoen er tilkoblet (ellers `onConnected`).
+  GpsService: varselet bygges trinn for trinn, `startForeground` alltid først, og tjenesten stopper seg selv i dvale (stopService før
+  startForeground krasjer Android 10). Tester PowerLogicTest (11) + PowerIntegrationTest (7). UVERIFISERT: om FYT faktisk blinker
+  tenningen ved motorstart; 3 s-timeren teller ikke mens prosessoren sover. Totalt 294 tester.
 - v5.10 (9. nov, «forbedre enda mer»: strøm når bilen står + feiljakt i kjernen):
   (strøm) `Power.kt`: tenning (FYT ACC, `FytMain.accKnown`) × skjerm (egen SCREEN_ON/OFF-mottaker, virker uten knappestyringen) →
   AWAKE (skjerm på: alt), DARK (tenning på + skjerm av: GPS/tur/OBD/musikk, ingen UI-tikk/versjonssjekk), SLEEP (skjerm av + tenning

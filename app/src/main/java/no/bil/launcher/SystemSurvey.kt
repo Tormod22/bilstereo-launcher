@@ -77,6 +77,10 @@ internal object SurveyText {
     /** Over 100 KB sendes som fil (en så lang tekst får ikke plass i en melding). */
     fun shareAsFile(length: Long): Boolean = length > 100_000
 
+    /** De store delene som ikke er med i den korte kartleggingen («Send alt til utvikleren»): getprop, pakker, selvtest (står for seg). */
+    val bigParts = listOf("Alle systemegenskaper", "Installerte pakker", "Pakker i detalj", "Selvtest")
+    fun inCompact(title: String): Boolean = bigParts.none { title.startsWith(it) }
+
     /** Komponentnavn i manifestet kan være korte («.Main» eller «Main»): gjør dem fullstendige. */
     fun fullName(pkg: String, name: String): String = when {
         name.startsWith(".") -> pkg + name
@@ -169,7 +173,7 @@ object SystemSurvey {
     private const val MAX_CHARS = 6_000_000
     private const val ANDROID_NS = "http://schemas.android.com/apk/res/android"
 
-    private fun dir(c: Context): File = c.getExternalFilesDir(null) ?: File(c.filesDir, "kartlegging").apply { mkdirs() }
+    internal fun dir(c: Context): File = c.getExternalFilesDir(null) ?: File(c.filesDir, "kartlegging").apply { mkdirs() }
 
     /** Finn siste kartlegging fra før (etter omstart av T'OS). */
     fun findLast(c: Context) {
@@ -202,8 +206,8 @@ object SystemSurvey {
     }
 
     /** Send filen: som tekst hvis den er liten, ellers som fil (over 100 KB). */
-    fun share(c: Context, f: File) {
-        val i = Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_SUBJECT, "T'OS kartlegging (${f.name})")
+    fun share(c: Context, f: File, subject: String = "T'OS kartlegging (${f.name})", title: String = "Send kartleggingen") {
+        val i = Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_SUBJECT, subject)
         if (SurveyText.shareAsFile(f.length())) {
             val uri: Uri = runCatching { FileProvider.getUriForFile(c, "${c.packageName}.files", f) }.getOrElse {
                 Notify.show("Fikk ikke delt filen"); return
@@ -211,21 +215,26 @@ object SystemSurvey {
             i.putExtra(Intent.EXTRA_STREAM, uri).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             i.clipData = ClipData.newRawUri(f.name, uri)
         } else i.putExtra(Intent.EXTRA_TEXT, runCatching { f.readText() }.getOrDefault(""))
-        val chooser = Intent.createChooser(i, "Send kartleggingen").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        val chooser = Intent.createChooser(i, title).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         if (runCatching { c.startActivity(chooser) }.isFailure) Notify.show("Fant ingen app å sende med. Filen ligger i ${f.parent}", long = true)
     }
 
     /** Én del av rapporten. Feiler noe, står feilen der i stedet (resten lages likevel). */
-    private inline fun StringBuilder.part(title: String, body: StringBuilder.() -> Unit) {
+    private inline fun StringBuilder.part(title: String, compact: Boolean = false, body: StringBuilder.() -> Unit) {
+        if (compact && !SurveyText.inCompact(title)) return
         append(SurveyText.header(title))
         val before = length
         runCatching { body() }.onFailure { appendLine("(fikk ikke lest: ${it.javaClass.simpleName} ${SurveyText.clip(it.message, 120)})") }
         if (length == before) appendLine("(ingenting)")
     }
 
-    fun build(c: Context, recording: List<String>?): String = buildString {
+    /**
+     * [compact] = den korte utgaven til «Send alt til utvikleren» (Feedback.kt): uten getprop, pakkelistene og selvtesten
+     * (de store delene, se [SurveyText.bigParts]) – alt om FYT, strøm, lyd, knapper og vinduer er med.
+     */
+    fun build(c: Context, recording: List<String>?, compact: Boolean = false): String = buildString {
         val pm = c.packageManager
-        appendLine("T'OS kartlegging av stereoen")
+        appendLine(if (compact) "T'OS kartlegging av stereoen (kort)" else "T'OS kartlegging av stereoen")
         appendLine("Laget: ${SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(Date())}")
         appendLine("T'OS: ${runCatching { pkgInfo(pm, c.packageName, 0)?.versionName }.getOrNull()} (${Updater.current(c)})")
         appendLine("Opptak: ${if (recording == null) "nei (bare kartlegging)" else "${recording.size} linjer (nederst)"}")
@@ -242,7 +251,7 @@ object SystemSurvey {
         }
 
         part("Systemegenskaper (utvalgte)") { selectedProps().forEach { (k, v) -> appendLine("$k = $v") } }
-        part("Alle systemegenskaper T'OS får lese (getprop)") { append(getprop().take(200_000)) }
+        part("Alle systemegenskaper T'OS får lese (getprop)", compact) { append(getprop().take(200_000)) }
         part("Skjermer") { displays(c) }
         part("Startskjerm og standardapper") { defaults(c) }
         part("Lyd") { audio(c) }
@@ -278,7 +287,7 @@ object SystemSurvey {
         }
         part("FYT-radioen (radio-modul 1, T'OS sin radio)") { append(FytRadio.report()) }
         part("FYT-lyd (lydmodulen 4: volum, equalizer, balanse/fader, loudness)") { append(FytSound.report()) }
-        part("Selvtest (siste resultat)") { append(SelfTest.lastText(c)) }
+        part("Selvtest (siste resultat)", compact) { append(SelfTest.lastText(c)) }
         part("FYT-statuslinjen (show_navigationbar)") {
             appendLine("show_navigationbar = ${FytBars.current(c)}  (1 = stereoens linje vises, 0 = skjult)")
             appendLine("navigationbar_config = ${runCatching { Settings.System.getString(c.contentResolver, "navigationbar_config") }.getOrNull()}")
@@ -307,12 +316,12 @@ object SystemSurvey {
         }
         part("Apper brukt siste døgn") { usage(c) }
 
-        val apps = runCatching { installed(pm) }.getOrDefault(emptyList()).sortedBy { it.packageName }
-        part("Installerte pakker (${apps.size})") {
+        val apps = if (compact) emptyList() else runCatching { installed(pm) }.getOrDefault(emptyList()).sortedBy { it.packageName }
+        part("Installerte pakker (${apps.size})", compact) {
             appendLine("[system] = fulgte med stereoen, [oppdatert] = systemapp som er oppdatert, start = skjermen app-lista åpner")
             apps.forEach { ai -> appendLine(overviewLine(c, ai)) }
         }
-        part("Pakker i detalj") {
+        part("Pakker i detalj", compact) {
             appendLine("A = skjerm (activity), S = tjeneste (service), R = mottaker (receiver), P = innholdsleverandør (provider).")
             appendLine("[lukket] = kan ikke startes av andre apper. ← = meldinger (intent-filter) komponenten tar imot.")
             for (ai in apps) {

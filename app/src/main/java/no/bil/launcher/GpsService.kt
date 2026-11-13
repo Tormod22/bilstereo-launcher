@@ -44,7 +44,12 @@ class GpsService : Service() {
             runCatching { androidx.core.content.ContextCompat.startForegroundService(c, Intent(c, GpsService::class.java)) }
         }
 
-        /** Tenningen av: stopp tjenesten (varselet forsvinner, Android slipper å holde T'OS i forgrunnen). */
+        /**
+         * Tenningen av: stopp tjenesten (varselet forsvinner, Android slipper å holde T'OS i forgrunnen).
+         * Er den startet men ikke kommet i gang ennå ([running] false), stoppes den IKKE her: stopService før
+         * startForeground() krasjer T'OS på Android 9/10 («did not then call startForeground»). Da ser onStartCommand
+         * selv at det er dvale ([Power.plan]) og stopper seg rett etter startForeground.
+         */
         fun stop(c: Context) {
             if (!running) return
             runCatching { c.stopService(Intent(c, GpsService::class.java)) }
@@ -54,8 +59,9 @@ class GpsService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        var note: android.app.Notification? = null
-        val ok = runCatching {
+        // Android gir 5 s fra startForegroundService() til startForeground() – ellers krasjer hele T'OS. Derfor bygges
+        // varselet trinn for trinn (feiler ett trinn, brukes et enklere varsel), og startForeground kommer alltid først.
+        runCatching {
             val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
             if (nm.getNotificationChannel(CHANNEL) == null) {
                 nm.createNotificationChannel(NotificationChannel(CHANNEL, "T'OS bruker posisjon", NotificationManager.IMPORTANCE_LOW).apply {
@@ -63,22 +69,34 @@ class GpsService : Service() {
                     setShowBadge(false)
                 })
             }
-            val open = PendingIntent.getActivity(this, 0, Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+        }
+        val open = runCatching {
+            PendingIntent.getActivity(this, 0, Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
                 PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
-            val n = NotificationCompat.Builder(this, CHANNEL)
+        }.getOrNull()
+        val note: android.app.Notification? = runCatching {
+            NotificationCompat.Builder(this, CHANNEL)
                 .setSmallIcon(R.drawable.ic_launcher_fg)
                 .setContentTitle("T'OS bruker posisjon")
                 .setContentText("Fart, kart og turmåler")
                 .setOngoing(true)
                 .setSilent(true)
                 .setPriority(NotificationCompat.PRIORITY_LOW)
-                .setContentIntent(open)
+                .apply { open?.let { setContentIntent(it) } }
                 .build()
-            note = n
+        }.getOrNull()
+        val ok = note != null && runCatching {
             val type = if (Build.VERSION.SDK_INT >= 29) ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION else 0
-            ServiceCompat.startForeground(this, ID, n, type)
+            ServiceCompat.startForeground(this, ID, note, type)
         }.isSuccess
         running = ok
+        // Dvale kom mens tjenesten startet (Hub.pauseGps kunne ikke stoppe den – se stop): gi slipp nå, i forgrunnen først
+        if (ok && !Power.plan.gps) {
+            running = false
+            runCatching { ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE) }
+            stopSelf()
+            return START_NOT_STICKY
+        }
         if (!ok) {
             // Android krever startForeground() etter startForegroundService(), også når vi gir opp – ellers krasjer
             // hele T'OS («did not then call startForeground»). Prøv uten type (bruker typen fra manifestet), og stopp så.

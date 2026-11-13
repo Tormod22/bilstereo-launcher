@@ -622,12 +622,16 @@ object Startup {
     /** Kjøres når stereoen starter (eller våkner etter å ha vært av en stund). */
     fun run(c: Context) {
         val now = SystemClock.elapsedRealtime()
-        if (lastRun != 0L && now - lastRun < 120_000) return
+        // Én gang per tur: tenning på (FytMain), skjermen på (Power) og kald start (MainActivity) kan alle komme samtidig
+        if (!PowerLogic.startupDue(lastRun, now)) return
         lastRun = now
-        // Nettradioen spilte da tenningen ble slått av (Power stoppet den): start den igjen i stedet for musikkappen
-        val netRadio = Power.takeNetRadioResume()
         Hub.scope.launch {
             delay(4000)
+            // Tenningen ble slått av igjen i mellomtiden (vridd om og tilbake): ikke start musikk i en bil som står
+            // (lastRun nullstilles, så neste tenning på er en ny oppstart)
+            if (FytMain.accKnown && FytMain.acc == false) { lastRun = 0L; return@launch }
+            // Nettradioen spilte da tenningen ble slått av (Power stoppet den): start den igjen i stedet for musikkappen
+            val netRadio = Power.takeNetRadioResume()
             if (shouldResumeMusic(Prefs.bool("resume_music", true), NowPlaying.playing, otherAudioActive(c), Buttons.inCall(c))) {
                 val station = if (netRadio) NetRadio.last() else null
                 if (station != null) NetRadio.play(c, station)

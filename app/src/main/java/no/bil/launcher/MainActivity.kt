@@ -115,6 +115,7 @@ class MainActivity : ComponentActivity() {
         // Bilbildet leses i bakgrunnen mens skjermen bygges, så det er klart (nesten) med én gang
         if (CarArt.bitmap == null) Hub.scope.launch(Dispatchers.IO) { CarArt.load(applicationContext) }
         Splash.onCreate()
+        News.check(applicationContext)      // oppdatert siden sist? Da «Hva er nytt» på forsiden
         setContent { Root() }
     }
 
@@ -363,6 +364,7 @@ fun Root() {
                         Screen.STEER -> SteerScreen(home)
                         Screen.SELFTEST -> SelfTestScreen(home)
                         Screen.HELP -> HelpScreen(home)
+                        Screen.NEWS -> NewsScreen(home)
                         Screen.CLOCK -> {}
                     }
                 }
@@ -543,6 +545,8 @@ private fun Notice() {
     val (text, go) = when {
         SafeMode.on -> "Sikker modus etter flere krasj – trykk for å sende feilrapport" to Screen.SETTINGS
         CarBattery.enabled && bv != null && (CarBattery.low || CarBattery.high) -> "${if (CarBattery.low) "Svakt batteri" else "Høy ladespenning"} (${CarBattery.text(bv)})" to Screen.CAR
+        // Etter en oppdatering (noen oppstarter): før påminnelsene, som kan stå i ukevis (vinterdekk)
+        News.visible -> News.noticeText(LocalContext.current) to Screen.NEWS
         due != null -> due.text to Screen.CAR
         Hub.update != null -> "Ny versjon ${Hub.update?.versionName} – trykk for å oppdatere" to Screen.APPS
         else -> return

@@ -80,4 +80,37 @@ class PowerLogicTest {
         assertFalse("bare av et øyeblikk", PowerLogic.wakeIsNewTrip(1_000L, 61_000L))
         assertTrue(PowerLogic.wakeIsNewTrip(1_000L, 1_000L + PowerLogic.NEW_TRIP_MS + 1))
     }
+
+    @Test fun tapt_tenning_som_var_paa_gir_lengre_ventetid() {
+        // Stereoen frakoblet mens bilen kjører med mørk skjerm: ikke dvale (GPS/tur av) etter 20 s
+        assertEquals(PowerLogic.SLEEP_GRACE_LOST_ACC_MS, PowerLogic.graceMs(null, screenOn = false, lostAccOn = true))
+        assertTrue(PowerLogic.SLEEP_GRACE_LOST_ACC_MS > PowerLogic.SLEEP_GRACE_SCREEN_MS)
+        // Bekreftet av går alltid foran
+        assertEquals(PowerLogic.SLEEP_GRACE_ACC_MS, PowerLogic.graceMs(false, screenOn = false, lostAccOn = true))
+        // Aldri dvale med kjent tenning på
+        assertEquals(Mode.DARK, PowerLogic.mode(true, screenOn = false))
+        assertEquals(0L, PowerLogic.graceMs(true, screenOn = true, lostAccOn = true))
+    }
+
+    @Test fun ventetiden_kortes_ned_men_startes_ikke_paa_nytt() {
+        // Venter 20 s på dvale (bare skjermen); tenningen meldes av etter 5 s → 3 s fra nå er tidligere: ny frist
+        assertTrue(PowerLogic.reschedule(Mode.SLEEP, dueAt = 20_000, want = Mode.SLEEP, waitMs = 3_000, now = 5_000))
+        // Samme ventetid igjen (ny refresh): ikke start på nytt (ellers ville dvalen aldri kommet)
+        assertFalse(PowerLogic.reschedule(Mode.SLEEP, dueAt = 20_000, want = Mode.SLEEP, waitMs = 20_000, now = 5_000))
+        // Ingenting venter / annen modus: planlegg
+        assertTrue(PowerLogic.reschedule(null, 0, Mode.SLEEP, 3_000, 0))
+        assertTrue(PowerLogic.reschedule(Mode.SLEEP, 20_000, Mode.DARK, 0, 1_000))
+    }
+
+    @Test fun oppstart_ved_tenning_paa() {
+        assertTrue("ukjent når den gikk av (T'OS startet på nytt)", PowerLogic.startupOnAccOn(0L, 5_000))
+        assertFalse("blink mens motoren startes", PowerLogic.startupOnAccOn(10_000, 10_000 + PowerLogic.ACC_FLICKER_MS - 1))
+        assertTrue(PowerLogic.startupOnAccOn(10_000, 10_000 + PowerLogic.ACC_FLICKER_MS))
+        assertTrue(PowerLogic.startupDue(0L, 1_000))
+        assertFalse(PowerLogic.startupDue(1_000, 1_000 + PowerLogic.NEW_TRIP_MS - 1))
+        assertTrue(PowerLogic.startupDue(1_000, 1_000 + PowerLogic.NEW_TRIP_MS))
+        assertEquals(FytMainLogic.Edge.ON, PowerLogic.accEdge(null, saved = false, now = true))
+        assertEquals(FytMainLogic.Edge.NONE, PowerLogic.accEdge(null, saved = null, now = true))
+        assertEquals("denne kjøringen går foran lagret", FytMainLogic.Edge.NONE, PowerLogic.accEdge(true, saved = false, now = true))
+    }
 }

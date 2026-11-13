@@ -121,13 +121,14 @@ object HelpDoc {
     fun currentSection(sections: List<Pair<Int, String>>, firstVisible: Int): Int =
         sections.indexOfLast { it.first <= firstVisible }
 
-    @Volatile private var cached: List<HelpBlock>? = null
+    private val cached = java.util.concurrent.ConcurrentHashMap<String, List<HelpBlock>>()
 
-    fun load(c: Context): List<HelpBlock> = cached ?: runCatching {
-        parse(c.assets.open(ASSET).bufferedReader().use { it.readText() })
+    /** Leser [asset] (bruksanvisningen, eller «Hva er nytt» = nytt.md) én gang. */
+    fun load(c: Context, asset: String = ASSET, title: String = "Bruksanvisning"): List<HelpBlock> = cached[asset] ?: runCatching {
+        parse(c.assets.open(asset).bufferedReader().use { it.readText() })
     }.getOrElse {
-        listOf(HelpBlock.Title("Bruksanvisning"), HelpBlock.Para("Fant ikke bruksanvisningen i denne versjonen av T'OS."))
-    }.also { cached = it }
+        listOf(HelpBlock.Title(title), HelpBlock.Para("Fant ikke teksten i denne versjonen av T'OS."))
+    }.also { cached[asset] = it }
 }
 
 private fun styled(s: String): AnnotatedString {
@@ -139,11 +140,17 @@ private fun styled(s: String): AnnotatedString {
     }
 }
 
+/** Bruksanvisningen – og «Hva er nytt» (samme visning, annen tekst: [asset], [title], knapper i [extra]). */
 @Composable
-fun HelpScreen(onClose: () -> Unit) {
+fun HelpScreen(
+    onClose: () -> Unit, title: String = "Bruksanvisning", asset: String = HelpDoc.ASSET,
+    extra: @Composable RowScope.() -> Unit = {},
+) {
     val context = LocalContext.current
-    val blocks by produceState<List<HelpBlock>?>(null) { value = withContext(Dispatchers.IO) { HelpDoc.load(context.applicationContext) } }
-    Page("Bruksanvisning", onClose) {
+    val blocks by produceState<List<HelpBlock>?>(null, asset) {
+        value = withContext(Dispatchers.IO) { HelpDoc.load(context.applicationContext, asset, title) }
+    }
+    Page(title, onClose, extra) {
         val list = blocks
         if (list == null) Text("Henter …", color = TextMuted, fontSize = 18.sp)
         else {
