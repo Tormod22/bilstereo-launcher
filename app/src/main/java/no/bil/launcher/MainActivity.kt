@@ -59,6 +59,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Density
@@ -644,9 +645,10 @@ private fun SpeedRow() {
             val over = SpeedLimit.over
             // Prikkstil: farten i store prikktall. Over fartsgrensen: hvitt felt med svarte prikker.
             Text(
-                // Uten fart: «--» i dempet grå (den lange streken «–» ble en strek nede i hjørnet i prikkskriften).
-                if (gps?.speed == null) "--" else speedText(gps),
-                style = dotStyle(80.sp, if (over) Bg else if (gps?.speed == null) TextMuted else TextPrimary), maxLines = 1,
+                // Uten fart: en dempet strek i vanlig skrift. I prikkskriften ble «–»/«--» lave streker nede i hjørnet.
+                speedText(gps),
+                style = if (gps?.speed == null) TextStyle(fontSize = 80.sp, color = TextMuted, fontWeight = FontWeight.Light)
+                else dotStyle(80.sp, if (over) Bg else TextPrimary), maxLines = 1,
                 modifier = if (over) Modifier.clip(RoundedCornerShape(16.dp)).background(TextPrimary).padding(horizontal = 12.dp, vertical = 4.dp) else Modifier,
             )
             Spacer(Modifier.width(12.dp))
@@ -866,12 +868,13 @@ fun ActionRow(onApps: () -> Unit, onPickSlot: () -> Unit, modifier: Modifier) {
         // Musikk: cover, tittel, spill/pause, neste, og en tynn linje for hvor langt i sangen
         Box(Modifier.weight(2.6f).fillMaxHeight().clip(Shape).background(Panel)) {
             Row(Modifier.fillMaxSize().padding(start = 18.dp, end = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                Box(Modifier.clip(RoundedCornerShape(14.dp)).combinedClickable(onClick = { Nav.screen = Screen.MUSIC }, onLongClick = { Buttons.openMusic(context) })) { Cover(52.dp) }
-                Column(Modifier.weight(1f).padding(horizontal = 10.dp).clickable { Nav.screen = Screen.MUSIC }) {
+                Box(Modifier.clip(RoundedCornerShape(14.dp)).combinedClickable(onClick = { Nav.screen = Screen.MUSIC }, onLongClick = { Buttons.openMusic(context) })) { Cover(44.dp) }
+                Column(Modifier.weight(1f).padding(horizontal = 8.dp).clickable { Nav.screen = Screen.MUSIC }) {
                     // Sist spilt (kald start, før mediatjenesten er klar): dempet, så det ikke ser ut som om det spiller nå
                     val restored = musicRestored
-                    Text(musicTitle ?: "Musikk", color = if (restored != null) TextMuted else TextPrimary, fontSize = 18.sp, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    Text(musicSub ?: if (MediaListener.enabled(context)) "Ingenting spiller" else "Trykk for mer", color = TextMuted, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    // Smal flis: tittelen får to linjer (ble kuttet til «Moonli…» med tekstskala 1,25)
+                    Text(musicTitle ?: "Musikk", color = if (restored != null) TextMuted else TextPrimary, fontSize = 16.sp, lineHeight = 18.sp, fontWeight = FontWeight.Medium, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    Text(musicSub ?: if (MediaListener.enabled(context)) "Ingenting spiller" else "Trykk for mer", color = TextMuted, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
                 // Prikkstil: hvit, fylt spill-knapp
                 // Sist hørt var radio og stereoen har ikke meldt seg ennå: radiosiden (spill her kunne startet feil kilde)

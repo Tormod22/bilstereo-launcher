@@ -58,7 +58,7 @@ Snakk norsk med brukeren. Han er ikke utvikler – forklar enkelt, ikke bruk fag
   bredde. `StartTiming`: tid fra prosessstart til første bilde, forsiden klar, musikk, stereo (Fyt.connected) og GPS → én linje i
   `files/oppstart.txt` (10 siste); står i oppsettrapporten («--- Oppstart ---») og dermed i «Send alt» – BE BRUKEREN SENDE DEN.
   Oppstartsskjermen tones ut når første bilde er tegnet og bilbildet lest (`CarArt.ready`, maks 0,6 s, toning 0,3 s).
-  Tester LastStateLogicTest (5) + LastStateSmokeTest (2). ÅPENT: smal musikkflis kutter tittelen («Moonli…») med tekstskala 1,25.
+  Tester LastStateLogicTest (5) + LastStateSmokeTest (2). Musikkflisa: omslag 44 dp, tittel 16sp på inntil to linjer (ble kuttet til «Moonli…»). Uten fart: dempet «–» i vanlig skrift (prikkskriften tegnet streker lavt).
   Totalt 342 tester. Alt UVERIFISERT på stereoen.
 - v5.14 (15. nov, «se etter enda mer forbedringer»: 3 parallelle grener TRYGG/STIL/KJERNE, flettet).
   (trygg overtakelse) Gjennomgang av «Ta over»/«Full kontroll» før brukeren kjører det. NØDSTOPP: krasjer T'OS ≥ 4 ganger på 3 min
