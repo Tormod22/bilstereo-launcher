@@ -75,3 +75,12 @@ Ingen kode er kopiert; bare tallene og formatet.
   Brukt som bibliotek (Maven: `dev.mobile:dadb:1.2.9`), ikke endret. T'OS kobler seg med den til stereoens egen ADB
   (127.0.0.1:5555) og kjører de samme kommandoene som PC-oppsettet (`Takeover.kt`).
 - dadb trekker inn **Okio** (Square, Apache License 2.0), som T'OS allerede hadde via andre biblioteker.
+
+## Material-ikoner (v5.15)
+
+- Ikonene i `app/src/main/java/no/bil/launcher/icons/` (`Filled.kt`, `AutoMirroredFilled.kt`) er kopiert fra
+  **androidx.compose.material:material-icons-extended 1.7.0** (Google / Android Open Source Project).
+  Lisens: **Apache License 2.0** – https://www.apache.org/licenses/LICENSE-2.0. Ikonene selv er Material Icons (Google), også Apache 2.0.
+- Stidataene er hentet ut av biblioteket og er identiske med originalen (sjekket ikon for ikon med `ImageVector.equals`).
+  Bare de ca. 108 ikonene T'OS bruker er med; hele biblioteket ga ≈ 30 MB ekstra programkode.
+- `material-icons-core` (samme lisens) brukes fortsatt for `Icons`, `materialIcon` og `materialPath`.

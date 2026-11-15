@@ -13,9 +13,9 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Contacts
-import androidx.compose.material.icons.filled.Link
-import androidx.compose.material.icons.filled.LinkOff
+import no.bil.launcher.icons.filled.Contacts
+import no.bil.launcher.icons.filled.Link
+import no.bil.launcher.icons.filled.LinkOff
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
