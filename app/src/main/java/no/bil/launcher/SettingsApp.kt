@@ -61,7 +61,7 @@ enum class SetCat(val label: String, val icon: ImageVector, val group: String, v
     APPS("Apper", Icons.Default.Apps, "Stereoen", "apper app skjul vis startskjerm carplay car link radio kamera systemapper avinstaller siste nylige bakgrunn lukk"),
     STORAGE("Lagring", Icons.Default.Storage, "Stereoen", "lagring plass minne cache tøm kart minnepinne"),
     TIME("Dato, tid og språk", Icons.Default.Schedule, "Stereoen", "dato tid klokke tidssone 24 timer språk tastatur norsk"),
-    ABOUT("Om stereoen", Icons.Default.Info, "Stereoen", "om versjon oppdatering oppdater stereo android prosessor minne oppsett tillatelser adb pc avansert bruksanvisning hjelp manual nytt hva er nytt endringer"),
+    ABOUT("Om stereoen", Icons.Default.Info, "Stereoen", "om versjon oppdatering oppdater stereo android prosessor minne oppsett tillatelser adb pc avansert bruksanvisning hjelp manual nytt hva er nytt endringer full kontroll enhetseier device owner nedtrekksmeny startskjerm oppstartsbilde logo"),
     MAP("Kart og kjøring", Icons.Default.Map, "T'OS", "kart navigasjon adresse hjem jobb waze maps fart fartsgrense popup"),
     MUSIC("Musikk og oppstart", Icons.Default.MusicNote, "T'OS", "musikk spotify oppstart sangtittel cover varseltilgang radio fm radiomotor"),
     PHONE("Telefon", Icons.Default.Phone, "T'OS", "telefon favoritter carplay ring samtale"),
@@ -586,11 +586,14 @@ private fun AboutSettings() {
     val context = LocalContext.current
     val v = remember { runCatching { context.packageManager.getPackageInfo(context.packageName, 0).versionName }.getOrNull() }
     SettingRow("T'OS $v", Hub.update?.let { "Ny versjon ${it.versionName} er klar" } ?: Updater.lastError?.let { "Fikk ikke sjekket: $it" } ?: "Du har siste versjon") { UpdateButton() }
-    SettingRow("Oppdateringer", "Installeres inne i T'OS. Første gang må du trykke «Installer» én gang; etterpå går det av seg selv (Android 12+).")
+    SettingRow("Oppdateringer", if (remember { Owner.active(context) }) "Installeres helt av seg selv (full kontroll)."
+        else "Installeres inne i T'OS. Første gang må du trykke «Installer» én gang; etterpå går det av seg selv (Android 12+).")
     // Hovedbryter for alt T'OS gjør med FYT-stereoen (radio, telefon, lyd, rattknapper, lysstyrke …). Vises også når den er av,
     // ellers kunne man ikke slå den på igjen etter at T'OS slo den av etter en feil.
     if (remember { Fyt.present(context) }) ToggleRow("Stereo-funksjoner (FYT)", "fyt_all", true,
         "Radio, telefon, lyd, rattknapper og lysstyrke styres av T'OS. Slå av hvis noe oppfører seg rart – da gjør stereoen alt selv.")
+    FullControlSettings()
+    Section("Stereoen")
     SettingRow("Stereo", "${Build.MANUFACTURER} ${Build.MODEL}")
     SettingRow("Android", "${Build.VERSION.RELEASE} (SDK ${Build.VERSION.SDK_INT})")
     SettingRow("Prosessor", "${Build.HARDWARE} · ${Runtime.getRuntime().availableProcessors()} kjerner · ${Hub.cpuTemp?.let { "$it °C" } ?: "temperatur ukjent"}")
