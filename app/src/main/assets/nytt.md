@@ -4,6 +4,24 @@ Her står det som er nytt, og hva du kan prøve. Det nyeste står først.
 
 Virker noe ikke som det skal? Gå til **Innstillinger → Sikkerhetskopi og hjelp** og trykk **Send alt til utvikleren**. Skriv gjerne kort hva som skjedde. Da får utvikleren alt som trengs, i én fil.
 
+## T'OS 5.13
+
+**Ta over stereoen – uten PC.** T'OS kan nå gjøre oppsettet selv:
+
+1. Gå til **Innstillinger → Om stereoen → Ta over stereoen**.
+2. Følg punktene. Hver knapp åpner riktig sted, og hakene kommer av seg selv.
+3. Når stereoen spør «Tillat USB-feilsøking?», trykker du **Tillat alltid** og **OK**.
+4. Trykk den store knappen **Ta over**. T'OS gjør resten og viser hva som skjer.
+
+Stopper det på punkt 3, åpner ikke stereoen for dette. Da kan du bruke PC-en: last ned **tos-oppsett.bat** og dobbeltklikk på den. Fila finner stereoen og gjør det samme.
+
+Angre: **Innstillinger → Om stereoen → Slå av full kontroll** (trykk to ganger).
+
+Prøv dette:
+
+1. Gjør «Ta over stereoen» og se hvor langt du kommer.
+2. Trykk **Send alt til utvikleren** etterpå, også om noe stoppet. Da ser utvikleren nøyaktig hva som skjedde.
+
 ## T'OS 5.12
 
 Nytt utseende – prikkstil:

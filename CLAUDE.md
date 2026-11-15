@@ -31,7 +31,32 @@ Snakk norsk med brukeren. Han er ikke utvikler – forklar enkelt, ikke bruk fag
 - Løsningen han godkjente: **tre ting** – (1) bilkort med klokke, stort bilbilde og fart som stort tall, (2) ekte kart, (3) én rad nederst: musikk/telefon/apper. Ingen kalender, ingen vær.
 - Kalkulator skal være skjult i app-skuffen (`HiddenApps` i `Apps.kt`).
 
-## Nåværende tilstand (v5.12)
+## Nåværende tilstand (v5.13)
+- v5.13 (15. nov): brukeren: «så lett som overhodet mulig for min del» (har Windows-PC). Plan A uten PC, plan B ett dobbeltklikk.
+  (ta over uten PC) «Ta over stereoen» (`Takeover.kt`, Screen.TAKEOVER; rad øverst i Om stereoen → Full kontroll og i
+  førstegangsoppsettet på FYT): T'OS kobler seg til sin EGEN ADB på 127.0.0.1:5555 med dadb 1.2.9 (Apache-2.0, nøkkel i filesDir/adb)
+  og kjører kommandoene selv. Fem punkter med haker (sjekkes hvert sekund): utviklermodus (DEVELOPMENT_SETTINGS_ENABLED → Om enheten),
+  USB-feilsøking (ADB_ENABLED → Utvikleralternativer; med WRITE_SECURE_SETTINGS slår T'OS den på selv), port 5555 åpen (socket 300 ms;
+  ellers «Bruk PC»), koble til (Android spør «Tillat USB-feilsøking?» → «Tillat alltid»), «Ta over». Kommandoene er ÉN liste for PC og
+  T'OS: `adbSetupCommands` (SettingsExtra.kt), via `TakeoverLogic.commands` uten «adb shell» og uten FYT-linja (den tas eget, gammel
+  verdi i Prefs «takeover_nav_prev»). Enhetseier: ingen konto → dpm rett på; bare Google-konto → `pm disable-user` com.google.android.gms
+  et øyeblikk, dpm, ALLTID `pm enable` (merke «takeover_gms_off» til Android bekrefter; knapp «Slå på Play-tjenester»); andre kontoer/dpm
+  sier nei → to rader (fjern konto, legg inn igjen); flere brukere → hoppes over. Så `Owner.apply()`, og feilsøkingen slås av igjen
+  (bryter «takeover_adb_off», på; ikke hvis Play-tjenester står av eller forbindelsen brøt). Logg i filesDir/takeover-siste.txt, med i
+  «Send alt» og kartleggingen (`Takeover.report`). «Angre»: FYT-linja tilbake + fjernes fra batterisparings-unntaket. Tester
+  TakeoverLogicTest (6) + TakeoverSmokeTest (2).
+  (PC-oppsett) `docs/tos-oppsett.bat` = ett dobbeltklikk (batch-del starter PowerShell 5.1 på resten av fila, `<# :`-triks, CRLF via
+  .gitattributes, ingen BOM). Laster ned platform-tools selv til %LOCALAPPDATA%\TOS, finner stereoen selv (port 5555 på PC-ens /24-nett,
+  ~3 s, bare enheten med T'OS), ellers spør den etter adressen; venter på «Tillat alltid», prøver igjen ved offline. Samme liste og
+  rekkefølge som ADB-OPPSETT.md og adbSetupCommands (knappestyringen legges til med `Merge-ColonList`; show_navigationbar sin gamle verdi
+  lagres for angre), deretter Full kontroll med samme Google-omvei (`pm enable` i finally, og ved neste start hvis avbrutt). Til slutt
+  `adb_enabled 0` (spør), oppsummering OK/HOPPET/FEIL og `tos-oppsett-logg.txt` ved siden av fila. Angre: valg 2 / `tos-oppsett.bat angre`.
+  build.yml laster den opp til «latest» (etter APK, før version.json):
+  https://github.com/Tormod22/bilstereo-launcher/releases/download/latest/tos-oppsett.bat. ADB-OPPSETT.md er nå kort (3 steg + SmartScreen
+  «Mer info → Kjør likevel»), detaljene under «For spesielt interesserte». Test PcSetupTest (4).
+  UVERIFISERT: om FYT åpner port 5555 når USB-feilsøking er på (persist.sys.usb.config=none – Android 10 trenger normalt `adb tcpip` fra
+  USB først; da hjelper heller ikke PC-en uten kabel), om dialogen kommer for 127.0.0.1, om Play-tjenester-omveien slipper dpm forbi
+  Google-kontoen, .bat-fila på ekte Windows (ingen PowerShell her). Totalt 315 tester.
 - v5.12 (15. nov): brukeren: «noe lignende Nothing OS» – T'OS skal ta over stereoen helt, og han likte prikkstil-forslaget
   (artefakt https://claude.ai/artifact/AHiBMZWtGdii8Lc8zSHdg1). Forklart ærlig: eget OS i stedet for Android går ikke (låst FYT-firmware,
   hemmelige drivere for radio/BT/MCU, mister apper); Nothing OS er også Android under. Valgt vei: prikkstil + «Full kontroll».

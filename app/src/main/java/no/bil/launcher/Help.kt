@@ -123,6 +123,9 @@ object HelpDoc {
 
     private val cached = java.util.concurrent.ConcurrentHashMap<String, List<HelpBlock>>()
 
+    /** Allerede lest? Da vises siden med en gang, uten «Henter …» og uten tur via bakgrunnstråd. */
+    fun cachedOrNull(asset: String = ASSET): List<HelpBlock>? = cached[asset]
+
     /** Leser [asset] (bruksanvisningen, eller «Hva er nytt» = nytt.md) én gang. */
     fun load(c: Context, asset: String = ASSET, title: String = "Bruksanvisning"): List<HelpBlock> = cached[asset] ?: runCatching {
         parse(c.assets.open(asset).bufferedReader().use { it.readText() })
@@ -150,8 +153,8 @@ fun HelpScreen(
     extra: @Composable RowScope.() -> Unit = {},
 ) {
     val context = LocalContext.current
-    val blocks by produceState<List<HelpBlock>?>(null, asset) {
-        value = withContext(Dispatchers.IO) { HelpDoc.load(context.applicationContext, asset, title) }
+    val blocks by produceState(HelpDoc.cachedOrNull(asset), asset) {
+        if (value == null) value = withContext(Dispatchers.IO) { HelpDoc.load(context.applicationContext, asset, title) }
     }
     Page(title, onClose, extra) {
         val list = blocks
