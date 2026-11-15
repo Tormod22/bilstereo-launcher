@@ -27,7 +27,8 @@ class TakeoverLogicTest {
         val cmds = TakeoverLogic.commands(pkg, acc).map { it.cmd }
         assertTrue(cmds.none { it.startsWith("adb ") })
         assertTrue(cmds.none { "show_navigationbar" in it })
-        assertTrue("settings put secure enabled_accessibility_services com.fyt.x/com.fyt.x.S:$pkg/$pkg.KeyService" in cmds)
+        // Verdien kommer fra stereoen og sendes i anførselstegn (skallet skal ikke tolke tegn som «$» i stereoens egne tjenester)
+        assertTrue("settings put secure enabled_accessibility_services 'com.fyt.x/com.fyt.x.S:$pkg/$pkg.KeyService'" in cmds)
         for (key in listOf(
             "settings put secure accessibility_enabled 1",
             "cmd notification allow_listener $pkg/$pkg.MediaListener",

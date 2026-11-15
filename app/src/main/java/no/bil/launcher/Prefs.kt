@@ -6,6 +6,7 @@ import android.content.SharedPreferences
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.launch
 import org.json.JSONObject
 import java.io.File
 import java.io.PrintWriter
@@ -21,6 +22,9 @@ class TosApp : Application() {
         Prefs.init(this)
         CrashLog.install(this)
         SafeMode.check(this)
+        // Full kontroll: krasjer T'OS i en løkke, skal stereoen aldri stå uten startskjerm (Owner.escape) – før resten starter
+        if (OwnerLogic.shouldEscape(SafeMode.recentCrashes))
+            runCatching { Owner.escape(this, "${SafeMode.recentCrashes} krasj på 3 min, versjon ${Updater.current(this)}") }
         // Vakthunder for FYT: lysstyrke som er (nesten) svart rettes før noe annet skjer (FytMain.kt)
         runCatching { FytMain.sanitizeOnStart() }
         Hub.start(this)
@@ -28,6 +32,12 @@ class TosApp : Application() {
         // «Full kontroll» (bare når T'OS er enhetseier) og knappestyring som holdes på (bare med PC-tillatelse)
         Prefs.onOwnerToggle = { Owner.apply(this) }
         runCatching { Owner.apply(this) }
+        // «Ta over»: ble Google Play-tjenester stående av (avbrutt kjøring)? Slå dem på igjen i bakgrunnen (Takeover.kt)
+        runCatching { Takeover.healOnStart(this) }
+        if (runCatching { Owner.escaped }.getOrDefault(false)) Hub.scope.launch {
+            kotlinx.coroutines.delay(4_000)
+            Notify.show("T'OS krasjet flere ganger, så stereoens egen startskjerm brukes nå. Se Innstillinger → Om stereoen.", true)
+        }
     }
 }
 
@@ -252,6 +262,9 @@ object SafeMode {
     private fun sp(c: Context) = c.getSharedPreferences("sikker", Context.MODE_PRIVATE)
     var on by androidx.compose.runtime.mutableStateOf(false)
         private set
+    /** Krasj de siste 3 minuttene da T'OS startet (brukes av nødstoppen i «Full kontroll», Owner.escape). */
+    @Volatile var recentCrashes = 0
+        private set
 
     @android.annotation.SuppressLint("ApplySharedPref")     // med vilje: prosessen dør rett etter
     fun recordCrash(c: Context, fyt: Boolean = false) {
@@ -266,6 +279,7 @@ object SafeMode {
     fun check(c: Context) {
         val now = System.currentTimeMillis()
         val recent = (sp(c).getString("t", "") ?: "").split(",").mapNotNull { it.toLongOrNull() }.count { recentCrash(now, it) }
+        recentCrashes = recent
         on = sp(c).getBoolean("on", false) || recent >= 3
         if (on) sp(c).edit().putBoolean("on", true).apply()
         // FYT-koden krasjet 2 ganger på 3 min: slå av stereo-funksjonene før noe kobler til stereoen (FytSafety)

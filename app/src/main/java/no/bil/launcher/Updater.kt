@@ -79,6 +79,8 @@ object Updater {
      */
     suspend fun downloadAndInstall(context: Context, onProgress: (Int) -> Unit): String? =
         withContext(Dispatchers.IO) {
+            // Ikke mens «Ta over» kjører: oppdateringen starter T'OS på nytt midt i (Play-tjenester kunne bli stående av)
+            if (Takeover.busy) return@withContext "Vent til «Ta over stereoen» er ferdig, og trykk igjen"
             // Enhetseier (full kontroll): Android installerer uten spørsmål, og trenger ikke denne tillatelsen
             if (!canInstall(context) && !Owner.active(context)) {
                 withContext(Dispatchers.Main) { openInstallPermission(context) }

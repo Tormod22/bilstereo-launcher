@@ -41,10 +41,15 @@ class OwnerLogicTest {
 
     @Test fun hvaSomSkjules() {
         val installed = listOf("com.android.launcher9", "com.android.launcher4", "com.android.launcher3", "com.spotify.music", "com.syu.ms")
-        // Standard: de andre startskjermene, ikke Quickstep («siste apper»)
-        assertEquals(listOf("com.android.launcher4", "com.android.launcher9"), OwnerLogic.toHide(true, false, installed))
+        // Standard: de andre startskjermene, men IKKE stereoens hovedstartskjerm (launcher9) og ikke Quickstep («siste apper»)
+        assertEquals(listOf("com.android.launcher4"), OwnerLogic.toHide(true, false, installed))
         assertEquals(listOf("com.android.launcher3"), OwnerLogic.toHide(false, true, installed))
-        assertEquals(listOf("com.android.launcher3", "com.android.launcher4", "com.android.launcher9"), OwnerLogic.toHide(true, true, installed))
+        assertEquals(listOf("com.android.launcher3", "com.android.launcher4"), OwnerLogic.toHide(true, true, installed))
+        // Med egen bryter: hovedstartskjermen også
+        assertEquals(listOf("com.android.launcher3", "com.android.launcher4", "com.android.launcher9"),
+            OwnerLogic.toHide(true, true, installed, "com.android.launcher9", hideMain = true))
+        // En annen hovedstartskjerm (ro.fyt.launcher): da er det den som beholdes
+        assertEquals(listOf("com.android.launcher9"), OwnerLogic.toHide(true, false, installed, "com.android.launcher4"))
         assertTrue(OwnerLogic.toHide(false, false, installed).isEmpty())
         // Bare det som finnes på stereoen
         assertTrue(OwnerLogic.toHide(true, true, emptyList()).isEmpty())
@@ -125,7 +130,7 @@ class OwnerSmokeTest {
     @Test fun bryterneVirker() {
         val c = rule.activity
         assertFalse(Owner.active(c))
-        install("com.android.launcher9"); install("com.android.launcher3"); install("com.syu.ms")
+        install("com.android.launcher9"); install("com.android.launcher4"); install("com.android.launcher3"); install("com.syu.ms")
         // Ikke enhetseier: ingenting skjer
         Owner.apply(c)
         assertFalse(shadowOf(dpm()).wasPackageEverHidden("com.android.launcher9"))
@@ -137,23 +142,30 @@ class OwnerSmokeTest {
         rule.runOnUiThread { Prefs.set(OwnerLogic.HIDE_LAUNCHERS, true); Prefs.set(OwnerLogic.HIDE_RECENTS, false) }
         Owner.apply(c)
         val a = Owner.admin(c)
-        assertTrue(dpm().isApplicationHidden(a, "com.android.launcher9"))
+        assertTrue(dpm().isApplicationHidden(a, "com.android.launcher4"))
+        assertFalse(dpm().isApplicationHidden(a, "com.android.launcher9"))   // stereoens hovedstartskjerm: bare med egen bryter
         assertFalse(dpm().isApplicationHidden(a, "com.android.launcher3"))   // «siste apper» er av som standard
         assertFalse(shadowOf(dpm()).wasPackageEverHidden("com.syu.ms"))      // FYT-sentralen røres aldri
         assertEquals(DevicePolicyManager.PERMISSION_GRANT_STATE_GRANTED,
             dpm().getPermissionGrantState(a, c.packageName, "android.permission.ACCESS_FINE_LOCATION"))
-        assertEquals(listOf("com.android.launcher9"), Owner.hiddenNow(c))
+        assertEquals(listOf("com.android.launcher4"), Owner.hiddenNow(c))
         assertTrue(Owner.report(c).contains("Enhetseier (full kontroll): JA"))
 
         // Bryteren av → vises igjen med en gang
         rule.runOnUiThread { Prefs.set(OwnerLogic.HIDE_LAUNCHERS, false) }
-        assertFalse(dpm().isApplicationHidden(a, "com.android.launcher9"))
+        assertFalse(dpm().isApplicationHidden(a, "com.android.launcher4"))
         rule.runOnUiThread { Prefs.set(OwnerLogic.HIDE_LAUNCHERS, true) }
+        assertTrue(dpm().isApplicationHidden(a, "com.android.launcher4"))
+        // Hovedstartskjermen også (egen bryter)
+        rule.runOnUiThread { Prefs.set(OwnerLogic.HIDE_MAIN, true) }
         assertTrue(dpm().isApplicationHidden(a, "com.android.launcher9"))
 
-        // «Slå av full kontroll»: alt vises igjen
+        // «Slå av full kontroll»: alt vises igjen, og tillatelsene er ikke lenger låst
         Owner.release(c)
+        assertFalse(dpm().isApplicationHidden(a, "com.android.launcher4"))
         assertFalse(dpm().isApplicationHidden(a, "com.android.launcher9"))
-        rule.runOnUiThread { Prefs.set(OwnerLogic.HIDE_LAUNCHERS, null) }
+        assertEquals(DevicePolicyManager.PERMISSION_GRANT_STATE_DEFAULT,
+            dpm().getPermissionGrantState(a, c.packageName, "android.permission.ACCESS_FINE_LOCATION"))
+        rule.runOnUiThread { Prefs.set(OwnerLogic.HIDE_LAUNCHERS, null); Prefs.set(OwnerLogic.HIDE_MAIN, null) }
     }
 }

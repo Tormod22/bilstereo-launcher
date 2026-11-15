@@ -25,6 +25,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
@@ -91,6 +92,14 @@ object TakeoverLogic {
         adbSetupCommands(pkg, accessibility)
             .filter { NAV_KEY !in it.cmd }
             .map { it.copy(cmd = it.cmd.removePrefix("adb shell ").trim()) }
+            // Lista med tjenester kommer fra stereoen og kan inneholde tegn skallet tolker (f.eks. «$» i en indre klasse,
+            // com.x/.A$B): uten anførselstegn ville stereoens egne tjenester blitt ødelagt. Samme som tos-oppsett.bat gjør.
+            .map { if (it.cmd.startsWith(ACC_PUT)) it.copy(cmd = ACC_PUT + shQuote(accessibility)) else it }
+
+    private const val ACC_PUT = "settings put secure enabled_accessibility_services "
+
+    /** Én verdi trygt til stereoens skall (enkle anførselstegn; et «'» inni blir '\''). */
+    fun shQuote(v: String): String = "'" + v.replace("'", "'\\''") + "'"
 
     fun ownerCommand(pkg: String) = "dpm set-device-owner $pkg/.TosAdmin"
 
@@ -132,6 +141,13 @@ object TakeoverLogic {
     enum class OwnerPlan { DIRECT, GOOGLE_TRICK, MANUAL }
 
     /**
+     * Får Play-tjenester slås av et øyeblikk? Bare når dpm FØRST har sagt nei på grunn av kontoer (prøves alltid rett på
+     * først – da står Google aldri av uten grunn), og bare når alle kontoene er Google (eller typen ikke kunne leses).
+     */
+    fun googleTrickAllowed(types: List<String>): Boolean =
+        types.isEmpty() || types.all { it == "com.google" || it.startsWith("com.google.") }
+
+    /**
      * Ingen kontoer: rett på. Bare Google-kontoer: Play-tjenester av et øyeblikk (da ser ikke Android kontoen), dpm, Play-tjenester
      * på igjen. Andre kontoer: brukeren må fjerne dem selv (knapp til Android-siden).
      */
@@ -151,7 +167,10 @@ object TakeoverLogic {
     fun net(open: Boolean, adbOn: Boolean): Net = when { open -> Net.OPEN; !adbOn -> Net.ADB_OFF; else -> Net.NO_NETWORK_ADB }
 
     /** Verdien FYT-linja settes tilbake til ved «Angre» (stereoen hadde 1). */
-    fun navUndo(prev: String?): String = prev?.trim()?.takeIf { it.isNotEmpty() && it != "null" } ?: "1"
+    fun navUndo(prev: String?): String = prev?.trim()?.takeIf { Regex("""-?\d{1,4}""").matches(it) } ?: "1"
+
+    /** Ble Play-tjenester stående av? enabledSetting fra PackageManager (2/3/4 = av). */
+    fun gmsDisabled(enabledSetting: Int): Boolean = enabledSetting in 2..4
 
     /** Klar tekst når tilkoblingen feiler. */
     fun connectError(kind: String, msg: String?): String {
@@ -193,6 +212,9 @@ object Takeover {
     fun adbOn(c: Context) = runCatching { Settings.Global.getInt(c.contentResolver, Settings.Global.ADB_ENABLED, 0) == 1 }.getOrDefault(false)
     val done: Boolean get() = Prefs.bool(TakeoverLogic.DONE)
     val gmsOff: Boolean get() = Prefs.bool(TakeoverLogic.GMS_MARK)
+    /** Kobler til eller kjører nå (knappestyringen rører da ikke SystemUI-vinduer – «Tillat USB-feilsøking?» kan ligge der). */
+    val busy: Boolean get() = running || connecting || healing
+    @Volatile private var healing = false
 
     /** Lytter stereoens ADB på 127.0.0.1:5555? Blokkerer maks 300 ms – kall fra en bakgrunnstråd. */
     fun portOpenBlocking(): Boolean = runCatching {
@@ -227,6 +249,80 @@ object Takeover {
 
     private suspend fun ui(block: () -> Unit) = withContext(Dispatchers.Main) { block() }
 
+    /** Har T'OS koblet til før (nøkkelen finnes, og stereoen har trolig sagt «Tillat alltid»)? */
+    private fun hasKey(c: Context) = File(File(c.filesDir, "adb"), "adbkey").exists()
+
+    /**
+     * Kobler til uten å vise noe (brukes for å slå Play-tjenester på igjen): bare med en nøkkel stereoen har godtatt før, og bare
+     * når porten er åpen – eller T'OS kan slå feilsøkingen på selv (WRITE_SECURE_SETTINGS). Kort ventetid, så Android ikke spør.
+     */
+    private suspend fun connectQuiet(ctx: Context): Boolean {
+        if (adb != null) return true
+        if (!hasKey(ctx)) return false
+        if (!portOpenBlocking()) {
+            if (!turnOnAdbSelf(ctx)) return false
+            delay(2_500)
+            if (!portOpenBlocking()) return false
+        }
+        val d = runCatching { Dadb.create(TakeoverLogic.HOST, TakeoverLogic.PORT, keyPair(ctx), 3_000, 15_000) }.getOrNull() ?: return false
+        val ok = runCatching { d.shell("echo tos").allOutput.trim() == "tos" }.getOrDefault(false)
+        if (!ok) { runCatching { d.close() }; return false }
+        adb = d
+        return true
+    }
+
+    /** Er Play-tjenester slått av nå? (Leses fra Android, uten ADB.) Finnes ikke Google på stereoen: nei. */
+    fun gmsDisabledNow(c: Context): Boolean = runCatching {
+        TakeoverLogic.gmsDisabled(c.packageManager.getApplicationEnabledSetting(TakeoverLogic.GMS))
+    }.getOrDefault(false)
+
+    /**
+     * Slår Play-tjenester på igjen hvis «Ta over» ble avbrutt mens de var av (krasj, oppdatering, tenning av, forbindelsen
+     * brøt). Uavhengig av siden: kobler til selv. true = de er på (merket fjernet).
+     */
+    private suspend fun healGmsNow(ctx: Context): Boolean {
+        if (!gmsOff) return true
+        if (!gmsDisabledNow(ctx)) { Prefs.set(TakeoverLogic.GMS_MARK, false); return true }
+        val hadConnection = adb != null
+        if (!connectQuiet(ctx)) return false
+        val ok = enableGmsNow() || !gmsDisabledNow(ctx).also { if (!it) Prefs.set(TakeoverLogic.GMS_MARK, false) }
+        // Koblet vi til bare for dette, og ingen bruker siden: lukk igjen
+        if (!hadConnection && !running && !connected) closeQuiet()
+        return ok
+    }
+
+    /**
+     * Ved oppstart: står merket «Play-tjenester av», prøves det å slå dem på igjen – straks og så hvert minutt i en halvtime
+     * (stereoen kan ha vært i dvale, eller feilsøkingen kan være av). Viser en melding om hva som skjer.
+     */
+    fun healOnStart(c: Context) {
+        if (!gmsOff) return
+        val ctx = c.applicationContext
+        scope.launch {
+            delay(5_000)
+            var told = false
+            repeat(30) {
+                if (!gmsOff) return@launch
+                if (!running && !connecting) {
+                    healing = true
+                    val ok = try { runCatching { healGmsNow(ctx) }.getOrDefault(false) } finally { healing = false }
+                    if (ok) { ui { Notify.show("Google Play-tjenester er på igjen", true) }; return@launch }
+                    if (!told) {
+                        told = true
+                        ui { Notify.show("Google Play-tjenester er av etter «Ta over». Åpne Ta over stereoen og trykk «Slå på Play-tjenester».", true) }
+                    }
+                }
+                delay(60_000)
+            }
+        }
+    }
+
+    /** Siden «Ta over stereoen» lukkes: forbindelsen lukkes (ingen åpen ADB-forbindelse i bakgrunnen). */
+    fun leave() {
+        if (running || connecting || healing) return
+        closeQuiet(); connected = false
+    }
+
     /** Kobler til stereoens egen ADB. Første gang spør Android «Tillat USB-feilsøking?» – brukeren har 60 s. */
     fun connect(c: Context) {
         if (connecting || running) return
@@ -245,6 +341,11 @@ object Takeover {
                 connecting = false
                 r.onSuccess { adb = it; connected = true; message = null }
                     .onFailure { connected = false; message = TakeoverLogic.connectError(it.javaClass.simpleName, it.message) }
+            }
+            // Sto Play-tjenester av fra en avbrutt kjøring? Slå dem på med en gang nå som vi er tilkoblet.
+            if (r.isSuccess && gmsOff) {
+                val ok = runCatching { enableGmsNow() }.getOrDefault(false)
+                if (ok) ui { Notify.show("Google Play-tjenester er på igjen") }
             }
         }
     }
@@ -333,7 +434,11 @@ object Takeover {
         }
     }
 
-    /** Enhetseier («Full kontroll»). Med bare Google-konto: Play-tjenester av et øyeblikk, og ALLTID på igjen etterpå. */
+    /**
+     * Enhetseier («Full kontroll»). Prøves ALLTID rett på først. Sier Android nei på grunn av en Google-konto: Play-tjenester av
+     * et øyeblikk (to forsøk), og ALLTID på igjen etterpå – også om forbindelsen brøt (da kobler T'OS til igjen selv, og
+     * [healOnStart] prøver videre ved neste oppstart).
+     */
     private suspend fun deviceOwner(ctx: Context, add: suspend (TakeoverLogic.Result, String, String) -> Unit) {
         val title = "Full kontroll (T'OS er sjef)"
         if (Owner.active(ctx)) { add(TakeoverLogic.Result.OK, title, "var allerede på"); return }
@@ -341,21 +446,21 @@ object Takeover {
             add(TakeoverLogic.Result.SKIP, title, "stereoen har flere brukere – Android tillater det ikke uten nullstilling"); return
         }
         val types = TakeoverLogic.accountTypes(sh("dumpsys account").second)
-        val plan = TakeoverLogic.ownerPlan(types)
-        var out = ""
-        when (plan) {
-            TakeoverLogic.OwnerPlan.DIRECT -> out = sh(TakeoverLogic.ownerCommand(ctx.packageName)).second
-            TakeoverLogic.OwnerPlan.GOOGLE_TRICK -> {
-                Prefs.set(TakeoverLogic.GMS_MARK, true)
-                try {
-                    sh("pm disable-user --user 0 ${TakeoverLogic.GMS}")
-                    delay(1500)
+        var out = sh(TakeoverLogic.ownerCommand(ctx.packageName)).second
+        if (TakeoverLogic.dpmResult(out) == TakeoverLogic.Dpm.ACCOUNTS && TakeoverLogic.googleTrickAllowed(types) && adb != null) {
+            Prefs.set(TakeoverLogic.GMS_MARK, true)
+            try {
+                sh("pm disable-user --user 0 ${TakeoverLogic.GMS}")
+                for (wait in listOf(1_500L, 3_000L)) {
+                    delay(wait)
                     out = sh(TakeoverLogic.ownerCommand(ctx.packageName)).second
-                } finally {
-                    withContext(NonCancellable) { enableGmsNow() }
+                    if (TakeoverLogic.dpmResult(out) != TakeoverLogic.Dpm.ACCOUNTS || adb == null) break
+                }
+            } finally {
+                withContext(NonCancellable) {
+                    if (!runCatching { enableGmsNow() }.getOrDefault(false)) runCatching { healGmsNow(ctx) }
                 }
             }
-            TakeoverLogic.OwnerPlan.MANUAL -> out = "accounts"
         }
         when (TakeoverLogic.dpmResult(out)) {
             TakeoverLogic.Dpm.OK -> add(TakeoverLogic.Result.OK, title, "T'OS styrer nå stereoen")
@@ -378,13 +483,17 @@ object Takeover {
         return ok
     }
 
-    /** Knappen «Slå på Play-tjenester» (bare hvis noe gikk galt underveis). */
+    /** Knappen «Slå på Play-tjenester» (bare hvis noe gikk galt underveis). Kobler til selv om nødvendig. */
     fun enableGms(c: Context) {
-        if (running || adb == null) return
+        if (running) return
+        val ctx = c.applicationContext
         running = true
         scope.launch {
-            val ok = runCatching { enableGmsNow() }.getOrDefault(false)
-            ui { running = false; Notify.show(if (ok) "Google Play-tjenester er på igjen" else "Fikk ikke slått på Play-tjenester – prøv igjen") }
+            val ok = runCatching { if (adb != null) enableGmsNow() || healGmsNow(ctx) else healGmsNow(ctx) }.getOrDefault(false)
+            ui {
+                running = false; connected = adb != null
+                Notify.show(if (ok) "Google Play-tjenester er på igjen" else "Fikk ikke slått på Play-tjenester – er feilsøking på? Prøv igjen.")
+            }
         }
     }
 
@@ -452,14 +561,19 @@ fun TakeoverScreen(onClose: () -> Unit) {
     var adbOn by remember { mutableStateOf(Takeover.adbOn(context)) }
     var open by remember { mutableStateOf(false) }
     var checked by remember { mutableStateOf(false) }
-    // Sjekkes hvert sekund mens siden vises (og straks brukeren kommer tilbake fra en Android-side)
+    // Sjekkes hvert sekund mens siden VISES (og straks brukeren kommer tilbake fra en Android-side). Er T'OS ikke framme
+    // (brukeren er i Androids innstillinger), sjekkes det ikke – [tick] sjekker straks T'OS kommer tilbake.
     LaunchedEffect(tick) {
         while (true) {
-            dev = Takeover.devOn(context); adbOn = Takeover.adbOn(context)
-            open = Takeover.portOpen(); checked = true
+            if (Notify.appVisible || !checked) {
+                dev = Takeover.devOn(context); adbOn = Takeover.adbOn(context)
+                open = Takeover.portOpen(); checked = true
+            }
             delay(1000)
         }
     }
+    // Siden lukkes: ingen ADB-forbindelse blir liggende åpen (med mindre «Ta over» kjører – den fullfører i bakgrunnen)
+    DisposableEffect(Unit) { onDispose { Takeover.leave() } }
     val done = Takeover.done || Owner.active(context)
     val connected = Takeover.connected
     val net = TakeoverLogic.net(open, adbOn)
@@ -486,9 +600,7 @@ fun TakeoverScreen(onClose: () -> Unit) {
                     enabled = connected && !busy,
                 ) { Takeover.run(context) }
                 ToggleRow("Slå av feilsøking etterpå", TakeoverLogic.ADB_OFF, true, "Tryggere: ingen åpen ADB på Wi-Fi-en")
-                if (Takeover.gmsOff) Pill("Slå på Play-tjenester", strong = true) {
-                    if (connected) Takeover.enableGms(context) else Notify.show("Koble til først (punkt 4)")
-                }
+                if (Takeover.gmsOff) Pill("Slå på Play-tjenester", strong = true) { Takeover.enableGms(context) }
                 Text(caps("Angre"), style = capsStyle(12.sp), modifier = Modifier.padding(top = 6.dp))
                 Text("«Angre» viser stereoens statuslinje igjen (krever punkt 4). Full kontroll slås av under Innstillinger → Om stereoen → " +
                     "«Slå av full kontroll».", color = TextMuted, fontSize = 13.sp)

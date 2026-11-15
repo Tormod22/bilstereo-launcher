@@ -118,8 +118,9 @@ annen Android-versjon enn stereoen har, og kan overses.
 
 ### Full kontroll (T'OS blir enhetseier)
 
-Android tillater dette bare når ingen konto teller. tos-oppsett.bat slår derfor av Google-tjenestene
-i noen sekunder (så Google-kontoen ikke teller), gjør T'OS til enhetseier, og slår dem **alltid** på igjen:
+Android tillater dette bare når ingen konto teller. tos-oppsett.bat (og T'OS selv) prøver først rett på.
+Sier Android nei på grunn av Google-kontoen, slås Google-tjenestene av i noen sekunder (så kontoen ikke
+teller), T'OS blir enhetseier, og tjenestene slås **alltid** på igjen:
 ```
 adb shell pm disable-user --user 0 com.google.android.gms
 adb shell dpm set-device-owner no.bil.launcher/.TosAdmin
@@ -135,6 +136,13 @@ Svaret på den midterste skal være «Success: Device owner set to package …»
 - «Unknown admin»: T'OS er for gammel – oppdater til 5.12 eller nyere.
 
 Husk alltid `adb shell pm enable com.google.android.gms` til slutt, ellers virker ikke Play Butikk.
+Ble det avbrutt midt i, prøver T'OS selv å slå dem på igjen når den starter (og knappen «Slå på
+Play-tjenester» under **Ta over stereoen**).
+
+Stereoens hovedstartskjerm (launcher9) skjules ikke som standard: FYT-sentralen kan åpne den selv, og da
+henter T'OS seg fram igjen som før. Krasjer T'OS flere ganger rett etter hverandre, slår T'OS på stereoens
+egen startskjerm igjen av seg selv (nødstopp), så stereoen aldri står uten. «Bruk T'OS igjen» ligger under
+**Om stereoen → Full kontroll**.
 
 Med full kontroll stenger T'OS Androids nedtrekksmeny, skjuler de gamle startskjermene, gir seg selv
 tillatelser, låser seg som startskjerm og oppdaterer seg uten spørsmål. FYT-tjenestene (radio,
