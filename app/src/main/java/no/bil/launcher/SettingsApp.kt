@@ -106,7 +106,7 @@ fun SettingsScreen(onClose: () -> Unit) {
                 }
                 if (shown.isEmpty()) item { Text("Ingen treff", color = TextMuted, fontSize = 14.sp, modifier = Modifier.padding(12.dp)) }
                 shown.groupBy { it.group }.forEach { (group, cats) ->
-                    item { Text(group.uppercase(), color = TextMuted, fontSize = 12.sp, letterSpacing = 1.sp, modifier = Modifier.padding(start = 12.dp, top = 10.dp, bottom = 6.dp)) }
+                    item { Text(caps(group), style = capsStyle(12.sp), modifier = Modifier.padding(start = 12.dp, top = 10.dp, bottom = 6.dp)) }
                     items(cats) { c ->
                         val on = c == cat
                         Row(

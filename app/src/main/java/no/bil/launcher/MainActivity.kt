@@ -1084,9 +1084,8 @@ fun AppDrawer(onClose: () -> Unit) {
                     Modifier.clip(RoundedCornerShape(18.dp)).background(Card).clickable { Nav.screen = screen }.padding(14.dp).fillMaxWidth(),
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
-                    Box(Modifier.size(52.dp).clip(RoundedCornerShape(14.dp)).background(Line), contentAlignment = Alignment.Center) {
-                        Icon(icon, null, tint = TextPrimary, modifier = Modifier.size(28.dp))
-                    }
+                    // Prikkstil: T'OS sine egne sider har ikon i tynn ring, som bunnraden på forsiden
+                    RingIcon(icon, 52.dp)
                     Spacer(Modifier.height(8.dp))
                     Text(label, color = TextPrimary, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }

@@ -173,7 +173,7 @@ fun TuningScreen(onClose: () -> Unit) {
                         Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(Card).padding(20.dp),
                         verticalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
-                        Text("Min tuningboks", color = TextMuted, fontSize = 13.sp)
+                        Text(caps("Min tuningboks"), style = capsStyle(12.sp))
                         Text(TuneBox.name, color = TextPrimary, fontSize = 20.sp, fontWeight = FontWeight.Medium)
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                             Pill("–", strong = false) { TuneBox.setLevel(TuneBox.level - 1) }
@@ -190,7 +190,7 @@ fun TuningScreen(onClose: () -> Unit) {
                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         Accel.runs.forEach { r ->
                             Column(Modifier.weight(1f).clip(RoundedCornerShape(18.dp)).background(Card).padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                                Text(r.name + " km/t", color = TextMuted, fontSize = 13.sp)
+                                Text(caps(r.name + " km/t"), style = capsStyle(12.sp))
                                 Text(Accel.fmt(Accel.last(r)), style = dotStyle(32.sp, weight = FontWeight.Bold), maxLines = 1)
                                 Text("Beste: ${Accel.fmt(Accel.best(r))}", color = TextMuted, fontSize = 13.sp)
                                 Spacer(Modifier.height(6.dp))
@@ -322,11 +322,12 @@ private fun EngineCard() {
 @Composable
 private fun Gauge(title: String, value: String?, unit: String, modifier: Modifier) {
     Column(modifier) {
-        Text(title, color = TextMuted, fontSize = 13.sp)
+        // Prikkstil: målingen i prikktall, navn og enhet som små etiketter
+        Text(caps(title), style = capsStyle(12.sp))
         Row(verticalAlignment = Alignment.Bottom) {
-            Text(value ?: "–", color = TextPrimary, fontSize = 28.sp, fontWeight = FontWeight.Medium)
-            Spacer(Modifier.width(4.dp))
-            Text(unit, color = TextMuted, fontSize = 13.sp, modifier = Modifier.padding(bottom = 4.dp))
+            Text(value ?: "–", style = dotStyle(30.sp, weight = FontWeight.Bold), maxLines = 1)
+            Spacer(Modifier.width(6.dp))
+            Text(unit, style = capsStyle(12.sp), modifier = Modifier.padding(bottom = 4.dp))
         }
     }
 }

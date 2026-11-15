@@ -630,7 +630,7 @@ fun SelfTestScreen(onClose: () -> Unit) {
                     Text(SelfTest.phase ?: SelfTest.doneAt?.let { "Ferdig $it" } ?: "", color = TextPrimary, fontSize = 15.sp)
                     if (!busy) Pill("Kjør på nytt", Icons.Default.Refresh) { SelfTest.runAuto(context) }
                 }
-                Text("Prøv selv", color = TextMuted, fontSize = 13.sp, modifier = Modifier.padding(top = 6.dp))
+                Text(caps("Prøv selv"), style = capsStyle(12.sp), modifier = Modifier.padding(top = 6.dp))
                 if (!busy) {
                     Pill("Rattknapp (10 s)") { SelfTest.runSteer(context) }
                     Pill("Lysene (15 s)") { SelfTest.runLights(context) }
