@@ -31,7 +31,34 @@ Snakk norsk med brukeren. Han er ikke utvikler – forklar enkelt, ikke bruk fag
 - Løsningen han godkjente: **tre ting** – (1) bilkort med klokke, stort bilbilde og fart som stort tall, (2) ekte kart, (3) én rad nederst: musikk/telefon/apper. Ingen kalender, ingen vær.
 - Kalkulator skal være skjult i app-skuffen (`HiddenApps` i `Apps.kt`).
 
-## Nåværende tilstand (v5.11)
+## Nåværende tilstand (v5.12)
+- v5.12 (15. nov): brukeren: «noe lignende Nothing OS» – T'OS skal ta over stereoen helt, og han likte prikkstil-forslaget
+  (artefakt https://claude.ai/artifact/AHiBMZWtGdii8Lc8zSHdg1). Forklart ærlig: eget OS i stedet for Android går ikke (låst FYT-firmware,
+  hemmelige drivere for radio/BT/MCU, mister apper); Nothing OS er også Android under. Valgt vei: prikkstil + «Full kontroll».
+  (prikkstil) Skriften Doto (SIL OFL 1.1, oliverlalan/Doto via google/fonts) ligger i `res/font/doto_bold.ttf`/`doto_black.ttf` (laget
+  fra den variable fonten med fontTools: vekt 700/900, ROND=0 = firkantede prikker, bare latinske tegn), lisensen i
+  `assets/licenses/Doto-OFL.txt`. Theme.kt: `DotFont`, `dotStyle(size, color, weight)`, `capsStyle()` + `caps()` (små etiketter med store
+  bokstaver og luft). Prikktall: klokke (62sp) og fart (80sp, over grensen = svarte prikker på hvitt felt; uten fart «--» i TextMuted)
+  på forsiden, skjermsparer-klokka, FYT-radioens frekvens (84sp) og forvalgsnumre, volum, fartsgrenseskilt, selvtest, rattknapp-tallet,
+  tuningtider, BigNumber, «T'OS» på oppstartsbildet og i statuslinja. `Prikk.kt`: `Modifier.dotGrid()` (svakt prikkrutenett) bak
+  bilkortet og radiokortet, `RingIcon` (ikon i tynn ring, bunnraden), `greyMap()` (kartet i gråtoner); `PlayButton` = hvit fylt
+  spill-knapp; musikkflisa har tynn linje nederst; posisjonen = hvit prikk med myk glorie. INGEN rødt (bare den grønne KeyPing-prikken).
+  `TileLabel` (11sp, tett) så «TELEFON» får plass med tekstskala 1,25; sang/artist i vanlig skrift. preview/index.html følger.
+  Tester PrikkTest (2) + forside/klokke/FYT-radio i FontScaleSmokeTest.
+  (full kontroll) «Full kontroll» (`Owner.kt`, `TosAdmin`, res/xml/device_admin.xml): T'OS som Androids enhetseier, satt én gang med PC
+  (`adb shell dpm set-device-owner no.bil.launcher/.TosAdmin`; Google-kontoen må fjernes først og legges inn igjen etterpå; går ikke
+  med flere brukere). Gjør ingenting uten enhetseier. Bryterne «owner_*» (Innstillinger → Om stereoen → Full kontroll, virker med en
+  gang via `Prefs.onOwnerToggle`): stenger Androids nedtrekksmeny og varsler som spretter ned (`setStatusBarDisabled`), gir T'OS
+  tillatelser selv, T'OS alltid startskjerm (persistent preferred HOME), skjuler launcher4/9/24/35/36 og Unisoc (`setApplicationHidden`;
+  Quickstep/launcher3 bare med egen bryter, av som standard), ingen skjermlås, automatisk tid og tidssone. `OwnerLogic`: bare kjente
+  startskjermer kan skjules, ALDRI com.syu.*, com.fyt.*, com.txznet.*, com.google.android.*, systemui, settings, phone, bluetooth
+  (test). «Slå av full kontroll» (Trykk igjen) setter alt tilbake og kaller `clearDeviceOwnerApp`; ingen ADB-angring finnes, siste
+  utvei er fabrikknullstilling. Oppdateringer uten spørsmål som enhetseier (Updater hopper over installasjonstillatelsen).
+  `pm grant … WRITE_SECURE_SETTINGS` (ny linje i ADB-lista) → `Owner.keepServices` slår knappestyring og varseltilgang på igjen selv.
+  FYT-linja (show_navigationbar) trenger fortsatt ADB. «Lagre T'OS-oppstartsbilde» (assets/tos-oppstart.png, prikkstil) → Bilder/T'OS
+  + åpner com.syu.carmark (uverifisert). Status i oppsettrapporten og kartleggingen. Tester OwnerLogicTest (5) + OwnerSmokeTest (2).
+  UVERIFISERT på stereoen: alt, særlig at FYT-firmwaren godtar enhetseier og at skjulte startskjermer ikke forstyrrer com.syu.ms.
+  Brukeren er spurt om han har en Windows-PC (trengs én gang). Totalt 303 tester.
 - v5.11 (9. nov, «forbedre enda mer»): (tilbakemelding) «Send alt til utvikleren» (`Feedback.kt`): kort øverst i Innstillinger →
   Sikkerhetskopi og hjelp (felt «Hva skjedde?» + Send), også på Selvtest- og «Hva er nytt»-siden. Lager ÉN fil
   `files/tos-tilbakemelding-<dato>.txt` (3 nyeste beholdes) med versjon, sammendrag (FYT tilkoblet, hovedbryter, FYT-brytere,
