@@ -711,7 +711,9 @@ fun MapView(gps: Gps?, modifier: Modifier, zoomOffset: Int = 0) {
     // Fila sjekkes bare når kartet lastes ned/slettes, innstillinger endres, eller hvert 30. sekund – ikke hvert sekund.
     val recheck by produceState(0) { while (true) { delay(30_000); value = value + 1 } }
     val offline by remember(recheck, Prefs.version) { derivedStateOf { OfflineMaps.ready(context) } }
-    if (offline && !SafeMode.on) { OfflineMapView(gps, modifier, zoom, rotate); return }
+    // Kartmotoren (MapLibre) følger bare med som 64-bit (abiFilters arm64-v8a). Kjører T'OS mot formodning som 32-bit,
+    // brukes nettkartet i stedet for å krasje.
+    if (offline && !SafeMode.on && android.os.Process.is64Bit()) { OfflineMapView(gps, modifier, zoom, rotate); return }
     OnlineMapView(gps, modifier, zoom, rotate)
 }
 

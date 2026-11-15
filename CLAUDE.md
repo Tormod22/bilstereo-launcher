@@ -31,7 +31,35 @@ Snakk norsk med brukeren. Han er ikke utvikler – forklar enkelt, ikke bruk fag
 - Løsningen han godkjente: **tre ting** – (1) bilkort med klokke, stort bilbilde og fart som stort tall, (2) ekte kart, (3) én rad nederst: musikk/telefon/apper. Ingen kalender, ingen vær.
 - Kalkulator skal være skjult i app-skuffen (`HiddenApps` i `Apps.kt`).
 
-## Nåværende tilstand (v5.14)
+## Nåværende tilstand (v5.15)
+- v5.15 (16. nov, «se på måter du kan gjøre ting enda bedre på»: 3 parallelle grener KART/SLANK/START, flettet).
+  (kart uten nett) Kartflisene lagres på disk (`MapCache.kt`, `TileCache`): filesDir/kartfliser/<z>/<x>_<y>.tile (filesDir fordi
+  Android/«StorageClearManage» kan tømme cacheDir), maks 150 MB (`TileCacheLogic.evict`: minst brukte først ned til 135 MB), skriving via
+  tmp + rename, bare HTTP 200 som lar seg dekode. `MapTiles.fetch`: minne → disk (også uten nett/gammel) → nett (`MapTiles.download`);
+  fliser > 30 dager i kø `TileCache.refresh`. Kaldstart: kartet vises på parkeringsplassen (`lastKnownPos`) før GPS – hul ring + «SISTE
+  POSISJON». `MapPrefetch` (fra Hub.start): bare når T'OS vises, nett, bilen står (eller ingen GPS + kjent parkering), ikke med
+  PMTiles/sikker modus: gamle fliser først, så 7 × 7 på zoom 13–16, 400 ms mellom, maks 300/time, 10 min pause ved 429/503.
+  Fartsgrenser: `SpeedCache` husker veiene fra Overpass (id, maxspeed-/highway-merker, punkter med 5 desimaler) i
+  filesDir/fartsgrenser.json, rutenett 0,002° (`SpeedCacheLogic`), maks 4000 veier, 90 dager, lagres samlet (30 s) og ved tenning av.
+  `SpeedLimit.lookup`: bufferen først, uten nett bare bufferen (vei innen 20 m, ellers ukjent – ikke «ingen grense»). Innstillinger →
+  Kart og kjøring: «Kart lagret på stereoen» + «Tøm kartbufferen» (trykk igjen). Kartleggingen/«Send alt»: del «Kart og fartsgrenser uten
+  nett». Tester MapCacheLogicTest (5) + MapCacheSmokeTest (2).
+  (slank) material-icons-extended er FJERNET: de 108 ikonene T'OS bruker (97 Filled + 11 AutoMirrored.Filled) ligger i
+  `no.bil.launcher.icons` (`icons/Filled.kt`, `icons/AutoMirroredFilled.kt`), generert fra biblioteket 1.7.0 og sjekket like med
+  `ImageVector.equals`, Apache-2.0 (TREDJEPART.md). Bare `material-icons-core` er igjen. Importene peker til
+  `no.bil.launcher.icons.filled.*` / `...automirrored.filled.*`. NYTT IKON: kopier stidataene fra Material-ikonet med samme navn inn i
+  riktig fil, ellers kompilerer det ikke. Bare arm64-v8a av kartmotoren (`abiFilters`; stereoen er 64-bit ifølge kartleggingen);
+  kjører T'OS likevel som 32-bit, brukes nettkartet (`Process.is64Bit()` i MainActivity) og oppsettrapporten sier fra. Dex 45,4 →
+  22,8 MB, APK 33,2 → 20,8 MB. R8/minify er fortsatt av (må prøves på stereoen først).
+  (klar med en gang) `LastState.kt`: musikkortet viser sist spilte sang (lite omslag `sist-cover.png`, 128 px) eller sist hørte radio
+  fra `files/sist.txt` til ekte data kommer – tittelen dempet, «Sist spilt · artist» / «Sist hørt · frekvens» (`musicRestored` i
+  Pages.kt). Spill på «sist hørt» radio åpner radiosiden. Sist målte batterispenning vises dempet. Lagres 3 s etter endring
+  (snapshotFlow i `LastState.watch`); en kald start overskriver aldri sangen med «ingenting». Bilkortet: datoen på egen linje i full
+  bredde. `StartTiming`: tid fra prosessstart til første bilde, forsiden klar, musikk, stereo (Fyt.connected) og GPS → én linje i
+  `files/oppstart.txt` (10 siste); står i oppsettrapporten («--- Oppstart ---») og dermed i «Send alt» – BE BRUKEREN SENDE DEN.
+  Oppstartsskjermen tones ut når første bilde er tegnet og bilbildet lest (`CarArt.ready`, maks 0,6 s, toning 0,3 s).
+  Tester LastStateLogicTest (5) + LastStateSmokeTest (2). ÅPENT: smal musikkflis kutter tittelen («Moonli…») med tekstskala 1,25.
+  Totalt 342 tester. Alt UVERIFISERT på stereoen.
 - v5.14 (15. nov, «se etter enda mer forbedringer»: 3 parallelle grener TRYGG/STIL/KJERNE, flettet).
   (trygg overtakelse) Gjennomgang av «Ta over»/«Full kontroll» før brukeren kjører det. NØDSTOPP: krasjer T'OS ≥ 4 ganger på 3 min
   (`SafeMode.recentCrashes`, `OwnerLogic.shouldEscape`; sikker modus slår inn ved 3) og T'OS er enhetseier, kaller `TosApp` `Owner.escape`

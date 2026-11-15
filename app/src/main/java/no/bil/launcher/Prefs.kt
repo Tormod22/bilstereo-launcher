@@ -473,6 +473,7 @@ object SetupReport {
             .forEach { appendLine("$it: ${Prefs.str(it)}") }
         val pw = c.getSystemService(Context.POWER_SERVICE) as? android.os.PowerManager
         append(runCatching { Owner.report(c) }.getOrDefault(""))
+        appendLine("T'OS kjører som 64-bit: ${android.os.Process.is64Bit()} (kartmotoren finnes bare i 64-bit)")
         appendLine("Unntatt batterisparing: ${runCatching { pw?.isIgnoringBatteryOptimizations(c.packageName) }.getOrNull()}")
         appendLine("Fangede feil i bakgrunnen siden start (T'OS fortsatte): ${CrashLog.caughtCount}")
         appendLine("Siste krasj: ${runCatching { File(c.filesDir, "krasj.txt").takeIf { it.exists() }?.useLines { l -> l.take(4).joinToString(" | ") } }.getOrNull() ?: "ingen"}")
