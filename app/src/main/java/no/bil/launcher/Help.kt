@@ -257,6 +257,6 @@ fun SplashHost() {
         done = true
     }
     Box(Modifier.fillMaxSize().alpha(a.value).background(Bg), contentAlignment = Alignment.Center) {
-        Text("T'OS", color = TextPrimary, fontSize = 64.sp, fontWeight = FontWeight.Light, letterSpacing = 8.sp)
+        Text("T'OS", style = dotStyle(72.sp).copy(letterSpacing = 6.sp), maxLines = 1)
     }
 }

@@ -4,6 +4,13 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.Font
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.TextUnit
+import androidx.compose.ui.unit.em
+import androidx.compose.ui.unit.sp
 import java.util.Calendar
 import java.util.TimeZone
 import kotlin.math.acos
@@ -39,6 +46,27 @@ internal val Line: Color get() = if (Theme.night) Color(0xFF202023) else Color(0
 internal val TextPrimary: Color get() = if (Theme.night) Color(0xFFB9B9BE) else Color(0xFFF5F5F7)
 // Natt: dempet, men fortsatt lesbart i et blikk (0xFF68686D var for svakt på 0xFF0A0A0B)
 internal val TextMuted: Color get() = if (Theme.night) Color(0xFF77777C) else Color(0xFF86868B)
+
+/* ---------- Prikkstil (v5.12): prikktall for det du leser i et blikk ---------- */
+
+/** Doto (SIL OFL 1.1, se docs/TREDJEPART.md) – prikkete tall for klokke, fart, frekvens, volum. */
+internal val DotFont: FontFamily = FontFamily(
+    Font(R.font.doto_bold, FontWeight.Bold),
+    Font(R.font.doto_black, FontWeight.Black),
+)
+
+/** Store prikktall (klokke, fart, frekvens). Fast linjehøyde så tallet ikke hopper. */
+internal fun dotStyle(size: TextUnit, color: Color = TextPrimary, weight: FontWeight = FontWeight.Black) =
+    TextStyle(fontFamily = DotFont, fontWeight = weight, fontSize = size, color = color,
+        lineHeight = size * 0.95f, letterSpacing = 0.02.em)
+
+/** Små etiketter med store bokstaver og luft mellom (dato, «KM/T», bildetekster) – som i forslaget. */
+internal fun capsStyle(size: TextUnit = 13.sp, color: Color = TextMuted) =
+    TextStyle(fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Medium, fontSize = size, color = color,
+        letterSpacing = 0.14.em)
+
+/** Tekst i etikettstil (store bokstaver, norsk). */
+internal fun caps(text: String) = text.uppercase(java.util.Locale("nb", "NO"))
 
 /** Soloppgang/solnedgang (vanlig NOAA-formel). Tar hensyn til midnattssol og mørketid. */
 object Sun {

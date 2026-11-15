@@ -340,7 +340,7 @@ fun SteerScreen(onClose: () -> Unit) {
                 } else {
                     Text("Tall fra rattet", color = TextMuted, fontSize = 13.sp)
                     val adc = FytSteer.adc
-                    Text(adc?.takeIf { it != SteerAdc.NO_KEY }?.toString() ?: "–", color = TextPrimary, fontSize = 44.sp, fontWeight = FontWeight.Medium)
+                    Text(adc?.takeIf { it != SteerAdc.NO_KEY }?.toString() ?: "–", style = dotStyle(48.sp), maxLines = 1)
                     val ch = FytSteer.channels
                     if (ch.any { it != null }) Text(ch.joinToString("   ") { it?.toString() ?: "–" }, color = TextMuted, fontSize = 14.sp, maxLines = 1)
                     Text(

@@ -90,8 +90,7 @@ fun VolumeBar(level: Int, max: Int, modifier: Modifier = Modifier) {
         Box(Modifier.width(240.dp).height(6.dp).clip(RoundedCornerShape(3.dp)).background(Line)) {
             Box(Modifier.fillMaxWidth(volumeFraction(level, max)).fillMaxHeight().background(TextPrimary))
         }
-        Text("$level", color = TextPrimary, fontSize = 24.sp, fontWeight = FontWeight.Medium,
-            modifier = Modifier.widthIn(min = 36.dp))
+        Text("$level", style = dotStyle(30.sp), maxLines = 1, modifier = Modifier.widthIn(min = 44.dp))
     }
 }
 
@@ -193,7 +192,7 @@ fun TosStatusBar(modifier: Modifier = Modifier) {
             .padding(horizontal = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text("T'OS", color = TextMuted, fontSize = 13.sp, fontWeight = FontWeight.Medium, letterSpacing = 1.sp)
+        Text("T'OS", style = dotStyle(16.sp, TextPrimary).copy(letterSpacing = 1.5.sp), maxLines = 1)
         Spacer(Modifier.weight(1f))
         StatusIcons(full = true)
         Spacer(Modifier.width(14.dp))

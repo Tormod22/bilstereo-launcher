@@ -7,7 +7,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <title>T'OS forhåndsvisning</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500&family=Doto:wght@700;900&display=swap">
 <style>
 /* Speiler MainActivity.kt: samme farger, mål (dp = px på 1024×600) og oppsett.
    Endrer du noe i appen, endre det samme her. */
@@ -21,6 +21,9 @@
   --radius: 28px;
   --gap: 14px;
   --font: "Roboto", system-ui, -apple-system, "Segoe UI", sans-serif;
+  /* Prikkstil (v5.12): prikktall (Doto, SIL OFL) og små etiketter med store bokstaver – samme som appen */
+  --dot: "Doto", ui-monospace, "Courier New", monospace;
+  --caps: ui-monospace, "Droid Sans Mono", "Courier New", monospace;
   color-scheme: dark;
 }
 * { box-sizing: border-box; }
@@ -87,22 +90,24 @@ body.hide-tools .showtools { display: block; }
 svg.i { fill: currentColor; display: block; }
 
 /* 1. Bilkort */
-.car { flex: 1; display: flex; flex-direction: column; padding: 28px; min-width: 0; }
+.car { flex: 1; display: flex; flex-direction: column; padding: 28px; min-width: 0;
+  background-image: radial-gradient(circle, rgba(255,255,255,.075) 1.4px, transparent 1.6px); background-size: 11px 11px; }
 .car-top { display: flex; align-items: flex-start; }
-.clock { font-size: 40px; font-weight: 500; line-height: 1.15; }
-.date, .model { font-size: 15px; color: var(--muted); }
+.clock { font: 900 62px/0.95 var(--dot); letter-spacing: .02em; }
+.date, .model { font: 500 13px var(--caps); letter-spacing: .14em; text-transform: uppercase; color: var(--muted); }
+.date { margin-top: 6px; }
 .car-top > div:first-child { flex: 1; }
 .stage { flex: 1; position: relative; margin: 12px 0; display: flex; align-items: center; justify-content: center; min-height: 0; }
 .stage::before {
   content: ""; position: absolute; left: 5%; right: 5%; bottom: 0; height: 50%;
-  border-radius: 9999px; background: radial-gradient(closest-side, #26262A, var(--panel));
+  border-radius: 9999px; background: radial-gradient(closest-side, #222226, transparent);
 }
 .stage img { position: relative; width: 100%; height: 100%; object-fit: contain; }
 .stage svg { position: relative; width: 55%; height: 55%; color: var(--line); }
-.speed-row { display: flex; align-items: flex-end; gap: 10px; }
-.speed { font-size: 76px; font-weight: 500; line-height: 76px; font-variant-numeric: tabular-nums; }
-.unit, .gps { color: var(--muted); padding-bottom: 14px; }
-.unit { font-size: 18px; }
+.speed-row { display: flex; align-items: flex-end; gap: 12px; }
+.speed { font: 900 80px/0.95 var(--dot); letter-spacing: .02em; }
+.unit, .gps { color: var(--muted); padding-bottom: 12px; }
+.unit { font: 500 14px var(--caps); letter-spacing: .14em; text-transform: uppercase; }
 .gps { font-size: 13px; margin-left: auto; }
 .speedline { height: 3px; border-radius: 2px; background: var(--line); margin-top: 0; overflow: hidden; }
 .speedline > div { height: 100%; width: 0; background: var(--text); transition: width .6s; }
@@ -127,14 +132,14 @@ svg.i { fill: currentColor; display: block; }
 .mtext { flex: 1; min-width: 0; padding: 0 6px 0 6px; }
 .mtext b { display: block; font-size: 18px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .mtext span { display: block; font-size: 15px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.mprog { position: absolute; left: 28px; right: 28px; bottom: 10px; height: 3px; border-radius: 2px; background: var(--line); overflow: hidden; }
+.mprog { position: absolute; left: 0; right: 0; bottom: 0; height: 2px; background: var(--line); overflow: hidden; }
 .mprog div { height: 100%; width: 0; background: var(--text); }
-.round.m { width: 48px; height: 48px; border: 1.5px solid var(--text); flex: none; }
+.round.m { width: 48px; height: 48px; background: var(--text); color: var(--bg); flex: none; }
 .round.m2 { width: 48px; height: 48px; flex: none; }
-.limit { width: 46px; height: 46px; border-radius: 50%; border: 3px solid var(--text); display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 17px; }
+.limit { width: 46px; height: 46px; border-radius: 50%; border: 3px solid var(--text); display: flex; align-items: center; justify-content: center; font: 900 18px var(--dot); }
 .limit.over { background: var(--text); color: var(--bg); }
-.speed.over { background: var(--text); color: var(--bg); border-radius: 16px; padding: 0 12px; }
-.gpsrow { margin-left: auto; display: flex; align-items: center; gap: 12px; padding-bottom: 8px; color: var(--muted); font-size: 16px; }
+.speed.over { background: var(--text); color: var(--bg); border-radius: 16px; padding: 4px 12px; }
+.gpsrow { margin-left: auto; display: flex; align-items: center; gap: 12px; padding-bottom: 8px; color: var(--muted); font: 500 13px var(--caps); letter-spacing: .14em; text-transform: uppercase; }
 .notice { margin-top: 8px; min-height: 48px; display: inline-flex; align-items: center; gap: 6px; background: var(--card); border-radius: 12px; padding: 6px 12px; font-size: 15px; }
 .notice svg { color: var(--muted); }
 .chips { position: absolute; left: 16px; bottom: 16px; display: flex; gap: 10px; }
@@ -176,7 +181,8 @@ svg.i { fill: currentColor; display: block; }
 .round.s { width: 44px; height: 44px; }
 .round.l { width: 56px; height: 56px; border: 1.5px solid var(--text); }
 .tile { flex: .8; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; }
-.tile span { color: var(--muted); font-size: 14px; }
+.tile span { color: var(--muted); font: 500 11px var(--caps); letter-spacing: .06em; text-transform: uppercase; }
+.tile > svg { box-sizing: content-box; padding: 8px; border: 1.5px solid var(--line); border-radius: 50%; width: 22px; height: 22px; }
 
 /* App-skuff */
 .drawer, .page { height: 100%; display: none; flex-direction: column; padding: 24px; }
@@ -632,13 +638,15 @@ svg.i { fill: currentColor; display: block; }
     // Samme som appen: bildet sentreres på posisjonen og skaleres så kortet alltid er fylt
     const { c, px, py } = mapImg, bw = c.width, bh = c.height;
     const s = Math.max(w / (2 * Math.max(1, Math.min(px, bw - px))), h / (2 * Math.max(1, Math.min(py, bh - py))));
-    g.filter = 'brightness(0.6)';   // samme demping som MapDim i appen
+    g.filter = 'grayscale(1) brightness(0.62)';   // samme som MapDim i appen: gråtoner, dempet
     g.drawImage(c, w / 2 - px * s, h / 2 - py * s, bw * s, bh * s);
     g.filter = 'none';
     const cx = w / 2, cy = h / 2;
-    g.fillStyle = 'rgba(245,245,247,.18)'; g.beginPath(); g.arc(cx, cy, 14, 0, 7); g.fill();
-    g.fillStyle = '#F5F5F7'; g.beginPath(); g.arc(cx, cy, 4.5, 0, 7); g.fill();
-    g.strokeStyle = '#111113'; g.lineWidth = 1.5; g.beginPath(); g.arc(cx, cy, 4.5, 0, 7); g.stroke();
+    // Prikkstil: hvit prikk med myk glorie (som appen)
+    g.fillStyle = 'rgba(245,245,247,.10)'; g.beginPath(); g.arc(cx, cy, 20, 0, 7); g.fill();
+    g.fillStyle = 'rgba(245,245,247,.20)'; g.beginPath(); g.arc(cx, cy, 12, 0, 7); g.fill();
+    g.fillStyle = 'rgba(0,0,0,.6)'; g.beginPath(); g.arc(cx, cy, 6.5, 0, 7); g.fill();
+    g.fillStyle = '#F5F5F7'; g.beginPath(); g.arc(cx, cy, 5, 0, 7); g.fill();
   }
   let naviT;
   function openNavi() {

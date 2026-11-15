@@ -58,3 +58,13 @@ kommando-/meldingskoder) er hentet fra disse åpne prosjektene, som har kartlagt
   https://github.com/Altair571/tarmac (docs/HEADUNIT_FYT_DUDU.md: kringkastingen «com.syu.ms» med «cmd.acc»), og
   iamvivekkaushik/Revv – https://github.com/iamvivekkaushik/Revv (docs/FYT_BLUETOOTH.md: ryggebildet ved U_BACKCAR ≠ 0).
 Ingen kode er kopiert; bare tallene og formatet.
+
+## Skrift: Doto (prikkstil, v5.12)
+
+- **Doto** av Óliver Lalan – https://github.com/oliverlalan/Doto (hentet fra google/fonts, `ofl/doto`).
+  Copyright 2024 The Doto Project Authors. Lisens: **SIL Open Font License 1.1**.
+- I appen: `app/src/main/res/font/doto_bold.ttf` (vekt 700) og `doto_black.ttf` (vekt 900) – laget av den variable
+  fonten `Doto[ROND,wght].ttf` med fontTools (fast vekt, ROND = 0 = firkantede prikker) og krympet til latinske tegn.
+  Det er en endret versjon («Modified Version») etter OFL; navnet «Doto» er ikke et reservert navn i lisensen.
+- Lisensteksten følger med appen: `app/src/main/assets/licenses/Doto-OFL.txt`.
+- Forhåndsvisningen i nettleseren (`preview/index.html`) henter Doto fra Google Fonts.

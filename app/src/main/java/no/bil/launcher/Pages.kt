@@ -201,8 +201,10 @@ fun PrefField(title: String, key: String, hint: String, keyboard: KeyboardType =
 @Composable
 fun BigNumber(value: String, label: String, modifier: Modifier = Modifier) {
     Column(modifier.clip(Small).background(Card).padding(16.dp)) {
-        Text(value, color = TextPrimary, fontSize = 30.sp, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-        Text(label, color = TextMuted, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        // Prikkstil: tallet i prikker, etiketten liten med store bokstaver
+        Text(value, style = dotStyle(32.sp, weight = FontWeight.Bold), maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Spacer(Modifier.height(4.dp))
+        Text(caps(label), style = capsStyle(12.sp), maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
 
@@ -284,7 +286,8 @@ fun Progress(modifier: Modifier) {
 
 @Composable
 private fun BarOf(modifier: Modifier, p: Float) {
-    Box(modifier.height(3.dp).clip(RoundedCornerShape(2.dp)).background(Line)) {
+    // Prikkstil: tynn linje (2 dp)
+    Box(modifier.height(2.dp).background(Line)) {
         Box(Modifier.fillMaxWidth(p).fillMaxHeight().background(TextPrimary))
     }
 }
@@ -415,7 +418,7 @@ private fun HwRadioCard() {
             Text("STEREOENS RADIO", color = TextMuted, fontSize = 12.sp, letterSpacing = 1.sp)
             if (hw != null) {
                 Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text(hw.freq, color = TextPrimary, fontSize = 40.sp, fontWeight = FontWeight.Medium)
+                    Text(hw.freq, style = dotStyle(44.sp), maxLines = 1)
                     Text(if (hw.isAm) "kHz" else "MHz", color = TextMuted, fontSize = 16.sp, modifier = Modifier.padding(bottom = 8.dp))
                     Text(hw.band, color = TextMuted, fontSize = 16.sp, modifier = Modifier.padding(bottom = 8.dp))
                 }
@@ -439,16 +442,18 @@ private fun FytRadioPanel() {
     val f = FytRadio.freqRaw
     val bank = FytRadio.bank
     val scan = FytRadio.scan
-    Row(Modifier.fillMaxWidth().clip(Small).background(Card).padding(horizontal = 24.dp, vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
+    Row(Modifier.fillMaxWidth().clip(Small).background(Card).dotGrid().padding(horizontal = 24.dp, vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
             val tags = listOfNotNull(bank, "Stereo".takeIf { on && FytRadio.stereo && FytRadio.isFm != false },
                 "Trafikk".takeIf { on && FytRadio.tp == 1 }, FytRadio.ptyName.takeIf { on }, "Lyd av".takeIf { on && Fyt.muted })
-            Text(tags.joinToString("  ·  ").uppercase(), color = TextMuted, fontSize = 13.sp, letterSpacing = 1.sp, maxLines = 1)
-            Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text(if (f > 0) FytRadio.freqText else "–", color = if (on) TextPrimary else TextMuted, fontSize = 80.sp,
-                    fontWeight = FontWeight.Medium, maxLines = 1, lineHeight = 84.sp)
-                Text(FytRadio.unit, color = TextMuted, fontSize = 22.sp, modifier = Modifier.padding(bottom = 14.dp))
+            Text(caps(tags.joinToString("  ·  ")), style = capsStyle(13.sp), maxLines = 1)
+            Spacer(Modifier.height(6.dp))
+            // Prikkstil: frekvensen i store prikktall
+            Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(if (f > 0) FytRadio.freqText else "–", style = dotStyle(84.sp, if (on) TextPrimary else TextMuted), maxLines = 1)
+                Text(FytRadio.unit, style = capsStyle(16.sp), modifier = Modifier.padding(bottom = 12.dp))
             }
+            Spacer(Modifier.height(4.dp))
             val line = when {
                 scan != null -> "Søker etter stasjoner … ${scan.found} funnet"
                 FytRadio.tuningTo > 0 -> "Stiller inn ${FytLogic.freqLabel(Int.MIN_VALUE, FytRadio.tuningTo)} …"
@@ -531,10 +536,14 @@ private fun PresetTile(i: Int, p: FytRadioLogic.Slot?, current: Boolean, modifie
         verticalArrangement = Arrangement.Center,
     ) {
         if (p == null) {
-            Text("${i + 1}", color = sub, fontSize = 13.sp)
-            Text("Tom", color = sub, fontSize = 16.sp, maxLines = 1)
+            Text("${i + 1}", style = dotStyle(18.sp, sub, FontWeight.Bold), maxLines = 1)
+            Text(caps("Tom"), style = capsStyle(13.sp, sub), maxLines = 1)
         } else {
-            Text("${i + 1}" + (p.name?.let { "  ·  " + FytRadioLogic.shortFreq(p.freqRaw) } ?: ""), color = sub, fontSize = 13.sp, maxLines = 1)
+            // Prikkstil: plassnummeret i prikker; frekvens (eller navn) under
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("${i + 1}", style = dotStyle(18.sp, sub, FontWeight.Bold), maxLines = 1)
+                p.name?.let { Text(FytRadioLogic.shortFreq(p.freqRaw), style = capsStyle(12.sp, sub), maxLines = 1) }
+            }
             Text(p.name ?: FytRadioLogic.shortFreq(p.freqRaw), color = fg, fontSize = 20.sp, fontWeight = FontWeight.Medium,
                 maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
@@ -616,8 +625,8 @@ private fun MapButton(icon: androidx.compose.ui.graphics.vector.ImageVector, des
 fun SpeedBadge(modifier: Modifier) {
     Row(modifier.clip(Small).background(Card.copy(alpha = 0.92f)).padding(horizontal = 18.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-        Text(speedText(Hub.gps), color = TextPrimary, fontSize = 34.sp, fontWeight = FontWeight.Medium)
-        Text("km/t", color = TextMuted, fontSize = 14.sp)
+        Text(speedText(Hub.gps), style = dotStyle(38.sp), maxLines = 1)
+        Text("KM/T", style = capsStyle(13.sp))
         LimitSign(40)
     }
 }
@@ -631,7 +640,7 @@ fun LimitSign(sizeDp: Int) {
     Box(
         Modifier.size(sizeDp.dp).clip(CircleShape).background(if (over) TextPrimary else Panel).border(3.dp, TextPrimary, CircleShape),
         contentAlignment = Alignment.Center,
-    ) { Text("$l", color = if (over) Bg else TextPrimary, fontSize = (sizeDp * 0.38f).sp, fontWeight = FontWeight.Bold) }
+    ) { Text("$l", style = dotStyle((sizeDp * 0.40f).sp, if (over) Bg else TextPrimary), maxLines = 1) }
 }
 
 /* ======================= Telefon: tastatur, kontakter, siste og favoritter (punkt 24, 26) ======================= */
@@ -1115,8 +1124,10 @@ fun ClockScreen(onClose: () -> Unit) {
     }
     Box(Modifier.fillMaxSize().background(Bg).clickable(onClickLabel = "Tilbake til forsiden") { onClose() }, contentAlignment = Alignment.Center) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Text(time, color = TextPrimary.copy(alpha = 0.85f), fontSize = 150.sp, fontWeight = FontWeight.Light)
-            Text(date, color = TextMuted, fontSize = 22.sp)
+            // Prikkstil: stor prikkklokke, datoen som etikett
+            Text(time, style = dotStyle(150.sp, TextPrimary.copy(alpha = 0.85f)), maxLines = 1)
+            Spacer(Modifier.height(18.dp))
+            Text(caps(date), style = capsStyle(18.sp), maxLines = 1)
             musicTitle?.let { Text(it, color = TextMuted, fontSize = 16.sp, modifier = Modifier.padding(top = 18.dp).widthIn(max = 700.dp), maxLines = 1, overflow = TextOverflow.Ellipsis) }
         }
     }

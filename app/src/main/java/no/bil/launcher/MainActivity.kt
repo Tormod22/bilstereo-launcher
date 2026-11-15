@@ -49,11 +49,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.ColorFilter
-import androidx.compose.ui.graphics.ColorMatrix
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.PointerEventPass
@@ -69,6 +66,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 import androidx.core.graphics.drawable.toBitmap
 import androidx.core.view.WindowCompat
@@ -87,8 +85,9 @@ import kotlin.math.roundToInt
 import kotlin.math.sqrt
 
 private val Shape = RoundedCornerShape(28.dp)
-private val MapDim = ColorFilter.colorMatrix(ColorMatrix().apply { setToScale(0.6f, 0.6f, 0.6f, 1f) })
-private val MapDimNight = ColorFilter.colorMatrix(ColorMatrix().apply { setToScale(0.42f, 0.42f, 0.42f, 1f) })
+// Prikkstil: kartet i gråtoner (ingen farge), dempet – mer om natten
+private val MapDim = greyMap(0.62f)
+private val MapDimNight = greyMap(0.44f)
 
 class MainActivity : ComponentActivity() {
     private val askPermissions = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { Hub.startGps() }
@@ -581,11 +580,13 @@ fun CarCard(modifier: Modifier) {
         }
     }
 
-    Column(modifier.clip(Shape).background(Panel).padding(28.dp)) {
+    Column(modifier.clip(Shape).background(Panel).dotGrid().padding(28.dp)) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
             Column(Modifier.weight(1f)) {
-                Text(time, color = TextPrimary, fontSize = 40.sp, fontWeight = FontWeight.Medium)
-                Text(date, color = TextMuted, fontSize = 15.sp)
+                // Prikkstil: klokka i store prikktall, datoen som liten etikett
+                Text(time, style = dotStyle(62.sp), maxLines = 1)
+                Spacer(Modifier.height(6.dp))
+                Text(caps(date), style = capsStyle(13.sp), maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Notice()
             }
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -594,10 +595,10 @@ fun CarCard(modifier: Modifier) {
                 val bv = CarBattery.volt
                 if (CarBattery.enabled && bv != null) {
                     Icon(Icons.Default.BatteryChargingFull, "Bilbatteri", tint = TextMuted, modifier = Modifier.size(18.dp))
-                    Text(CarBattery.text(bv), color = TextMuted, fontSize = 15.sp)
+                    Text(CarBattery.text(bv), style = capsStyle(14.sp, TextPrimary))
                     Spacer(Modifier.width(4.dp))
                 }
-                Text("Avensis", color = TextMuted, fontSize = 15.sp)
+                Text(caps("Avensis"), style = capsStyle(13.sp))
             }
         }
 
@@ -608,7 +609,7 @@ fun CarCard(modifier: Modifier) {
         ) {
             Box(
                 Modifier.fillMaxWidth(0.9f).fillMaxHeight(0.5f).align(Alignment.BottomCenter)
-                    .background(Brush.radialGradient(listOf(if (Theme.night) Color(0xFF151517) else Color(0xFF26262A), Panel)), CircleShape)
+                    .background(Brush.radialGradient(listOf(if (Theme.night) Color(0xFF131315) else Color(0xFF222226), Color.Transparent)), CircleShape)
             )
             when {
                 picked != null -> Image(picked, null, contentScale = ContentScale.Fit, modifier = Modifier.fillMaxSize())
@@ -630,15 +631,16 @@ private fun SpeedRow() {
     Column {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Bottom) {
             val over = SpeedLimit.over
+            // Prikkstil: farten i store prikktall. Over fartsgrensen: hvitt felt med svarte prikker.
             Text(
-                speedText(gps), color = if (over) Bg else TextPrimary, fontSize = 76.sp, fontWeight = FontWeight.Medium, lineHeight = 76.sp,
-                modifier = if (over) Modifier.clip(RoundedCornerShape(16.dp)).background(TextPrimary).padding(horizontal = 12.dp) else Modifier,
+                speedText(gps), style = dotStyle(80.sp, if (over) Bg else TextPrimary), maxLines = 1,
+                modifier = if (over) Modifier.clip(RoundedCornerShape(16.dp)).background(TextPrimary).padding(horizontal = 12.dp, vertical = 4.dp) else Modifier,
             )
-            Spacer(Modifier.width(10.dp))
-            Text("km/t", color = TextMuted, fontSize = 18.sp, modifier = Modifier.padding(bottom = 14.dp))
+            Spacer(Modifier.width(12.dp))
+            Text("KM/T", style = capsStyle(14.sp), modifier = Modifier.padding(bottom = 12.dp))
             Spacer(Modifier.weight(1f))
             Row(Modifier.padding(bottom = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text(gpsCaption(gps), color = TextMuted, fontSize = 16.sp)
+                Text(caps(gpsCaption(gps)), style = capsStyle(13.sp), maxLines = 1)
                 LimitSign(46)
             }
         }
@@ -746,9 +748,11 @@ private fun OnlineMapView(gps: Gps?, modifier: Modifier, zoom: Int, rotate: Bool
                     drawCircle(TextPrimary.copy(alpha = 0.15f), 30f, c)
                     drawPath(p, TextPrimary)
                 } else {
-                    drawCircle(TextPrimary.copy(alpha = 0.18f), 28f, c)
-                    drawCircle(TextPrimary, 9f, c)
-                    drawCircle(Panel, 9f, c, style = Stroke(3f))
+                    // Prikkstil: hvit prikk med myk glorie
+                    drawCircle(TextPrimary.copy(alpha = 0.10f), 40f, c)
+                    drawCircle(TextPrimary.copy(alpha = 0.20f), 24f, c)
+                    drawCircle(Bg.copy(alpha = 0.6f), 13f, c)
+                    drawCircle(TextPrimary, 10f, c)
                 }
             }
         } else {
@@ -835,16 +839,18 @@ fun ActionRow(onApps: () -> Unit, onPickSlot: () -> Unit, modifier: Modifier) {
     Row(modifier, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
         // Musikk: cover, tittel, spill/pause, neste, og en tynn linje for hvor langt i sangen
         Box(Modifier.weight(2.6f).fillMaxHeight().clip(Shape).background(Panel)) {
-            Row(Modifier.fillMaxSize().padding(start = 18.dp, end = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.fillMaxSize().padding(start = 18.dp, end = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                 Box(Modifier.clip(RoundedCornerShape(14.dp)).combinedClickable(onClick = { Nav.screen = Screen.MUSIC }, onLongClick = { Buttons.openMusic(context) })) { Cover(52.dp) }
                 Column(Modifier.weight(1f).padding(horizontal = 10.dp).clickable { Nav.screen = Screen.MUSIC }) {
                     Text(musicTitle ?: "Musikk", color = TextPrimary, fontSize = 18.sp, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     Text(musicSub ?: if (MediaListener.enabled(context)) "Ingenting spiller" else "Trykk for mer", color = TextMuted, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
-                RoundIcon(musicPlayIcon, 48.dp, outlined = true, desc = musicPlayLabel) { Media.playPause(context) }
+                // Prikkstil: hvit, fylt spill-knapp
+                PlayButton(musicPlayIcon, 48.dp, musicPlayLabel) { Media.playPause(context) }
                 RoundIcon(Icons.Default.SkipNext, 48.dp, desc = musicNextLabel) { Media.next(context) }
             }
-            Progress(Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(horizontal = 28.dp, vertical = 10.dp))
+            // Tynn linje helt nederst i flisa: hvor langt i sangen
+            Progress(Modifier.align(Alignment.BottomCenter).fillMaxWidth())
         }
         // Midtflisa: Telefon som standard. Langt trykk = velg en annen app.
         Column(
@@ -854,10 +860,10 @@ fun ActionRow(onApps: () -> Unit, onPickSlot: () -> Unit, modifier: Modifier) {
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center,
         ) {
-            if (slotApp != null) AppIcon(slotApp.second, 36.dp, slotPkg)
-            else Icon(Icons.Default.Phone, null, tint = TextPrimary, modifier = Modifier.size(30.dp))
+            if (slotApp != null) AppIcon(slotApp.second, 40.dp, slotPkg)
+            else RingIcon(Icons.Default.Phone, 46.dp)
             Spacer(Modifier.height(6.dp))
-            Text(slotApp?.first ?: "Telefon", color = TextMuted, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(horizontal = 8.dp))
+            Text(caps(slotApp?.first ?: "Telefon"), style = TileLabel, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(horizontal = 6.dp))
         }
         // Langt trykk: «Siste apper»
         ActionTile(Icons.Default.Apps, "Apper", Modifier.weight(0.8f), onLongClick = { Nav.screen = Screen.RECENTS }) { onApps() }
@@ -903,10 +909,22 @@ fun ActionTile(icon: ImageVector, label: String, modifier: Modifier, onLongClick
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
-        Icon(icon, null, tint = TextPrimary, modifier = Modifier.size(30.dp))
+        RingIcon(icon, 46.dp)
         Spacer(Modifier.height(6.dp))
-        Text(label, color = TextMuted, fontSize = 14.sp)
+        Text(caps(label), style = TileLabel, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(horizontal = 6.dp))
     }
+}
+
+/** Etikett under ikonet i de smale flisene i bunnraden: store bokstaver, men tett nok til «TELEFON» med tekstskala 1,25. */
+private val TileLabel get() = capsStyle(11.sp).copy(letterSpacing = 0.06.em)
+
+/** Prikkstil: hvit, fylt rund knapp med svart symbol (spill/pause). */
+@Composable
+fun PlayButton(icon: ImageVector, size: Dp, desc: String, onClick: () -> Unit) {
+    Box(
+        Modifier.size(size).clip(CircleShape).background(TextPrimary).clickable(onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) { Icon(icon, desc, tint = Bg, modifier = Modifier.size(size * 0.5f)) }
 }
 
 @Composable
