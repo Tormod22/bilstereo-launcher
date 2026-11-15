@@ -541,6 +541,15 @@ object Fyt {
      */
     fun androidSource(): Boolean = cmd(M_MAIN, 0, intArrayOf(10))
 
+    /**
+     * Ber stereoens FYT-tjeneste (com.syu.ms, kjører som systemet) sette en Android-systemverdi: hovedmodul cmd 161 med
+     * [navn, verdi]. Brukes BARE av «Ta over stereoen» til ADB-porten (service.adb.tcp.port + ctl.restart adbd), så T'OS
+     * kan koble til seg selv uten PC. Kilde: github.com/DJ-MARINO/atoto-adb-via-wifi (MIT, FytAdbController), sjekket der mot
+     * com.syu.ms 25.1119 på ATOTO S8 (FYT). Tom verdi ignoreres av stereoen. UVERIFISERT på denne stereoen (com.syu.ms 26.0331).
+     */
+    fun setSystemProperty(name: String, value: String): Boolean =
+        name.isNotBlank() && value.isNotEmpty() && cmd(M_MAIN, 161, intArrayOf(0, 0), arrayOf(name, value), force = true)
+
     /** Rå kommando til en modul (FytRadio: lyd av/på, RDS-brytere). */
     internal fun moduleCmd(m: Int, code: Int, ints: IntArray? = null, force: Boolean = false): Boolean = cmd(m, code, ints, force = force)
     /** Lydmodulen (4): volum og lydbildet (se FytSound). */

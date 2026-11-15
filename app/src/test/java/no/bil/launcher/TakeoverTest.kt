@@ -1,6 +1,7 @@
 package no.bil.launcher
 
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import no.bil.launcher.TakeoverLogic.Dpm
 import no.bil.launcher.TakeoverLogic.Net
@@ -132,5 +133,20 @@ class TakeoverSmokeTest {
         rule.runOnUiThread { Prefs.set("settings_cat", "ABOUT"); Nav.screen = Screen.SETTINGS }
         rule.settle(1_500)
         rule.awaitText("Ta over stereoen – uten PC")
+    }
+}
+
+/** v5.16: åpne ADB-porten via stereoens FYT-tjeneste – uten stereo (Robolectric) skjer ingenting og ingenting krasjer. */
+@RunWith(AndroidJUnit4::class)
+@Config(sdk = [33])
+class TakeoverFytPortTest {
+    @Test fun utenStereoSkjerIngenting() {
+        assertFalse("ingen FYT-tjeneste her", Fyt.setSystemProperty("service.adb.tcp.port", "5555"))
+        assertFalse("tomt navn avvises", Fyt.setSystemProperty("", "5555"))
+        assertFalse("tom verdi avvises (stereoen ignorerer den)", Fyt.setSystemProperty("service.adb.tcp.port", ""))
+        // Uten tilkoblet FYT-tjeneste prøver ikke T'OS, men forklarer
+        Takeover.openPortViaFyt(ApplicationProvider.getApplicationContext())
+        assertFalse(Takeover.opening)
+        assertTrue(Takeover.message.orEmpty().contains("FYT"))
     }
 }

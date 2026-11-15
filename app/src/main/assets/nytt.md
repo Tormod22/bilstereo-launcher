@@ -4,6 +4,19 @@ Her står det som er nytt, og hva du kan prøve. Det nyeste står først.
 
 Virker noe ikke som det skal? Gå til **Innstillinger → Sikkerhetskopi og hjelp** og trykk **Send alt til utvikleren**. Skriv gjerne kort hva som skjedde. Da får utvikleren alt som trengs, i én fil.
 
+## T'OS 5.16
+
+**«Ta over stereoen» er enklere.** Punkt 3 og 4 skjer nå av seg selv: T'OS ber stereoen åpne for seg, og kobler til selv. Du trenger ingen PC.
+
+Slik gjør du det:
+
+1. Gå til **Innstillinger → Om stereoen → Ta over stereoen**.
+2. Punkt 1 og 2: trykk **Åpne** og gjør det som står (har du gjort det før, er de allerede hake).
+3. Vent et par sekunder. Stereoen spør «Tillat USB-feilsøking?». Kryss av for **Tillat alltid** og trykk **OK**.
+4. Trykk den store knappen **Ta over**.
+
+Kommer ikke haken på punkt 3, trykk **Prøv igjen**. Trykk så **Send alt til utvikleren**, så ser utvikleren hva stereoen svarte.
+
 ## T'OS 5.15
 
 - **Kartet uten nett.** Kartet lagres nå på stereoen. Når du starter bilen, vises kartet med en gang der bilen sist sto, også uten nett. Står bilen stille med nett, henter T'OS litt kart rundt deg på forhånd.
