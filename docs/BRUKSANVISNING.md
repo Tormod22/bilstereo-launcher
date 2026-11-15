@@ -239,7 +239,7 @@ Dette skjer med full kontroll:
 - Androids nedtrekksmeny kan ikke åpnes. Drar du ned fra toppen, kommer bare T'OS sitt hurtigpanel.
 - Androids varsler spretter ikke ned øverst på skjermen.
 - Ingen vinduer der Android spør om tillatelser. T'OS gir seg selv det den trenger.
-- Stereoens andre startskjermer skjules, så de aldri kan dukke opp.
+- Stereoens andre startskjermer skjules, så de aldri kan dukke opp. (Stereoens hovedstartskjerm skjules bare hvis du slår det på selv – dukker den opp, henter T'OS seg fram igjen.)
 - T'OS er alltid startskjermen.
 - Oppdateringer installeres helt av seg selv.
 - Klokka stilles automatisk.
@@ -259,5 +259,7 @@ adb shell dpm set-device-owner no.bil.launcher/.TosAdmin
 Bryterne finner du under **Innstillinger → Om stereoen → Full kontroll**. Hver ting kan slås av for seg.
 
 Slik slår du det av: **Innstillinger → Om stereoen → Slå av full kontroll**, og trykk igjen. Da settes alt tilbake slik det var.
+
+Nødstopp: krasjer T'OS flere ganger rett etter hverandre, slår T'OS på stereoens egen startskjerm igjen av seg selv, så du aldri står uten. Trykk da **Send alt til utvikleren**, og så **Bruk T'OS igjen** under **Om stereoen → Full kontroll**.
 
 Oppstartsbilde: under **Full kontroll** finnes også **Lagre T'OS-oppstartsbilde**. Bildet lagres i Bilder/T'OS, og stereoens logo-valg åpnes. Velg «egendefinert» og bildet **tos-oppstart**. Dette er ikke prøvd på stereoen ennå.

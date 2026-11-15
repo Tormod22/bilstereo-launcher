@@ -106,7 +106,7 @@ fun SettingsScreen(onClose: () -> Unit) {
                 }
                 if (shown.isEmpty()) item { Text("Ingen treff", color = TextMuted, fontSize = 14.sp, modifier = Modifier.padding(12.dp)) }
                 shown.groupBy { it.group }.forEach { (group, cats) ->
-                    item { Text(group.uppercase(), color = TextMuted, fontSize = 12.sp, letterSpacing = 1.sp, modifier = Modifier.padding(start = 12.dp, top = 10.dp, bottom = 6.dp)) }
+                    item { Text(caps(group), style = capsStyle(12.sp), modifier = Modifier.padding(start = 12.dp, top = 10.dp, bottom = 6.dp)) }
                     items(cats) { c ->
                         val on = c == cat
                         Row(
@@ -176,7 +176,7 @@ private fun SoundSettings() {
         var v by remember { mutableFloatStateOf(runCatching { am.getStreamVolume(s) }.getOrDefault(0).toFloat()) }
         var dragging by remember { mutableStateOf(false) }
         // Følg med når volumet endres med knappene på stereoen eller rattet
-        LaunchedEffect(Unit) { while (true) { delay(1500); if (!dragging) v = runCatching { am.getStreamVolume(s) }.getOrDefault(v.toInt()).toFloat() } }
+        LaunchedEffect(Unit) { while (true) { Power.uiDelay(1500); if (!dragging) v = runCatching { am.getStreamVolume(s) }.getOrDefault(v.toInt()).toFloat() } }
         SliderRow("$title  ${v.toInt()}", icon, v, 0f..max, onDone = { dragging = false }) {
             dragging = true; v = it
             HwVolume.markOwnChange()
@@ -555,7 +555,7 @@ private fun TimeSettings() {
     val context = LocalContext.current
     val tick = rememberResumeTick()
     var now by remember { mutableStateOf(Date()) }
-    LaunchedEffect(Unit) { while (true) { now = Date(); delay(1000) } }
+    LaunchedEffect(Unit) { while (true) { now = Date(); Power.uiDelay(1000) } }
     val canWrite = remember(tick) { Settings.System.canWrite(context) }
     var h24 by remember(tick) { mutableStateOf(android.text.format.DateFormat.is24HourFormat(context)) }
     val zone = java.util.TimeZone.getDefault()

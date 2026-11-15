@@ -251,6 +251,13 @@ object Power {
     suspend fun awaitUi() = await { it.ui }
 
     /**
+     * Pause i en skjerm-løkke (Compose): vent [ms], og deretter til T'OS vises igjen. Sider som sjekker noe hvert
+     * sekund (Bluetooth, Wi-Fi, oppsett …) ble ellers stående og gå i bakgrunnen mens Spotify/CarPlay vises eller
+     * skjermen er av, helt til T'OS kom fram igjen.
+     */
+    suspend fun uiDelay(ms: Long) { kotlinx.coroutines.delay(ms); awaitUi() }
+
+    /**
      * Gjør [body] hvert [periodMs] så lenge [want] gjelder. Slutter det å gjelde, stoppes ventingen; når det gjelder
      * igjen (skjermen på / tenning på), kjøres [body] med en gang.
      */
@@ -264,7 +271,9 @@ object Power {
 
     /** Bare for tester (Robolectric): sett modusen direkte. */
     @androidx.annotation.VisibleForTesting
-    internal fun setModeForTest(m: PowerLogic.Mode, acc: Boolean? = null) { _state.value = _state.value.copy(mode = m, acc = acc) }
+    internal fun setModeForTest(m: PowerLogic.Mode, acc: Boolean? = null, visible: Boolean = _state.value.visible) {
+        _state.value = _state.value.copy(mode = m, acc = acc, visible = visible)
+    }
 
     private fun note(s: String) {
         val line = SurveyText.stamp(SystemClock.elapsedRealtime()) + "  " + s

@@ -246,7 +246,7 @@ fun Root() {
     LaunchedEffect(resumeTick) { shownAt = SystemClock.elapsedRealtime() }
     LaunchedEffect(Unit) {
         while (true) {
-            delay(5000)
+            Power.uiDelay(5000)             // står stille mens en annen app vises / skjermen er av
             val mins = Prefs.str("saver_min", "3").toIntOrNull() ?: 0
             // Ikke over neste sving (navigasjon i kø) eller en app-velger som er åpen
             val free = Nav.screen == Screen.DASH && !Nav.quick && Nav.pick == null && !Ui.pickSlot && !NavInfo.active
@@ -293,7 +293,7 @@ fun Root() {
     LaunchedEffect(BtLink.version) {
         while (true) {
             if (Notify.appVisible) TosStatus.bt = withContext(Dispatchers.IO) { btState(btStatus(context)) }
-            delay(5000)
+            Power.uiDelay(5000)
         }
     }
 
@@ -1084,9 +1084,8 @@ fun AppDrawer(onClose: () -> Unit) {
                     Modifier.clip(RoundedCornerShape(18.dp)).background(Card).clickable { Nav.screen = screen }.padding(14.dp).fillMaxWidth(),
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
-                    Box(Modifier.size(52.dp).clip(RoundedCornerShape(14.dp)).background(Line), contentAlignment = Alignment.Center) {
-                        Icon(icon, null, tint = TextPrimary, modifier = Modifier.size(28.dp))
-                    }
+                    // Prikkstil: T'OS sine egne sider har ikon i tynn ring, som bunnraden på forsiden
+                    RingIcon(icon, 52.dp)
                     Spacer(Modifier.height(8.dp))
                     Text(label, color = TextPrimary, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }

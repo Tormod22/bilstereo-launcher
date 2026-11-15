@@ -42,14 +42,7 @@ import kotlinx.coroutines.withContext
 /* ---------- Felles topp: tittel + lukk ---------- */
 
 @Composable
-private fun PageHeader(title: String, onClose: () -> Unit, extra: @Composable RowScope.() -> Unit = {}) {
-    Row(Modifier.fillMaxWidth().padding(bottom = 16.dp), verticalAlignment = Alignment.CenterVertically) {
-        Text(title, color = TextPrimary, fontSize = 28.sp, fontWeight = FontWeight.Medium, maxLines = 1,
-            overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-        extra()
-        RoundIcon(Icons.Default.Close, 48.dp, desc = "Lukk") { onClose() }
-    }
-}
+private fun PageHeader(title: String, onClose: () -> Unit, extra: @Composable RowScope.() -> Unit = {}) = PageTitle(title, onClose, extra)
 
 /* ======================= Bluetooth-side ======================= */
 
@@ -79,7 +72,7 @@ fun BluetoothScreen(onClose: () -> Unit) {
     val context = LocalContext.current
     val status by produceState(initialValue = BtLink.current, BtLink.version) {
         // Bluetooth-oppslaget går via systemet (og prøver skjulte funksjoner) – ikke på hovedtråden hvert 3. sekund
-        while (true) { value = withContext(Dispatchers.IO) { btStatus(context) }; delay(3000) }
+        while (true) { value = withContext(Dispatchers.IO) { btStatus(context) }; Power.uiDelay(3000) }
     }
 
     Column(Modifier.fillMaxSize().clip(RoundedCornerShape(28.dp)).background(Panel).padding(24.dp)) {
@@ -114,10 +107,9 @@ fun BluetoothScreen(onClose: () -> Unit) {
 
                 // Musikk fra telefonen over Bluetooth
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text("Musikk", color = TextMuted, fontSize = 14.sp, modifier = Modifier.weight(1f))
+                    Text(caps("Musikk"), style = capsStyle(12.sp), modifier = Modifier.weight(1f))
                     RoundIcon(Icons.Default.SkipPrevious, 48.dp, desc = musicPrevLabel) { Media.previous(context) }
-                    RoundIcon(musicPlayIcon, 56.dp, outlined = true,
-                        desc = musicPlayLabel) { Media.playPause(context) }
+                    PlayButton(musicPlayIcon, 56.dp, desc = musicPlayLabel) { Media.playPause(context) }
                     RoundIcon(Icons.Default.SkipNext, 48.dp, desc = musicNextLabel) { Media.next(context) }
                 }
             }
@@ -190,7 +182,7 @@ fun ActionPicker(current: Action, modifier: Modifier, prefix: String = "", onPic
 fun KeysScreen(onClose: () -> Unit) {
     val context = LocalContext.current
     val serviceOn by produceState(initialValue = Buttons.serviceEnabled(context)) {
-        while (true) { value = Buttons.serviceEnabled(context); delay(1500) }
+        while (true) { value = Buttons.serviceEnabled(context); Power.uiDelay(1500) }
     }
     // Forlates siden (Hjem, en annen side …), stopper læringen – ellers ville neste app som åpnes bli «lært»
     DisposableEffect(Unit) { onDispose { if (Learn.target != null) Learn.cancel() } }

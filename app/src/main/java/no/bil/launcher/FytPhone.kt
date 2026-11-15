@@ -320,8 +320,8 @@ object FytPhone {
     fun ensureLoaded() {
         if (loaded) return
         runCatching {
-            contacts = FytPhoneLogic.decodeBook(Prefs.str("fyt_book"))
-            callLog = FytPhoneLogic.decodeLog(Prefs.str("fyt_calls"))
+            contacts = FytPhoneLogic.decodeBook(Store.str("fyt_book"))
+            callLog = FytPhoneLogic.decodeLog(Store.str("fyt_calls"))
             loaded = true
         }
     }
@@ -375,7 +375,7 @@ object FytPhone {
         step.finished?.let { r ->
             val name = nameOf(r.number)
             callLog = FytPhoneLogic.addToLog(callLog, r.copy(name = name))
-            runCatching { Prefs.setQuiet("fyt_calls", FytPhoneLogic.encodeLog(callLog)) }
+            runCatching { Store.set("fyt_calls", FytPhoneLogic.encodeLog(callLog)) }
             val shown = call
             call = shown?.copy(state = CallState.ENDED, ended = FytPhoneLogic.endedText(r.type))
             // Vis «Avsluttet» et øyeblikk, så forsvinner samtalen (samtaleskjermen lukker seg selv)
@@ -406,7 +406,7 @@ object FytPhone {
         return null
     }
 
-    private val saveBook = Runnable { runCatching { Prefs.setQuiet("fyt_book", FytPhoneLogic.encodeBook(contacts)) } }
+    private val saveBook = Runnable { runCatching { Store.set("fyt_book", FytPhoneLogic.encodeBook(contacts)) } }
     private fun saveBookSoon() { main.removeCallbacks(saveBook); main.postDelayed(saveBook, 3000) }
 
     /* ---------- Kommandoer ---------- */

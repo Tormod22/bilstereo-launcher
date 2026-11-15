@@ -51,18 +51,39 @@ object OwnerLogic {
     const val NO_LOCK = "owner_no_lock"
     const val AUTO_TIME = "owner_auto_time"
     const val KEEP_SERVICES = "owner_keep_services"
+    /** Skjul OGSÅ stereoens hovedstartskjerm (ro.fyt.launcher, på brukerens stereo launcher9). Av som standard – se [toHide]. */
+    const val HIDE_MAIN = "owner_hide_main"
+
+    /** Nødstopp (ikke «owner_»: skal ikke slå på [Owner.apply] av seg selv): T'OS krasjet i en løkke, stereoens startskjerm brukes. */
+    const val ESCAPED = "ownerfix_escaped"
+    const val ESCAPED_WHY = "ownerfix_escaped_why"
+    /** Så mange krasj på 3 minutter før nødstoppen slår inn (sikker modus slår inn ved 3 og får prøve først). */
+    const val ESCAPE_CRASHES = 4
+    fun shouldEscape(recentCrashes: Int) = recentCrashes >= ESCAPE_CRASHES
 
     /** Standardverdier for bryterne. «Siste apper»-skjermen (Quickstep) skjules bare om man vil – stereoens knapp bruker den. */
     val DEFAULTS = mapOf(
         SHADE_OFF to true, HIDE_LAUNCHERS to true, HIDE_RECENTS to false, HOME to true,
-        GRANT to true, NO_LOCK to true, AUTO_TIME to true, KEEP_SERVICES to true,
+        GRANT to true, NO_LOCK to true, AUTO_TIME to true, KEEP_SERVICES to true, HIDE_MAIN to false,
     )
 
-    /** De andre startskjermene på stereoen (FYT/Unisoc). */
+    /**
+     * De andre startskjermene på stereoen (FYT). Bare apper som faktisk er startskjermer (oppsettrapporten 13. nov: launcher4/9/
+     * 24/35/36 har «Launcher»-aktivitet). com.unisoc.launcher.customization er IKKE en startskjerm (tilpasning for Quickstep) – å
+     * skjule den gir ingenting og kunne bare forstyrre, så den er tatt ut.
+     */
     val LAUNCHERS = listOf(
         "com.android.launcher4", "com.android.launcher9", "com.android.launcher24",
-        "com.android.launcher35", "com.android.launcher36", "com.unisoc.launcher.customization",
+        "com.android.launcher35", "com.android.launcher36",
     )
+    /** Stereoens hovedstartskjerm når ro.fyt.launcher ikke kan leses (kartleggingen 8. nov: launcher9). */
+    const val FYT_MAIN_DEFAULT = "com.android.launcher9"
+
+    /** Pakken i ro.fyt.launcher («pakke» eller «pakke/klasse»). Tom/ukjent → [FYT_MAIN_DEFAULT]. */
+    fun mainLauncher(prop: String?): String {
+        val p = prop?.trim()?.substringBefore('/')?.trim().orEmpty()
+        return if (p.isNotEmpty() && Regex("""[A-Za-z0-9_.]+""").matches(p) && '.' in p) p else FYT_MAIN_DEFAULT
+    }
     /** Androids «siste apper» (Quickstep) på denne stereoen. */
     const val RECENTS = "com.android.launcher3"
 
@@ -79,9 +100,26 @@ object OwnerLogic {
     /** Bare startskjermene i [LAUNCHERS] og [RECENTS] kan skjules – og aldri noe kritisk. */
     fun mayHide(pkg: String) = (pkg in LAUNCHERS || pkg == RECENTS) && !isCritical(pkg)
 
-    /** Hvilke pakker som skal være skjult nå (av de som finnes på stereoen). */
-    fun toHide(hideLaunchers: Boolean, hideRecents: Boolean, installed: Collection<String>): List<String> =
-        installed.filter { p -> mayHide(p) && ((hideLaunchers && p in LAUNCHERS) || (hideRecents && p == RECENTS)) }.sorted()
+    /**
+     * Hvilke pakker som skal være skjult nå (av de som finnes på stereoen).
+     *
+     * Stereoens HOVEDstartskjerm ([main], ro.fyt.launcher) skjules bare med egen bryter ([hideMain], av som standard): FYT-
+     * sentralen (com.syu.ms) kan starte den direkte (ved oppstart, tenning på, MENU). Er den skjult, kan det kallet feile inne
+     * i com.syu.ms – med ukjent følge for radio/BT. T'OS er uansett låst som startskjerm, og dukker den opp, henter
+     * «Hold T'OS som startskjerm» T'OS fram igjen (som før full kontroll).
+     */
+    fun toHide(hideLaunchers: Boolean, hideRecents: Boolean, installed: Collection<String>,
+               main: String = FYT_MAIN_DEFAULT, hideMain: Boolean = false): List<String> =
+        installed.filter { p ->
+            mayHide(p) && ((hideLaunchers && p in LAUNCHERS && (p != main || hideMain)) || (hideRecents && p == RECENTS))
+        }.sorted()
+
+    /**
+     * Nødstopp: hvilken startskjerm som låses i stedet for T'OS når T'OS krasjer i en løkke. Stereoens hovedstartskjerm hvis
+     * den finnes, ellers en av de andre. null = ingen (da fjernes bare låsen, og Android velger selv).
+     */
+    fun escapeHome(installedHomes: Collection<String>, main: String): String? =
+        main.takeIf { it in installedHomes && !isCritical(it) } ?: LAUNCHERS.firstOrNull { it in installedHomes && !isCritical(it) }
 
     /** Alle T'OS kan ha skjult – disse vises igjen når noe slås av, eller ved «Slå av full kontroll». */
     val ALL_HIDEABLE: List<String> get() = (LAUNCHERS + RECENTS).filter { mayHide(it) }
@@ -114,6 +152,18 @@ object Owner {
     /** Hva som ikke virket sist (vises i oppsettrapporten). */
     @Volatile var problems: List<String> = emptyList(); private set
 
+    /** Androids nedtrekksmeny er stengt av T'OS nå (da trengs ikke knappestyringens nedtrekksmeny-vakt – Shade.kt). */
+    @Volatile var shadeLocked: Boolean = false; private set
+
+    /** Nødstopp er på: stereoens egen startskjerm brukes fordi T'OS krasjet i en løkke (se [escape]). */
+    val escaped: Boolean get() = runCatching { Prefs.bool(OwnerLogic.ESCAPED) }.getOrDefault(false)
+
+    /** Stereoens hovedstartskjerm (ro.fyt.launcher). */
+    @android.annotation.SuppressLint("PrivateApi")
+    fun mainLauncher(): String = OwnerLogic.mainLauncher(runCatching {
+        Class.forName("android.os.SystemProperties").getMethod("get", String::class.java).invoke(null, "ro.fyt.launcher") as? String
+    }.getOrNull())
+
     /** Bruker bryterne. Kalles ved oppstart, når en «owner_»-bryter endres og når T'OS blir enhetseier. */
     fun apply(c: Context) {
         val ctx = c.applicationContext
@@ -123,24 +173,31 @@ object Owner {
         val a = admin(ctx)
         val bad = mutableListOf<String>()
         fun step(name: String, block: () -> Unit) { runCatching(block).onFailure { bad += "$name: ${it.javaClass.simpleName} ${it.message.orEmpty()}".trim() } }
+        // Nødstopp (T'OS krasjet i en løkke): ingenting skjules, nedtrekksmenyen virker, og stereoens startskjerm låses i stedet
+        val esc = escaped
+        val main = mainLauncher()
 
         // 1) Androids nedtrekksmeny (og varsler som spretter ned) kan ikke åpnes. T'OS sitt eget hurtigpanel virker som før.
-        step("nedtrekksmeny") { if (!dpm.setStatusBarDisabled(a, on(OwnerLogic.SHADE_OFF))) bad += "nedtrekksmeny: Android sa nei" }
+        val lockShade = on(OwnerLogic.SHADE_OFF) && !esc
+        step("nedtrekksmeny") {
+            if (dpm.setStatusBarDisabled(a, lockShade)) shadeLocked = lockShade else { shadeLocked = false; bad += "nedtrekksmeny: Android sa nei" }
+        }
         // 2) Ingen tillatelsesvinduer: T'OS gir seg selv det den trenger
         if (on(OwnerLogic.GRANT)) for (p in OwnerLogic.permissions(Build.VERSION.SDK_INT)) step("tillatelse ${p.substringAfterLast('.')}") {
             dpm.setPermissionGrantState(a, ctx.packageName, p, DevicePolicyManager.PERMISSION_GRANT_STATE_GRANTED)
         }
-        // 3) T'OS er alltid startskjermen
+        // 4) De andre startskjermene skjules (kan vises igjen når som helst). Først, så nødstoppens startskjerm finnes når den låses.
+        val installed = OwnerLogic.ALL_HIDEABLE.filter { exists(ctx, it) }
+        val hide = if (esc) emptySet() else OwnerLogic.toHide(
+            on(OwnerLogic.HIDE_LAUNCHERS), on(OwnerLogic.HIDE_RECENTS), installed, main, on(OwnerLogic.HIDE_MAIN)).toSet()
+        for (p in installed) step("skjul $p") { dpm.setApplicationHidden(a, p, p in hide) }
+        // 3) T'OS er alltid startskjermen (låsen ligger på T'OS sin pakke – clear fjerner den, uansett hvilken startskjerm den pekte på)
         step("startskjerm") {
             dpm.clearPackagePersistentPreferredActivities(a, ctx.packageName)
-            if (on(OwnerLogic.HOME)) dpm.addPersistentPreferredActivity(a,
-                IntentFilter(Intent.ACTION_MAIN).apply { addCategory(Intent.CATEGORY_HOME); addCategory(Intent.CATEGORY_DEFAULT) },
-                ComponentName(ctx, MainActivity::class.java))
+            val home = IntentFilter(Intent.ACTION_MAIN).apply { addCategory(Intent.CATEGORY_HOME); addCategory(Intent.CATEGORY_DEFAULT) }
+            if (esc) escapeHomeComponent(ctx, main)?.let { dpm.addPersistentPreferredActivity(a, home, it) }
+            else if (on(OwnerLogic.HOME)) dpm.addPersistentPreferredActivity(a, home, ComponentName(ctx, MainActivity::class.java))
         }
-        // 4) De andre startskjermene skjules (kan vises igjen når som helst)
-        val installed = OwnerLogic.ALL_HIDEABLE.filter { exists(ctx, it) }
-        val hide = OwnerLogic.toHide(on(OwnerLogic.HIDE_LAUNCHERS), on(OwnerLogic.HIDE_RECENTS), installed).toSet()
-        for (p in installed) step("skjul $p") { dpm.setApplicationHidden(a, p, p in hide) }
         // 5) Ingen skjermlås
         step("skjermlås") { dpm.setKeyguardDisabled(a, on(OwnerLogic.NO_LOCK)) }
         // 6) Riktig klokke (Android 10 lar enhetseieren slå på automatisk tid)
@@ -149,6 +206,33 @@ object Owner {
             dpm.setGlobalSetting(a, Settings.Global.AUTO_TIME_ZONE, "1")
         }
         problems = bad
+    }
+
+    /** Startskjerm-aktiviteten til nødstoppens startskjerm (stereoens egen), eller null. */
+    private fun escapeHomeComponent(c: Context, main: String): ComponentName? = runCatching {
+        val homes = c.packageManager.queryIntentActivities(Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME), 0)
+            .map { it.activityInfo }.filter { it.packageName != c.packageName }
+        val pkg = OwnerLogic.escapeHome(homes.map { it.packageName }, main) ?: return@runCatching null
+        homes.firstOrNull { it.packageName == pkg }?.let { ComponentName(it.packageName, it.name) }
+    }.getOrNull()
+
+    /**
+     * NØDSTOPP – kalles fra [TosApp] FØR resten av T'OS starter, når T'OS har krasjet [OwnerLogic.ESCAPE_CRASHES] ganger på 3
+     * minutter. Som enhetseier har T'OS låst seg som startskjerm og skjult de andre: krasjer T'OS da i en løkke, ville stereoen
+     * stått uten startskjerm. Her vises de andre igjen, nedtrekksmenyen åpnes og stereoens egen startskjerm låses i stedet.
+     * T'OS viser en melding og knappen «Bruk T'OS igjen» (Om stereoen → Full kontroll). Gjør ingenting uten enhetseier.
+     */
+    fun escape(c: Context, why: String) {
+        val ctx = c.applicationContext
+        if (!active(ctx) || escaped) return
+        runCatching { Prefs.set(OwnerLogic.ESCAPED, true); Prefs.set(OwnerLogic.ESCAPED_WHY, why) }
+        runCatching { apply(ctx) }
+    }
+
+    /** «Bruk T'OS igjen» etter en nødstopp. */
+    fun endEscape(c: Context) {
+        Prefs.set(OwnerLogic.ESCAPED, false); Prefs.set(OwnerLogic.ESCAPED_WHY, null)
+        runCatching { apply(c) }
     }
 
     /**
@@ -186,8 +270,13 @@ object Owner {
         val a = admin(ctx)
         for (p in OwnerLogic.ALL_HIDEABLE) runCatching { if (exists(ctx, p)) dpm.setApplicationHidden(a, p, false) }
         runCatching { dpm.clearPackagePersistentPreferredActivities(a, ctx.packageName) }
-        runCatching { dpm.setStatusBarDisabled(a, false) }
+        runCatching { dpm.setStatusBarDisabled(a, false) }.onSuccess { shadeLocked = false }
         runCatching { dpm.setKeyguardDisabled(a, false) }
+        // Tillatelsene blir stående, men er ikke lenger «låst av administrator» (kan endres i Android som før)
+        for (p in OwnerLogic.permissions(Build.VERSION.SDK_INT)) runCatching {
+            dpm.setPermissionGrantState(a, ctx.packageName, p, DevicePolicyManager.PERMISSION_GRANT_STATE_DEFAULT)
+        }
+        runCatching { Prefs.set(OwnerLogic.ESCAPED, false); Prefs.set(OwnerLogic.ESCAPED_WHY, null) }
         return runCatching { dpm.clearDeviceOwnerApp(ctx.packageName); true }.getOrDefault(false) && !active(ctx)
     }
 
@@ -211,7 +300,9 @@ object Owner {
         if (act) {
             OwnerLogic.DEFAULTS.keys.forEach { appendLine("$it: ${on(it)}") }
             appendLine("Skjulte apper: ${hiddenNow(c).joinToString().ifEmpty { "ingen" }}")
-            appendLine("Nedtrekksmeny stengt: ${on(OwnerLogic.SHADE_OFF)}")
+            appendLine("Nedtrekksmeny stengt: ${on(OwnerLogic.SHADE_OFF)} (stengt nå: $shadeLocked)")
+            appendLine("Stereoens hovedstartskjerm (ro.fyt.launcher): ${mainLauncher()}")
+            appendLine("Nødstopp (T'OS krasjet i løkke): ${if (escaped) "PÅ – ${Prefs.str(OwnerLogic.ESCAPED_WHY)}" else "nei"}")
             appendLine("Problemer sist: ${problems.joinToString(" | ").ifEmpty { "ingen" }}")
         }
     }
@@ -260,11 +351,21 @@ fun FullControlSettings() {
         if (Owner.canWriteSecure(context)) ToggleRow("Hold knappestyringen på", OwnerLogic.KEEP_SERVICES, true,
             "Slår du av «T'OS knapper» eller varseltilgangen ved et uhell, slår T'OS dem på igjen (gitt med PC)")
     } else {
+        if (Owner.escaped) {
+            val back = { Owner.endEscape(context); Notify.show("T'OS er startskjermen igjen") }
+            SettingRow("Nødstopp: stereoens startskjerm er i bruk",
+                "T'OS krasjet flere ganger rett etter hverandre (${Prefs.str(OwnerLogic.ESCAPED_WHY).ifEmpty { "ukjent grunn" }}). " +
+                    "Da slo T'OS på stereoens egen startskjerm igjen, så du aldri står uten. Trykk «Send alt til utvikleren» først.",
+                onClick = back) { Pill("Bruk T'OS igjen", strong = true, onClick = back) }
+        }
         SettingRow("Full kontroll: På", "T'OS styrer stereoen. Alt under kan slås av hver for seg.")
         ToggleRow("Steng Androids nedtrekksmeny", OwnerLogic.SHADE_OFF, true,
             "Dra ned fra toppen viser bare T'OS sitt hurtigpanel. Androids varsler spretter heller ikke ned.")
         ToggleRow("Skjul stereoens andre startskjermer", OwnerLogic.HIDE_LAUNCHERS, true,
             "De originale startskjermene kan ikke dukke opp. Vises igjen hvis du slår dette av.")
+        if (Prefs.bool(OwnerLogic.HIDE_LAUNCHERS, true)) ToggleRow("Skjul også stereoens hovedstartskjerm", OwnerLogic.HIDE_MAIN, false,
+            "Stereoen kan selv åpne den (${Owner.mainLauncher().substringAfterLast('.')}). Av = T'OS henter seg fram i stedet, som før. " +
+                "Prøv bare hvis den dukker opp – slå av hvis radio eller knapper oppfører seg rart.")
         ToggleRow("Skjul Androids «siste apper»", OwnerLogic.HIDE_RECENTS, false,
             "Stereoens «siste apper»-knapp åpner da ikke Androids liste. Prøv – slå av hvis knappen slutter å virke.")
         ToggleRow("T'OS er alltid startskjermen", OwnerLogic.HOME, true)

@@ -65,6 +65,11 @@ internal fun capsStyle(size: TextUnit = 13.sp, color: Color = TextMuted) =
     TextStyle(fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Medium, fontSize = size, color = color,
         letterSpacing = 0.14.em)
 
+/** Tast på et talltastatur: sifrene i prikkskrift, * og # i vanlig skrift (prikkutgavene er vanskelige å kjenne igjen). */
+internal fun keyStyle(key: String, size: TextUnit) =
+    if (key.all { it.isDigit() }) dotStyle(size)
+    else TextStyle(color = TextPrimary, fontSize = size, fontWeight = FontWeight.Medium)
+
 /** Tekst i etikettstil (store bokstaver, norsk). */
 internal fun caps(text: String) = text.uppercase(java.util.Locale("nb", "NO"))
 

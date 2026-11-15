@@ -72,7 +72,7 @@ function Add-Result([string]$name, [string]$status, [string]$info = '') {
 
 # --- ADB -------------------------------------------------------------------------------------
 
-function Invoke-AdbRaw([string]$argLine, [int]$timeoutSec = 30) {
+function Invoke-AdbRaw([string]$argLine, [int]$timeoutSec = 30, [bool]$quiet = $false) {
     Log ('adb ' + $argLine)
     $psi = New-Object System.Diagnostics.ProcessStartInfo
     $psi.FileName = $script:Adb
@@ -81,6 +81,8 @@ function Invoke-AdbRaw([string]$argLine, [int]$timeoutSec = 30) {
     $psi.RedirectStandardOutput = $true
     $psi.RedirectStandardError = $true
     $psi.CreateNoWindow = $true
+    # ADB skriver UTF-8 (æøå i svar fra stereoen); uten dette leses det som Windows-tegnsett
+    try { $psi.StandardOutputEncoding = [Text.Encoding]::UTF8; $psi.StandardErrorEncoding = [Text.Encoding]::UTF8 } catch { }
     try {
         $p = [System.Diagnostics.Process]::Start($psi)
     } catch {
@@ -96,15 +98,15 @@ function Invoke-AdbRaw([string]$argLine, [int]$timeoutSec = 30) {
     }
     $p.WaitForExit()
     $text = ($out.Result + "`n" + $err.Result).Trim()
-    Log ('  -> ' + $p.ExitCode + ': ' + $text)
+    if ($quiet) { Log ('  -> ' + $p.ExitCode + ' (svaret skrives ikke i loggen)') } else { Log ('  -> ' + $p.ExitCode + ': ' + $text) }
     return [pscustomobject]@{ Code = $p.ExitCode; Text = $text }
 }
 
 # Kjører en linje fra lista («adb shell …») mot stereoen.
-function Invoke-Stereo([string]$cmd, [int]$timeoutSec = 30) {
+function Invoke-Stereo([string]$cmd, [int]$timeoutSec = 30, [bool]$quiet = $false) {
     $rest = $cmd
     if ($rest.StartsWith('adb ')) { $rest = $rest.Substring(4) }
-    return Invoke-AdbRaw ('-s ' + $script:Serial + ' ' + $rest) $timeoutSec
+    return Invoke-AdbRaw ('-s ' + $script:Serial + ' ' + $rest) $timeoutSec $quiet
 }
 
 function Find-Adb {
@@ -397,7 +399,7 @@ function Enable-GmsIfDisabled([bool]$quiet) {
     if ($r.Text -match [regex]::Escape('package:' + $Gms)) {
         if (-not $quiet) { Say '  Google-tjenestene var slått av (forrige gang ble avbrutt). Slår dem på igjen ...' 'Yellow' }
         $e = Invoke-Stereo 'adb shell pm enable com.google.android.gms' 30
-        if ($e.Text -match 'enabled') { Remove-Item -LiteralPath $GmsFile -Force -ErrorAction SilentlyContinue }
+        if ($e.Text -match 'new state: enabled') { Remove-Item -LiteralPath $GmsFile -Force -ErrorAction SilentlyContinue }
         return $e
     }
     Remove-Item -LiteralPath $GmsFile -Force -ErrorAction SilentlyContinue
@@ -443,23 +445,38 @@ function Invoke-FullControl {
         Add-Result 'Full kontroll (enhetseier)' 'HOPPET' 'stereoen har flere brukere'
         return
     }
-    # Android sier nei når det finnes en Google-konto. Google-tjenestene slås av i noen sekunder,
-    # så kontoen ikke teller – og slås ALLTID på igjen etterpå.
-    $result = ''
-    try {
-        Say '  Slår av Google-tjenestene i noen sekunder ...'
-        [IO.File]::WriteAllText($GmsFile, 'av')
-        $d = Invoke-Stereo 'adb shell pm disable-user --user 0 com.google.android.gms' 30
-        Log ('disable-user: ' + $d.Text)
-        Start-Sleep -Seconds 2
-        $result = Set-Owner
-    } finally {
-        $e = Invoke-Stereo 'adb shell pm enable com.google.android.gms' 30
-        if ($e.Text -match 'enabled') {
-            Remove-Item -LiteralPath $GmsFile -Force -ErrorAction SilentlyContinue
-            Say '  Google-tjenestene er på igjen.'
-        } else {
-            Say '  OBS: Fikk ikke slått Google-tjenestene på igjen. Kjør tos-oppsett.bat på nytt, så prøver den igjen.' 'Red'
+    # Først rett på. Sier Android nei fordi det finnes en (Google-)konto, slås Google-tjenestene av i noen sekunder,
+    # så kontoen ikke teller – og ALLTID på igjen etterpå. Da står Google aldri av uten grunn.
+    $result = Set-Owner
+    $types = @([regex]::Matches((Invoke-Stereo 'adb shell dumpsys account' 30 $true).Text, 'Account \{name=[^,]*, type=([^}\s]+)\}') |
+        ForEach-Object { $_.Groups[1].Value } | Select-Object -Unique)
+    $onlyGoogle = @($types | Where-Object { $_ -notmatch '^com\.google' }).Count -eq 0
+    Log ('Kontotyper: ' + ($types -join ', '))
+    if ($result -eq 'KONTO' -and $onlyGoogle) {
+        try {
+            Say '  Slår av Google-tjenestene i noen sekunder ...'
+            [IO.File]::WriteAllText($GmsFile, 'av')
+            $d = Invoke-Stereo 'adb shell pm disable-user --user 0 com.google.android.gms' 30
+            Log ('disable-user: ' + $d.Text)
+            foreach ($wait in @(2, 4)) {
+                Start-Sleep -Seconds $wait
+                $result = Set-Owner
+                if ($result -ne 'KONTO') { break }
+            }
+        } finally {
+            $e = Invoke-Stereo 'adb shell pm enable com.google.android.gms' 30
+            if ($e.Text -notmatch 'new state: enabled') {
+                # Forbindelsen kan ha falt: koble til igjen og prøv en gang til
+                if ($script:Serial -match ':') { Invoke-AdbRaw ('connect ' + $script:Serial) 15 | Out-Null; Start-Sleep -Seconds 2 }
+                $e = Invoke-Stereo 'adb shell pm enable com.google.android.gms' 30
+            }
+            if ($e.Text -match 'new state: enabled') {
+                Remove-Item -LiteralPath $GmsFile -Force -ErrorAction SilentlyContinue
+                Say '  Google-tjenestene er på igjen.'
+            } else {
+                Say '  OBS: Fikk ikke slått Google-tjenestene på igjen. Kjør tos-oppsett.bat på nytt, så prøver den igjen.' 'Red'
+                Say '  (T''OS prøver også selv: Innstillinger → Om stereoen → Ta over stereoen → «Slå på Play-tjenester».)' 'Red'
+            }
         }
     }
     while ($result -eq 'KONTO') {

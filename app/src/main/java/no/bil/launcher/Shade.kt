@@ -84,7 +84,8 @@ internal object ShadeLogic {
         "expandednotification", "statusbarexpanded")
     /** Andre SystemUI-vinduer som aldri skal lukkes: volum, fanevisning, strømmeny, skjermbilde, låseskjerm. */
     private val notShade = listOf("volume", "volum", "recent", "overview", "oversikt", "globalaction", "global action", "power", "strøm",
-        "screenshot", "skjermbilde", "keyguard", "lock screen", "låseskjerm", "navigation bar", "navigasjonsrad", "navigationbar")
+        "screenshot", "skjermbilde", "keyguard", "lock screen", "låseskjerm", "navigation bar", "navigasjonsrad", "navigationbar",
+        "usbdebugging", "usb debugging")
 
     /** Vindustittelen til statuslinja på Android 10 og eldre (uten mellomrom, små bokstaver). */
     private val statusBarTitles = setOf("statusbar", "notificationshadewindow")
@@ -150,6 +151,9 @@ internal object ShadeLogic {
 
     /** Et tillatelses- eller installasjonsvindu er åpent: da gjør T'OS ingenting med nedtrekksmenyen. */
     fun dialogOpen(windows: List<WinSnap>?): Boolean = windows.orEmpty().any { w ->
+        val t = w.title?.lowercase().orEmpty()
+        // Androids «Tillat USB-feilsøking?» (SystemUI, «Ta over stereoen») – vinduet kan være stort på 1024×600
+        if ("usbdebugging" in squash(t) || "usb debugging" in t || "usb-feilsøking" in t) return@any true
         val p = w.pkg ?: return@any false
         p.endsWith(".permissioncontroller") || p.endsWith(".packageinstaller")
     }
@@ -305,7 +309,7 @@ internal fun NotificationsSection(
     val now by produceState(System.currentTimeMillis()) { while (true) { delay(30_000); value = System.currentTimeMillis() } }
     Column(modifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(Modifier.fillMaxWidth().heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text("Varsler", color = TextPrimary, fontSize = 17.sp, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f))
+            Text(caps("Varsler"), style = capsStyle(13.sp), modifier = Modifier.weight(1f))
             if (items.any { it.meta.clearable }) {
                 Pill(if (armed) "Trykk igjen for å fjerne alle" else "Fjern alle", Icons.Default.ClearAll, strong = armed) {
                     if (armed) { armed = false; onClearAll() } else armed = true

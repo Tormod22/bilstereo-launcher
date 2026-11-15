@@ -334,6 +334,9 @@ class KeyService : AccessibilityService() {
         val hint = shadeHint; val info = shadeHintInfo
         shadeHint = false
         if (!Prefs.bool("tos_shade", true) || SurveyRecorder.active || ShadePanel.shown) return
+        // Full kontroll har stengt Androids meny (den kan ikke komme), og under «Ta over» kan Androids «Tillat USB-feilsøking?»
+        // ligge der – den skal aldri tas for menyen og lukkes
+        if (Owner.shadeLocked || Takeover.busy) return
         // Pakkenavn hentes bare for systemvinduene (SystemUI svarer raskt; en travel app kunne ellers holdt T'OS igjen)
         val snaps = runCatching { windowSnaps(rootOf = { it == ShadeLogic.TYPE_SYSTEM }) }.getOrNull()
         val dm = resources.displayMetrics
@@ -440,7 +443,8 @@ class KeyService : AccessibilityService() {
         // Hold T'OS som startskjerm: dukker stereoens originale startskjerm (eller app-lista/hovedmenyen dens) opp,
         // f.eks. etter «fjern alle faner», vises T'OS i stedet – raskt og bak et svart teppe, så den ikke blinker fram.
         // Trengs fordi stereoen ikke lar T'OS bli fast startskjerm.
-        if (key == null && Prefs.bool("keep_home", true) && isShell(pkg, cls)) {
+        // Ikke under nødstoppen i «Full kontroll» (T'OS krasjet i en løkke – da er stereoens startskjerm reserven, Owner.escape)
+        if (key == null && Prefs.bool("keep_home", true) && !Owner.escaped && isShell(pkg, cls)) {
             if (!Buttons.inCall(this) && redirects.allow(now)) bringBack(Screen.DASH)
             return
         }

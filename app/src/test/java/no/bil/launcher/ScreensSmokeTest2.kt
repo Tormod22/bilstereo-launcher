@@ -153,7 +153,7 @@ class ShadePanelSmokeTest {
         rule.runOnUiThread { TosNotifications.items = notes(4); TosNotifications.connected = true }
         rule.setContent { QuickPanel(onClose = {}, onGo = {}) }
         settle()
-        rule.awaitText("Varsler")
+        rule.awaitText(caps("Varsler"))
     }
 }
 

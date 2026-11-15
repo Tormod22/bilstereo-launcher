@@ -319,7 +319,7 @@ object AppRepository {
     private class NameIndex(val at: Long, val entries: List<Pair<String, String>>)   // pakke til «navn pakke» (små bokstaver)
     @Volatile private var nameIndex: NameIndex? = null
     private val warming = java.util.concurrent.atomic.AtomicBoolean(false)
-    private val io = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.IO)
+    private val io = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.IO + CrashLog.handler)
 
     private fun buildIndex(context: Context): NameIndex {
         val pm = context.packageManager
