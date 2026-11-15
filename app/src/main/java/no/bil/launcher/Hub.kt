@@ -57,6 +57,8 @@ object Hub {
     fun start(c: Context) {
         app = c.applicationContext
         Power.start(app)                        // tenning/skjerm: hva som får gå (Power.kt)
+        LastState.watch(app)                    // sist spilt/spenning: vises med en gang ved kald start (LastState.kt)
+        StartTiming.start(app)                  // oppstartstider til oppsettrapporten
         Trip.restore()
         TileCache.init(app)                     // kartfliser på disk – kartet virker uten nett (MapCache.kt)
         SpeedCache.init(app)                    // fartsgrenser for veier T'OS har sett før

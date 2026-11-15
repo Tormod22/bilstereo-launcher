@@ -465,6 +465,7 @@ class MediaListener : NotificationListenerService() {
     private val wasPlaying = mutableMapOf<String, Boolean>()
 
     override fun onListenerConnected() {
+        StartTiming.mark(StartTiming.MUSIC)     // oppstartstid: musikken (varseltilgangen) er klar
         // Det som var vist før en frakobling kan være utdatert – leses på nytt fra varslene under
         NavInfo.title = null; NavInfo.text = null; Call.clear()
         msm = getSystemService(Context.MEDIA_SESSION_SERVICE) as MediaSessionManager

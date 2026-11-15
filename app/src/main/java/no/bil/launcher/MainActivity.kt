@@ -115,7 +115,11 @@ class MainActivity : ComponentActivity() {
         if (CarArt.bitmap == null) Hub.scope.launch(Dispatchers.IO) { CarArt.load(applicationContext) }
         Splash.onCreate()
         News.check(applicationContext)      // oppdatert siden sist? Da «Hva er nytt» på forsiden
-        setContent { Root() }
+        setContent {
+            Root()
+            // Oppstartstid: første bilde er tegnet (LastState.kt, StartTiming)
+            LaunchedEffect(Unit) { withFrameNanos { }; StartTiming.mark(StartTiming.FRAME) }
+        }
     }
 
     override fun onStart() {
@@ -502,6 +506,9 @@ object CarArt {
     /** Ingen innebygd bilbilde (eller det kunne ikke leses): vis bil-symbolet. */
     var missing by mutableStateOf(false)
         private set
+    /** Bilbildet er lest (eller finnes ikke) – oppstartsskjermen kan forsvinne (SplashHost). */
+    var ready by mutableStateOf(false)
+        private set
     private val lock = Any()
 
     /** Trygt å kalle fra hvilken som helst tråd (helst ikke hovedtråden); gjør jobben bare én gang. */
@@ -512,7 +519,7 @@ object CarArt {
             val res = c.resources.getIdentifier("car_png", "drawable", c.packageName)
             val bmp = if (res == 0) null else runCatching { BitmapFactory.decodeResource(c.resources, res)?.asImageBitmap() }.getOrNull()
             bitmap = bmp
-            if (bmp == null) android.os.Handler(android.os.Looper.getMainLooper()).post { missing = true }
+            android.os.Handler(android.os.Looper.getMainLooper()).post { if (bmp == null) missing = true; ready = true }
             return bmp
         }
     }
@@ -582,26 +589,29 @@ fun CarCard(modifier: Modifier) {
     }
 
     Column(modifier.clip(Shape).background(Panel).dotGrid().padding(28.dp)) {
+        // Klokka og statusikonene på én linje; datoen og meldingen under får hele bredden (ble kuttet når
+        // batterispenningen sto ved siden av: «SØNDAG 15. NOV…»)
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
-            Column(Modifier.weight(1f)) {
-                // Prikkstil: klokka i store prikktall, datoen som liten etikett
-                Text(time, style = dotStyle(62.sp), maxLines = 1)
-                Spacer(Modifier.height(6.dp))
-                Text(caps(date), style = capsStyle(13.sp), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Notice()
-            }
+            // Prikkstil: klokka i store prikktall
+            Text(time, style = dotStyle(62.sp), maxLines = 1, modifier = Modifier.weight(1f))
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 // Bare det som er verdt å vite: uten nett, og tilkoblet telefon
                 StatusIcons(full = false)
-                val bv = CarBattery.volt
+                // Ved kald start: sist kjente spenning (dempet) til ny måling kommer – ingen hopp i raden
+                val live = CarBattery.volt
+                val bv = live ?: LastState.restored?.volts
                 if (CarBattery.enabled && bv != null) {
-                    Icon(Icons.Default.BatteryChargingFull, "Bilbatteri", tint = TextMuted, modifier = Modifier.size(18.dp))
-                    Text(CarBattery.text(bv), style = capsStyle(14.sp, TextPrimary))
+                    Icon(Icons.Default.BatteryChargingFull, if (live == null) "Bilbatteri (sist målt)" else "Bilbatteri", tint = TextMuted, modifier = Modifier.size(18.dp))
+                    Text(CarBattery.text(bv), style = capsStyle(14.sp, if (live == null) TextMuted else TextPrimary))
                     Spacer(Modifier.width(4.dp))
                 }
                 Text(caps("Avensis"), style = capsStyle(13.sp))
             }
         }
+        Spacer(Modifier.height(6.dp))
+        // Datoen som liten etikett
+        Text(caps(date), style = capsStyle(13.sp), maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Notice()
 
         // Bilbildet – stort og luftig, på en svak lys "scene" under. Trykk = Bil og tur.
         Box(
@@ -856,11 +866,14 @@ fun ActionRow(onApps: () -> Unit, onPickSlot: () -> Unit, modifier: Modifier) {
             Row(Modifier.fillMaxSize().padding(start = 18.dp, end = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                 Box(Modifier.clip(RoundedCornerShape(14.dp)).combinedClickable(onClick = { Nav.screen = Screen.MUSIC }, onLongClick = { Buttons.openMusic(context) })) { Cover(52.dp) }
                 Column(Modifier.weight(1f).padding(horizontal = 10.dp).clickable { Nav.screen = Screen.MUSIC }) {
-                    Text(musicTitle ?: "Musikk", color = TextPrimary, fontSize = 18.sp, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    // Sist spilt (kald start, før mediatjenesten er klar): dempet, så det ikke ser ut som om det spiller nå
+                    val restored = musicRestored
+                    Text(musicTitle ?: "Musikk", color = if (restored != null) TextMuted else TextPrimary, fontSize = 18.sp, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     Text(musicSub ?: if (MediaListener.enabled(context)) "Ingenting spiller" else "Trykk for mer", color = TextMuted, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
                 // Prikkstil: hvit, fylt spill-knapp
-                PlayButton(musicPlayIcon, 48.dp, musicPlayLabel) { Media.playPause(context) }
+                // Sist hørt var radio og stereoen har ikke meldt seg ennå: radiosiden (spill her kunne startet feil kilde)
+                PlayButton(musicPlayIcon, 48.dp, musicPlayLabel) { if (musicRestored?.isRadio == true) Nav.screen = Screen.RADIO else Media.playPause(context) }
                 RoundIcon(Icons.Default.SkipNext, 48.dp, desc = musicNextLabel) { Media.next(context) }
             }
             // Tynn linje helt nederst i flisa: hvor langt i sangen
