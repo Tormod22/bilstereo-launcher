@@ -103,6 +103,9 @@ object TakeoverLogic {
 
     fun ownerCommand(pkg: String) = "dpm set-device-owner $pkg/.TosAdmin"
 
+    /** «Ta over» så (etter dpm) at T'OS faktisk ble sjef. Er T'OS ikke sjef nå, har full kontroll falt bort siden. */
+    const val OWNER_OK = "takeover_owner_ok"
+
     enum class Result(val sign: String) { OK("✓"), SKIP("–"), FAIL("✗") }
 
     /** Svar fra én kommando. «Finnes ikke på denne Android-versjonen» er ikke en feil (gjelder f.eks. Android 12+-tillatelser). */
@@ -111,6 +114,8 @@ object TakeoverLogic {
         val notHere = listOf(
             "unknown permission", "unknown operation", "not a changeable permission type", "unknown command",
             "has not requested permission", "unknown option", "can't find service", "no shell command implementation",
+            // «cmd wifi …» (Android 11+): på Android 10 nekter skallet – ikke en feil (v5.17, sett på stereoen)
+            "does not have access to wifi commands",
         )
         if (notHere.any { it in o }) return Result.SKIP
         if (exit != 0 || "exception" in o || "error" in o || "failure" in o || "not allowed" in o) return Result.FAIL
@@ -503,14 +508,25 @@ object Takeover {
             }
         }
         when (TakeoverLogic.dpmResult(out)) {
-            TakeoverLogic.Dpm.OK -> add(TakeoverLogic.Result.OK, title, "T'OS styrer nå stereoen")
+            TakeoverLogic.Dpm.OK -> {
+                // Stol ikke bare på «Success»: sjekk at Android faktisk har gjort T'OS til sjef (v5.17 – på stereoen ble det borte)
+                var ok = false
+                repeat(6) { if (!ok) { ok = Owner.active(ctx); if (!ok) delay(500) } }
+                Owner.event(ctx, "Ta over: dpm svarte «${out.lineSequence().firstOrNull().orEmpty().take(120)}» – sjef nå: $ok")
+                if (ok) Prefs.set(TakeoverLogic.OWNER_OK, true)
+                if (ok) add(TakeoverLogic.Result.OK, title, "T'OS styrer nå stereoen")
+                else add(TakeoverLogic.Result.FAIL, title, "Android sa ja, men T'OS ble ikke sjef. Trykk «Send alt til utvikleren».")
+            }
             TakeoverLogic.Dpm.ALREADY -> add(TakeoverLogic.Result.SKIP, title, "en annen app er allerede sjef: ${out.take(100)}")
             TakeoverLogic.Dpm.USERS -> add(TakeoverLogic.Result.SKIP, title, "stereoen har flere brukere")
             TakeoverLogic.Dpm.ACCOUNTS -> {
                 ui { accountsBlocked = true }
                 add(TakeoverLogic.Result.FAIL, title, "en konto er i veien (${types.joinToString().ifEmpty { "ukjent" }}). Følg stegene under og trykk «Ta over» igjen.")
             }
-            TakeoverLogic.Dpm.OTHER -> add(TakeoverLogic.Result.FAIL, title, out.lineSequence().firstOrNull().orEmpty().take(160))
+            TakeoverLogic.Dpm.OTHER -> {
+                Owner.event(ctx, "Ta over: dpm svarte «${out.take(200).replace('\n', ' ')}»")
+                add(TakeoverLogic.Result.FAIL, title, out.lineSequence().firstOrNull().orEmpty().take(160))
+            }
         }
         if (gmsOff) add(TakeoverLogic.Result.FAIL, "Google Play-tjenester", "kom ikke på igjen – trykk «Slå på Play-tjenester»")
     }
@@ -614,7 +630,11 @@ fun TakeoverScreen(onClose: () -> Unit) {
     }
     // Siden lukkes: ingen ADB-forbindelse blir liggende åpen (med mindre «Ta over» kjører – den fullfører i bakgrunnen)
     DisposableEffect(Unit) { onDispose { Takeover.leave() } }
-    val done = Takeover.done || Owner.active(context)
+    // «Ferdig» bare hvis T'OS faktisk er sjef nå. Ble full kontroll borte etterpå, vises punktene igjen (v5.17).
+    val owner = Owner.active(context)
+    val lostOwner = Prefs.bool(TakeoverLogic.OWNER_OK) && !owner
+    val done = owner || (Takeover.done && !lostOwner)
+    LaunchedEffect(Unit) { runCatching { Owner.noteStatus(context) } }
     val connected = Takeover.connected
     val net = TakeoverLogic.net(open, adbOn)
     val n = TakeoverLogic.progress(dev, adbOn, open, connected, done)
@@ -641,12 +661,13 @@ fun TakeoverScreen(onClose: () -> Unit) {
                 Text(if (done && !busy) "FERDIG" else "$n AV 5", style = dotStyle(40.sp, weight = FontWeight.Bold), maxLines = 1)
                 Text(caps(Takeover.phase ?: if (done) "T'OS har tatt over" else "Uten PC"), style = capsStyle(12.sp))
                 Text(
-                    if (done) "Vil du kjøre på nytt (f.eks. etter en nullstilling), gjør punktene til høyre igjen."
+                    if (lostOwner) "Full kontroll har falt bort siden sist. Trykk «Åpne» på punkt 2 (T'OS slår feilsøking på selv), vent på hakene og trykk «Ta over igjen»."
+                    else if (done) "Vil du kjøre på nytt (f.eks. etter en nullstilling), gjør punktene til høyre igjen."
                     else "Gjør punktene til høyre ett for ett. Hakene kommer av seg selv. Til slutt trykker du «Ta over», og T'OS gjør resten.",
                     color = TextMuted, fontSize = 14.sp,
                 )
                 BigButton(
-                    when { Takeover.running -> "Jobber …"; done -> "Ta over igjen"; else -> "Ta over" },
+                    when { Takeover.running -> "Jobber …"; done || lostOwner -> "Ta over igjen"; else -> "Ta over" },
                     enabled = connected && !busy,
                 ) { Takeover.run(context) }
                 ToggleRow("Slå av feilsøking etterpå", TakeoverLogic.ADB_OFF, true, "Tryggere: ingen åpen ADB på Wi-Fi-en")

@@ -4,6 +4,17 @@ Her står det som er nytt, og hva du kan prøve. Det nyeste står først.
 
 Virker noe ikke som det skal? Gå til **Innstillinger → Sikkerhetskopi og hjelp** og trykk **Send alt til utvikleren**. Skriv gjerne kort hva som skjedde. Da får utvikleren alt som trengs, i én fil.
 
+## T'OS 5.17
+
+- **Full kontroll holdes øye med.** T'OS skriver nå ned når den blir sjef, og hvis den mister det. Har full kontroll falt bort, sier «Ta over stereoen» fra, og du kan ta over igjen med noen få trykk.
+- **Ryddigere rapport.** «Send alt til utvikleren» har ikke lenger hundrevis av linjer med støy fra stereoen.
+- Linja om Wi-Fi i «Ta over»-loggen viser nå «–» (gjelder ikke denne stereoen) i stedet for ✗.
+
+Prøv dette:
+
+1. Gå til **Innstillinger → Om stereoen → Ta over stereoen** og se om den sier at full kontroll har falt bort. Gjør den det, følg teksten og trykk **Ta over igjen**.
+2. Kjør en tur, og trykk **Send alt til utvikleren** etterpå.
+
 ## T'OS 5.16
 
 **«Ta over stereoen» er enklere.** Punkt 3 og 4 skjer nå av seg selv: T'OS ber stereoen åpne for seg, og kobler til selv. Du trenger ingen PC.

@@ -150,3 +150,25 @@ class TakeoverFytPortTest {
         assertTrue(Takeover.message.orEmpty().contains("FYT"))
     }
 }
+
+/** v5.17: funn fra stereoens første «Send alt». */
+class V517LogicTest {
+    @Test fun wifiPaAndroid10ErIkkeFeil() {
+        assertEquals(Result.SKIP, TakeoverLogic.classify(255, "Security exception: Uid 2000 does not have access to wifi commands"))
+        assertEquals(Result.FAIL, TakeoverLogic.classify(1, "Exception occurred: something else broke"))
+    }
+    @Test fun loggenUtenStoy() {
+        val log = "11-15 23:04:34 I DefaultDispatch: type=1400 audit(0.0:1): avc: denied { read }\n" +
+            "11-15 23:04:40 I gralloc : gralloc_unregister_buffer hnd=0x6f\n" +
+            "11-15 23:04:41 E AndroidRuntime: FATAL EXCEPTION: main"
+        val c = CrashLogLogic.clean(log)
+        assertTrue(c.contains("FATAL EXCEPTION"))
+        assertFalse(c.contains("avc: denied"))
+        assertTrue(c.contains("2 linjer med støy"))
+    }
+    @Test fun kartbufferStorrelse() {
+        assertEquals("1 kB", TileCacheLogic.sizeText(500))
+        assertEquals("800 kB", TileCacheLogic.sizeText(800L * 1024))
+        assertEquals("12,5 MB", TileCacheLogic.sizeText((12.5 * 1_048_576).toLong()))
+    }
+}
