@@ -66,7 +66,8 @@ class DataLogicTest3 {
             assertTrue("Mangler i ADB-OPPSETT.md: ${s.cmd}", s.cmd in doc)
             assertTrue("Mangler i tos-oppsett.bat: ${s.cmd}", s.cmd in bat)
         }
-        assertTrue("enabled_accessibility_services !NEW!" in bat)
+        // Knappestyringen: skriptet leser lista og legger T'OS til (Merge-ColonList), uten å slå av stereoens egne
+        assertTrue("settings get secure enabled_accessibility_services" in bat && "Merge-ColonList" in bat)
         assertTrue(steps.all { it.what.isNotBlank() })
     }
 
