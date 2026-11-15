@@ -146,9 +146,29 @@ object MapTiles {
             }.getOrNull()
         }
 
+    /**
+     * Én flis: minnet → disken (også uten nett, også gamle) → nettet (lagres på disk). Kjører på IO.
+     * Gamle fliser vises med en gang og hentes på nytt i bakgrunnen ([MapPrefetch]).
+     */
     private fun fetch(z: Int, x: Int, y: Int): Bitmap? {
         val key = "$z/$x/$y"
-        cache.get(key)?.let { return it }
+        cache.get(key)?.let { TileCache.memHits.incrementAndGet(); return it }
+        TileCache.get(z, x, y)?.let { bytes ->
+            BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.let { bmp ->
+                TileCache.diskHits.incrementAndGet()
+                cache.put(key, bmp)
+                return bmp
+            }
+        }
+        if (!Hub.online) { TileCache.misses.incrementAndGet(); return null }
+        return download(z, x, y)?.also { cache.put(key, it) } ?: run { TileCache.misses.incrementAndGet(); null }
+    }
+
+    /**
+     * Henter flisa fra Esri og lagrer den på disk (bare et ekte kartbilde: HTTP 200 som lar seg dekode).
+     * [prefetch]: hentet i forkant – 429/503 får forhåndshentingen til å hvile en stund.
+     */
+    internal fun download(z: Int, x: Int, y: Int, prefetch: Boolean = false): Bitmap? {
         val url = URL("https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/$z/$y/$x")
         val conn = url.openConnection() as HttpURLConnection
         conn.setRequestProperty("User-Agent", "BilstereoLauncher/1.0")
@@ -156,8 +176,17 @@ object MapTiles {
         // Strømmen lukkes alltid (før ble den liggende åpen – 25 forbindelser hvert minutt til de ble ryddet av seg selv),
         // og bare et ekte svar (200) blir en flis – en feilside fra serveren skal ikke tolkes som kart.
         return try {
-            if (conn.responseCode != HttpURLConnection.HTTP_OK) { conn.disconnect(); null }
-            else conn.inputStream.use { BitmapFactory.decodeStream(it) }?.also { cache.put(key, it) }
+            val code = conn.responseCode
+            if (code == 429 || code == 503) MapPrefetch.backoff()
+            if (code != HttpURLConnection.HTTP_OK) { conn.disconnect(); null }
+            else {
+                val bytes = conn.inputStream.use { it.readBytes() }
+                BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.also {
+                    TileCache.netFetches.incrementAndGet()
+                    TileCache.put(z, x, y, bytes)
+                    if (prefetch) cache.remove("$z/$x/$y")   // ikke fyll minnet med fliser ingen ser på ennå
+                }
+            }
         } catch (_: Exception) {
             runCatching { conn.disconnect() }
             null

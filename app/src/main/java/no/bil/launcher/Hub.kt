@@ -58,8 +58,11 @@ object Hub {
         app = c.applicationContext
         Power.start(app)                        // tenning/skjerm: hva som får gå (Power.kt)
         Trip.restore()
+        TileCache.init(app)                     // kartfliser på disk – kartet virker uten nett (MapCache.kt)
+        SpeedCache.init(app)                    // fartsgrenser for veier T'OS har sett før
         startGps()
         watchNetwork()
+        MapPrefetch.start(app)
         CarBattery.start(app)
         HwRadio.start(app)
         BtLink.start(app)                       // Bluetooth-hendelser og profiler (er telefonen tilkoblet?)
@@ -373,7 +376,8 @@ object SpeedLimit {
         }
         if (!over) beeped = false
 
-        if (!Prefs.bool("speed_limit", true) || busy || g.speedKmh < 5 || !Hub.online) return
+        // Uten nett: bare fra veiene T'OS har sett før (SpeedCache) – derfor ikke stopp her når nettet mangler
+        if (!Prefs.bool("speed_limit", true) || busy || g.speedKmh < 5) return
         val now = SystemClock.elapsedRealtime()
         val prev = lastQueryPos
         val moved = prev?.let { distM(it.lat, it.lon, g.lat, g.lon) } ?: Double.MAX_VALUE
@@ -381,7 +385,7 @@ object SpeedLimit {
         lastQueryPos = g; lastQuery = now; busy = true
         val bearing = g.bearing.takeIf { g.speedKmh >= 10 }
         Hub.scope.launch {
-            when (val r = withContext(Dispatchers.IO) { query(g.lat, g.lon, bearing) }) {
+            when (val r = withContext(Dispatchers.IO) { lookup(g.lat, g.lon, bearing) }) {
                 is Result.Found -> { limit = r.kmh; lastConfirmedPos = g }
                 Result.NoneTagged -> { limit = null; lastConfirmedPos = g }
                 // Ingen svar: behold forrige grense bare så lenge vi er nær stedet der den sist ble bekreftet
@@ -401,6 +405,34 @@ object SpeedLimit {
     internal fun shouldQuery(movedM: Double, sinceMs: Long): Boolean =
         sinceMs >= 8_000 && (movedM >= 120 || sinceMs >= 25_000)
 
+    /**
+     * Fartsgrensen her: først fra veiene T'OS husker (sparer de gratis serverne og virker uten nett), så fra
+     * Overpass når det er nett. Gir ikke nettet svar, brukes det bufferen vet.
+     */
+    private fun lookup(lat: Double, lon: Double, bearing: Float?): Result {
+        val cached = fromCache(lat, lon, bearing)
+        if (cached is Result.Found) { SpeedCache.hits.incrementAndGet(); return cached }
+        if (!Hub.online) { if (cached != Result.Failed) SpeedCache.hits.incrementAndGet(); return cached }
+        val r = query(lat, lon, bearing)
+        return if (r == Result.Failed && cached != Result.Failed) { SpeedCache.hits.incrementAndGet(); cached } else r
+    }
+
+    /** Fra bufferen: bare veier nærmere enn [SpeedCacheLogic.NEAR_M] teller (ellers vet vi ikke hvilken vei bilen er på). */
+    internal fun fromCache(lat: Double, lon: Double, bearing: Float?): Result {
+        val near = SpeedCache.near(lat, lon).filter { w -> wayDistM(w, lat, lon) <= SpeedCacheLogic.NEAR_M }
+        return if (near.isEmpty()) Result.Failed else pick(near, lat, lon, bearing)
+    }
+
+    internal fun wayDistM(w: Way, lat: Double, lon: Double): Double {
+        if (w.points.size == 1) return distM(lat, lon, w.points[0].first, w.points[0].second)
+        var best = Double.MAX_VALUE
+        for (i in 0 until w.points.size - 1) {
+            val (aLat, aLon) = w.points[i]; val (bLat, bLon) = w.points[i + 1]
+            best = minOf(best, segmentDistM(lat, lon, aLat, aLon, bLat, bLon))
+        }
+        return best
+    }
+
     private fun query(lat: Double, lon: Double, bearing: Float?): Result {
         val q = "[out:json][timeout:8];way(around:15,$lat,$lon)[highway~\"$ROADS\"];out tags geom 20;"
         for (s in servers) {
@@ -414,15 +446,17 @@ object SpeedLimit {
                 if (code == 429 || code == 503 || code == 504) synchronized(pausedUntil) { pausedUntil[s] = SystemClock.elapsedRealtime() + 120_000 }
                 if (code != 200) { c.disconnect(); error("HTTP $code") }
                 val els = JSONObject(c.inputStream.bufferedReader().readText()).getJSONArray("elements")
-                val ways = (0 until els.length()).map { i ->
+                val found = (0 until els.length()).map { i ->
                     val e = els.getJSONObject(i)
                     val t = e.optJSONObject("tags")
                     val tags = t?.keys()?.asSequence()?.associateWith { t.optString(it) }.orEmpty()
                     val geom = e.optJSONArray("geometry")
                     val pts = if (geom == null) emptyList() else (0 until geom.length()).map { geom.getJSONObject(it).let { p -> p.getDouble("lat") to p.getDouble("lon") } }
-                    Way(tags, pts)
+                    e.optLong("id") to Way(tags, pts)
                 }
-                pick(ways, lat, lon, bearing)
+                // Husk hele veiene (Overpass sender hele formen), så de har fartsgrense neste gang – også uten nett
+                runCatching { SpeedCache.remember(found.filter { it.first != 0L }) }
+                pick(found.map { it.second }, lat, lon, bearing)
             }
             if (res.isSuccess) return res.getOrThrow()
         }

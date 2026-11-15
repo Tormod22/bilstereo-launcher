@@ -685,6 +685,10 @@ internal fun tileOf(lat: Double, lon: Double, z: Int): Pair<Int, Int> {
  */
 internal fun mapReach(pos: Float, size: Float, half: Float): Float = minOf(pos, size - pos, half).coerceAtLeast(1f)
 
+/** Der bilen sist sto (parkeringen), som «posisjon» for kartet før GPS-en har funnet seg til rette. */
+internal fun lastKnownPos(): Gps? =
+    if (Parking.known) Gps(speedKmh = 0, lat = Parking.lat, lon = Parking.lon, bearing = 0f, stale = true) else null
+
 fun zoomFor(speed: Int): Int =
     if (!Prefs.bool("map_zoom_speed", true)) 15 else when { speed < 35 -> 16; speed < 70 -> 15; speed < 100 -> 14; else -> 13 }
 
@@ -702,8 +706,10 @@ fun MapView(gps: Gps?, modifier: Modifier, zoomOffset: Int = 0) {
 }
 
 @Composable
-private fun OnlineMapView(gps: Gps?, modifier: Modifier, zoom: Int, rotate: Boolean) {
+private fun OnlineMapView(live: Gps?, modifier: Modifier, zoom: Int, rotate: Boolean) {
     var map by remember { mutableStateOf<MapTiles.MapImage?>(null) }
+    // Før GPS-en har posisjon (kaldstart): vis kartet der bilen sist sto, fra kartbufferen på disk (MapCache.kt)
+    val gps = live ?: remember(Prefs.version) { lastKnownPos() }
     val tz = tileZoom(zoom)
     // Nytt bilde hver gang du kjører inn i en ny flis – da ligger posisjonen alltid i midten av bildet
     val key = gps?.let { val (tx, ty) = tileOf(it.lat, it.lon, tz); Triple(tz, tx, ty) }
@@ -750,6 +756,10 @@ private fun OnlineMapView(gps: Gps?, modifier: Modifier, zoom: Int, rotate: Bool
                     val p = Path().apply { moveTo(c.x, c.y - 16f); lineTo(c.x + 11f, c.y + 12f); lineTo(c.x, c.y + 6f); lineTo(c.x - 11f, c.y + 12f); close() }
                     drawCircle(TextPrimary.copy(alpha = 0.15f), 30f, c)
                     drawPath(p, TextPrimary)
+                } else if (live == null) {
+                    // Siste kjente posisjon: bare en hul ring – ikke en «levende» prikk
+                    drawCircle(Bg.copy(alpha = 0.6f), 13f, c)
+                    drawCircle(TextMuted, 10f, c, style = androidx.compose.ui.graphics.drawscope.Stroke(width = 3f))
                 } else {
                     // Prikkstil: hvit prikk med myk glorie
                     drawCircle(TextPrimary.copy(alpha = 0.10f), 40f, c)
@@ -758,6 +768,7 @@ private fun OnlineMapView(gps: Gps?, modifier: Modifier, zoom: Int, rotate: Bool
                     drawCircle(TextPrimary, 10f, c)
                 }
             }
+            if (live == null) Text(caps("Siste posisjon"), style = capsStyle(12.sp), modifier = Modifier.align(Alignment.TopEnd).padding(16.dp))
         } else {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Text(if (gps == null) "Venter på GPS" else "Laster kart …", color = TextMuted, fontSize = 15.sp)

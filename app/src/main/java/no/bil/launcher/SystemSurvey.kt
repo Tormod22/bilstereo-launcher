@@ -275,6 +275,7 @@ object SystemSurvey {
             }
         }
         part("Strøm (tenning/skjerm: hva T'OS lar gå)") { append(Power.report()) }
+        part("Kart og fartsgrenser uten nett") { appendLine(TileCache.report()); append(SpeedCache.report()) }
         part("Full kontroll (enhetseier)") { append(Owner.report(c)) }
         part("Ta over stereoen (T'OS sin egen ADB, uten PC)") { append(Takeover.report(c)) }
         part("Bluetooth") { append(BtLink.report(c)) }
