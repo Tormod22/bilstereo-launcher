@@ -42,7 +42,8 @@ import java.util.concurrent.TimeUnit
  * stereoens temperatur, ny versjon og påminnelser. Startes én gang fra [TosApp].
  */
 object Hub {
-    val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+    /** Feil i en jobb skrives i krasj-loggen ([CrashLog.handler]) i stedet for å ta ned hele startskjermen. */
+    val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main + CrashLog.handler)
     private lateinit var app: Context
 
     var gps by mutableStateOf<Gps?>(null)
@@ -281,9 +282,9 @@ object Trip {
     fun flush() = save()
 
     private fun save() {
-        Prefs.setQuiet("trip_m", meters.toFloat()); Prefs.setQuiet("trip_s", movingSec)
-        Prefs.setQuiet("trip_max", maxKmh); Prefs.setQuiet("trip_start", startedAt)
-        Prefs.setQuiet("trip_saved", System.currentTimeMillis())
+        // Én skriving til disken (ikke fem) – kalles hvert 20. sekund mens bilen kjører
+        Prefs.setQuietAll("trip_m" to meters.toFloat(), "trip_s" to movingSec, "trip_max" to maxKmh,
+            "trip_start" to startedAt, "trip_saved" to System.currentTimeMillis())
     }
 }
 
@@ -311,7 +312,7 @@ object Parking {
             val r = FloatArray(1)
             if (known) Location.distanceBetween(lat, lon, g.lat, g.lon, r)
             val moved = !known || r[0] > 25
-            Prefs.setQuiet("park_lat", g.lat.toFloat()); Prefs.setQuiet("park_lon", g.lon.toFloat())
+            Prefs.setQuietAll("park_lat" to g.lat.toFloat(), "park_lon" to g.lon.toFloat())
             // Ny plass: lagres med Prefs.set så parkeringskortet tegnes på nytt (ikke hvert 15. sekund når bilen bare står)
             if (moved) Prefs.set("park_time", System.currentTimeMillis()) else Prefs.setQuiet("park_time", System.currentTimeMillis())
         }

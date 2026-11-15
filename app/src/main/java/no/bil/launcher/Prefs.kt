@@ -7,6 +7,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.setValue
 import org.json.JSONObject
+import kotlinx.coroutines.launch
 import java.io.File
 import java.io.PrintWriter
 import java.io.StringWriter
@@ -25,10 +26,17 @@ class TosApp : Application() {
         runCatching { FytMain.sanitizeOnStart() }
         Hub.start(this)
         runCatching { FytSafety.noticeOnStart() }
-        // «Full kontroll» (bare når T'OS er enhetseier) og knappestyring som holdes på (bare med PC-tillatelse)
-        Prefs.onOwnerToggle = { Owner.apply(this) }
-        runCatching { Owner.apply(this) }
+        // «Full kontroll» (bare når T'OS er enhetseier) og knappestyring som holdes på (bare med PC-tillatelse).
+        // Ved oppstart i bakgrunnen: som enhetseier er det 15–20 kall til Android (tillatelser, skjulte apper …), og de
+        // forsinket første skjermbilde ved hver oppstart. En bryter som endres, virker fortsatt med en gang (sjeldent trykk).
+        // Låsen hindrer at de to går samtidig.
+        Prefs.onOwnerToggle = { synchronized(ownerLock) { Owner.apply(this) } }
+        Hub.scope.launch(kotlinx.coroutines.Dispatchers.IO + kotlinx.coroutines.CoroutineName("Full kontroll")) {
+            runCatching { synchronized(ownerLock) { Owner.apply(this@TosApp) } }
+        }
     }
+
+    private val ownerLock = Any()
 }
 
 /**
@@ -42,7 +50,10 @@ object Prefs {
 
     /** Kalles når en «owner_»-bryter endres («Full kontroll», satt av [TosApp]). */
     var onOwnerToggle: (() -> Unit)? = null
-    fun init(c: Context) { sp = c.applicationContext.getSharedPreferences("tos", Context.MODE_PRIVATE) }
+    fun init(c: Context) {
+        sp = c.applicationContext.getSharedPreferences("tos", Context.MODE_PRIVATE)
+        Store.init(c)
+    }
 
     // Har en verdi feil type (f.eks. fra en gammel sikkerhetskopi), brukes standardverdien i stedet for å krasje
     private inline fun <T> safe(d: T, get: () -> T): T = try { get() } catch (_: ClassCastException) { d }
@@ -93,6 +104,24 @@ object Prefs {
         sp.edit().apply {
             when (v) { is String -> putString(k, v); is Float -> putFloat(k, v); is Long -> putLong(k, v); is Int -> putInt(k, v); is Boolean -> putBoolean(k, v) }
         }.apply()
+    }
+
+    /**
+     * Flere verdier i ÉN skriving til disken (uten å tegne skjermen på nytt). Hver [setQuiet] skriver hele
+     * innstillingsfila på nytt; turen lagret fem verdier hvert 20. sekund = fem skrivinger.
+     */
+    fun setQuietAll(vararg kv: Pair<String, Any>) {
+        val e = sp.edit()
+        for ((k, v) in kv) when (v) { is String -> e.putString(k, v); is Float -> e.putFloat(k, v); is Long -> e.putLong(k, v); is Int -> e.putInt(k, v); is Boolean -> e.putBoolean(k, v) }
+        e.apply()
+    }
+
+    /** Leser og fjerner en verdi (uten å tegne skjermen på nytt) – til flytting av gamle verdier. null = fantes ikke. */
+    internal fun takeQuiet(k: String): String? {
+        if (!sp.contains(k)) return null
+        val v = safe(null as String?) { sp.getString(k, null) }
+        sp.edit().remove(k).apply()
+        return v
     }
 
     /* ---------- Sikkerhetskopi (lagres som én fil, f.eks. i Google Drive) ---------- */
@@ -196,10 +225,64 @@ internal fun crashLogAppend(old: String, entry: String, max: Int = 30_000): Stri
     return if (old.isBlank()) head else (head + sep + old).take(max)
 }
 
+/**
+ * Store lister som skrives ofte, i en egen fil: telefonboken og anropslista fra stereoens Bluetooth (FytPhone).
+ * Før lå de i hovedfila med alle innstillingene – med en telefonbok på flere hundre navn ble den fila stor, og den
+ * leses inn før første skjermbilde ved HVER oppstart og skrives helt på nytt ved hver lagring (turen hvert 20. s).
+ * Flyttes automatisk første gang verdien leses. Er ikke med i sikkerhetskopien (telefonboken hentes fra telefonen).
+ */
+object Store {
+    @Volatile private var sp: SharedPreferences? = null
+    fun init(c: Context) { sp = c.applicationContext.getSharedPreferences("tos_lager", Context.MODE_PRIVATE) }
+
+    fun str(k: String): String {
+        val s = sp ?: return ""
+        s.getString(k, null)?.let { return it }
+        // Gammel plass (før 5.14): flytt hit én gang
+        val old = runCatching { Prefs.takeQuiet(k) }.getOrNull() ?: return ""
+        s.edit().putString(k, old).apply()
+        return old
+    }
+
+    fun set(k: String, v: String) { sp?.edit()?.putString(k, v)?.apply() }
+}
+
+/** Teksten som skrives når T'OS fanget en feil i en bakgrunnsjobb og fortsatte (ren logikk, testes). */
+internal fun caughtEntry(at: String, where: String, stack: String): String =
+    "$at\nFANGET i $where – T'OS fortsatte (ikke en krasj)\n$stack"
+
 object CrashLog {
     private fun file(c: Context) = File(c.filesDir, "krasj.txt")
 
+    /** App-konteksten (svak referanse), så [caught] kan skrive uten å få en Context. */
+    @Volatile private var appRef: java.lang.ref.WeakReference<Context>? = null
+
+    /** Antall feil T'OS har fanget i bakgrunnen siden start (til oppsettrapporten). */
+    @Volatile var caughtCount = 0; private set
+
+    /**
+     * For bakgrunnsjobbene (Hub.scope o.l.): en feil i én jobb skrives i krasj-loggen, men tar ikke ned hele
+     * startskjermen. Før krasjet T'OS (svart skjerm et øyeblikk, og etter tre ganger sikker modus) av f.eks. en feil
+     * i versjonssjekken eller en FYT-melding. Feil i FYT-koden telles fortsatt for FytSafety (slår av FYT ved neste start).
+     */
+    val handler = kotlinx.coroutines.CoroutineExceptionHandler { ctx, e ->
+        caught(ctx[kotlinx.coroutines.CoroutineName]?.name ?: "bakgrunnsjobb", e)
+    }
+
+    fun caught(where: String, e: Throwable) {
+        caughtCount++
+        val c = appRef?.get() ?: return
+        val sw = StringWriter()
+        runCatching { e.printStackTrace(PrintWriter(sw)) }
+        runCatching { if (FytSafetyLogic.isFytCrash(sw.toString())) SafeMode.recordFytError(c) }
+        runCatching {
+            val old = file(c).takeIf { it.exists() }?.readText().orEmpty()
+            file(c).writeText(crashLogAppend(old, caughtEntry(Date().toString(), where, sw.toString())))
+        }
+    }
+
     fun install(c: Context) {
+        appRef = java.lang.ref.WeakReference(c.applicationContext)
         val prev = Thread.getDefaultUncaughtExceptionHandler()
         Thread.setDefaultUncaughtExceptionHandler { t, e ->
             val sw = StringWriter()
@@ -261,6 +344,13 @@ object SafeMode {
         val ft = if (fyt) old + now else old
         // commit (ikke apply): prosessen dør rett etter
         sp(c).edit().putString("t", times.joinToString(",")).putString("ft", ft.joinToString(",")).commit()
+    }
+
+    /** En feil i FYT-koden som T'OS fanget (ikke en krasj): telles bare for FytSafety, ikke for sikker modus. */
+    fun recordFytError(c: Context) {
+        val now = System.currentTimeMillis()
+        val ft = FytSafetyLogic.parseTimes(sp(c).getString("ft", "")).filter { recentCrash(now, it) } + now
+        sp(c).edit().putString("ft", ft.joinToString(",")).apply()
     }
 
     fun check(c: Context) {
@@ -367,6 +457,7 @@ object SetupReport {
         val pw = c.getSystemService(Context.POWER_SERVICE) as? android.os.PowerManager
         append(runCatching { Owner.report(c) }.getOrDefault(""))
         appendLine("Unntatt batterisparing: ${runCatching { pw?.isIgnoringBatteryOptimizations(c.packageName) }.getOrNull()}")
+        appendLine("Fangede feil i bakgrunnen siden start (T'OS fortsatte): ${CrashLog.caughtCount}")
         appendLine("Siste krasj: ${runCatching { File(c.filesDir, "krasj.txt").takeIf { it.exists() }?.useLines { l -> l.take(4).joinToString(" | ") } }.getOrNull() ?: "ingen"}")
         appendLine()
         appendLine("--- Alle installerte pakker ---")
