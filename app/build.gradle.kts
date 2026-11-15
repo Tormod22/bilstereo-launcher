@@ -78,6 +78,9 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
     implementation("com.google.zxing:core:3.5.3")   // QR-kode for parkeringsplassen
     implementation("org.maplibre.gl:android-sdk:11.8.0")   // kart uten nett (PMTiles fra OpenStreetMap)
+    implementation("dev.mobile:dadb:1.2.9") {   // «Ta over stereoen»: T'OS kobler seg til sin egen ADB (Apache-2.0)
+        exclude(group = "org.graalvm.buildtools")   // bare en testhjelper i dadb sitt oppsett, trengs ikke i appen
+    }
     testImplementation("junit:junit:4.13.2")
     // «Alle skjermer åpner uten krasj»: Compose-UI kjøres i Robolectric (ingen stereo/emulator nødvendig)
     testImplementation("org.robolectric:robolectric:4.13")

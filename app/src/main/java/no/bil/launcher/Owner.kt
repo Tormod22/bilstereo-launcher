@@ -251,6 +251,7 @@ fun FullControlSettings() {
     val active = remember(tick, Prefs.version) { Owner.active(context) }
     val howTo = { HelpJump.target = "Full kontroll"; Nav.screen = Screen.HELP }
     Section("Full kontroll")
+    TakeoverRow()
     if (!active) {
         SettingRow("Full kontroll: Av",
             "Med PC én gang kan T'OS ta over helt: Androids nedtrekksmeny stenges, ingen tillatelsesvinduer, de andre " +

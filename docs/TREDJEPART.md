@@ -68,3 +68,10 @@ Ingen kode er kopiert; bare tallene og formatet.
   Det er en endret versjon («Modified Version») etter OFL; navnet «Doto» er ikke et reservert navn i lisensen.
 - Lisensteksten følger med appen: `app/src/main/assets/licenses/Doto-OFL.txt`.
 - Forhåndsvisningen i nettleseren (`preview/index.html`) henter Doto fra Google Fonts.
+
+## dadb («Ta over stereoen», v5.13)
+
+- **dadb** 1.2.9 av mobile.dev – https://github.com/mobile-dev-inc/dadb. Lisens: **Apache License 2.0**.
+  Brukt som bibliotek (Maven: `dev.mobile:dadb:1.2.9`), ikke endret. T'OS kobler seg med den til stereoens egen ADB
+  (127.0.0.1:5555) og kjører de samme kommandoene som PC-oppsettet (`Takeover.kt`).
+- dadb trekker inn **Okio** (Square, Apache License 2.0), som T'OS allerede hadde via andre biblioteker.

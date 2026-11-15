@@ -192,6 +192,24 @@ Stereoen må være koblet til internett (for eksempel delt nett fra iPhonen).
 
 Etter en oppdatering står det en stund på forsiden at T'OS er oppdatert. Trykk på linja for å se hva som er nytt og hva du kan prøve. Du finner det også under **Innstillinger → Om stereoen → Hva er nytt**.
 
+## Ta over stereoen (uten PC)
+
+Det enkleste: T'OS gjør alt selv. Du trenger ingen PC.
+
+Åpne **Innstillinger → Om stereoen → Ta over stereoen – uten PC** (også øverst i Førstegangsoppsett). Gjør punktene ett for ett. Hakene kommer av seg selv.
+
+1. **Utviklermodus.** Trykk **Åpne**, og trykk 7 ganger på **Versjonsnummer** (eller **Build number**). Trykk tilbake.
+2. **USB-feilsøking.** Trykk **Åpne**, og slå på **USB-feilsøking**. Har stereoen **ADB over nettverk**, slå på den også.
+3. **Stereoen åpner for T'OS.** Får hake av seg selv. Kommer den ikke, kan ikke stereoen dette – bruk PC i stedet (se under).
+4. **Koble til.** Trykk **Koble til**. Stereoen spør «Tillat USB-feilsøking?». Kryss av for **Tillat alltid** og trykk **OK**.
+5. **Ta over.** Trykk den store knappen. T'OS gir seg selv alle tillatelsene, slår på knappestyringen, skjuler stereoens linje øverst og slår på full kontroll. Du ser hver ting med hake.
+
+Til slutt slår T'OS av feilsøkingen igjen (tryggere). T'OS trenger den ikke lenger.
+
+Har du en Google-konto på stereoen, prøver T'OS å komme rundt den selv. Går ikke det, står det hva du gjør: fjern kontoen et øyeblikk, trykk **Ta over** igjen, og legg kontoen inn igjen.
+
+**Angre:** **Angre** på samme side viser stereoens linje igjen. Full kontroll slås av under **Innstillinger → Om stereoen → Slå av full kontroll**.
+
 ## Med PC (valgfritt)
 
 Noe kan bare gjøres med en PC og programmet ADB. Det er ikke nødvendig, men det gir alle tillatelsene på én gang og kan skjule stereoens egen linje øverst i alle apper.

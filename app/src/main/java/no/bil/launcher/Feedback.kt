@@ -180,6 +180,7 @@ object Feedback {
             append(FeedbackLogic.section("Selvtest (siste resultat)", selftest))
             append(FeedbackLogic.section("Oppsettrapport", safe { SetupReport.build(c) }))
             append(FeedbackLogic.section("Feilrapport (krasj og logg)", safe { CrashLog.report(c) }))
+            append(FeedbackLogic.section("Ta over stereoen (uten PC)", safe { Takeover.report(c) }))
             append(FeedbackLogic.section("Stereoen (kort kartlegging)", safe { SystemSurvey.build(c, null, compact = true) }))
             if (rec != null) append(FeedbackLogic.section("Siste opptak (${rec.first.name})", rec.second.joinToString("\n")))
         }

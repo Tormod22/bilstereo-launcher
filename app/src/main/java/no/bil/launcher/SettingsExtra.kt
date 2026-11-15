@@ -602,6 +602,8 @@ fun SetupScreen(onClose: () -> Unit) {
             color = TextMuted, fontSize = 15.sp, modifier = Modifier.padding(bottom = 12.dp),
         )
         Column(Modifier.verticalScroll(rememberScrollState())) {
+            // Enklest: T'OS gjør alt selv (uten PC og uten å gå gjennom stegene under ett for ett)
+            if (fyt) { TakeoverRow(); Spacer(Modifier.height(10.dp)) }
             for (step in steps) when (step) {
                 SetupStep.LOCATION -> {
                     val fine = remember(tick) { context.hasPermission(Manifest.permission.ACCESS_FINE_LOCATION) }
