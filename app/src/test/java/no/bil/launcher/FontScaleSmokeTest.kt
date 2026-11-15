@@ -79,6 +79,7 @@ class FontScaleSmokeTest {
             show("tuning", night) { TuningScreen {} }
             show("siste", night) { RecentsScreen {} }
             show("hurtigpanel", night) { QuickPanel(onClose = {}, onGo = {}) }
+            show("ta_over", night) { TakeoverScreen {} }
         }
         // Prikkstil (v5.12): forsiden, klokka og FYT-radioen med prikktall
         for (night in listOf(false, true)) {

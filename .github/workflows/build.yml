@@ -201,6 +201,16 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      # PC-oppsettet (dobbeltklikk-fila) ligger ved siden av APK-en: .../releases/download/latest/tos-oppsett.bat
+      # (CRLF-linjeskift kommer fra .gitattributes ved utsjekking)
+      - name: Publiser PC-oppsettet (tos-oppsett.bat) på «latest»
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: latest
+          files: docs/tos-oppsett.bat
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Publiser version.json på «latest»
         uses: softprops/action-gh-release@v3
         with:

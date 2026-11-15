@@ -15,8 +15,8 @@ android {
         // På GitHub: byggnummeret (1000 + nr.) så hver nye versjon alltid får høyere tall enn den forrige.
         // Lokalt: tallet under. (versionName = «x.y» lokalt, «x.y.nr» på GitHub.)
         val ciRun = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull()
-        versionCode = if (ciRun != null) 1000 + ciRun else 34
-        versionName = if (ciRun != null) "5.12.$ciRun" else "5.12"
+        versionCode = if (ciRun != null) 1000 + ciRun else 35
+        versionName = if (ciRun != null) "5.13.$ciRun" else "5.13"
         // Bilstereoen har ARM-prosessor; dropper x86 for å holde appen mindre (kartmotoren har egne biblioteker)
         ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a") }
     }
@@ -78,6 +78,9 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
     implementation("com.google.zxing:core:3.5.3")   // QR-kode for parkeringsplassen
     implementation("org.maplibre.gl:android-sdk:11.8.0")   // kart uten nett (PMTiles fra OpenStreetMap)
+    implementation("dev.mobile:dadb:1.2.9") {   // «Ta over stereoen»: T'OS kobler seg til sin egen ADB (Apache-2.0)
+        exclude(group = "org.graalvm.buildtools")   // bare en testhjelper i dadb sitt oppsett, trengs ikke i appen
+    }
     testImplementation("junit:junit:4.13.2")
     // «Alle skjermer åpner uten krasj»: Compose-UI kjøres i Robolectric (ingen stereo/emulator nødvendig)
     testImplementation("org.robolectric:robolectric:4.13")

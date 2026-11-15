@@ -61,7 +61,7 @@ enum class SetCat(val label: String, val icon: ImageVector, val group: String, v
     APPS("Apper", Icons.Default.Apps, "Stereoen", "apper app skjul vis startskjerm carplay car link radio kamera systemapper avinstaller siste nylige bakgrunn lukk"),
     STORAGE("Lagring", Icons.Default.Storage, "Stereoen", "lagring plass minne cache tøm kart minnepinne"),
     TIME("Dato, tid og språk", Icons.Default.Schedule, "Stereoen", "dato tid klokke tidssone 24 timer språk tastatur norsk"),
-    ABOUT("Om stereoen", Icons.Default.Info, "Stereoen", "om versjon oppdatering oppdater stereo android prosessor minne oppsett tillatelser adb pc avansert bruksanvisning hjelp manual nytt hva er nytt endringer full kontroll enhetseier device owner nedtrekksmeny startskjerm oppstartsbilde logo"),
+    ABOUT("Om stereoen", Icons.Default.Info, "Stereoen", "om versjon oppdatering oppdater stereo android prosessor minne oppsett tillatelser adb pc avansert bruksanvisning hjelp manual nytt hva er nytt endringer full kontroll enhetseier device owner nedtrekksmeny startskjerm oppstartsbilde logo ta over uten pc feilsøking adb"),
     MAP("Kart og kjøring", Icons.Default.Map, "T'OS", "kart navigasjon adresse hjem jobb waze maps fart fartsgrense popup"),
     MUSIC("Musikk og oppstart", Icons.Default.MusicNote, "T'OS", "musikk spotify oppstart sangtittel cover varseltilgang radio fm radiomotor"),
     PHONE("Telefon", Icons.Default.Phone, "T'OS", "telefon favoritter carplay ring samtale"),

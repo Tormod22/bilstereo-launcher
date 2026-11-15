@@ -3,6 +3,7 @@ package no.bil.launcher
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.core.app.ApplicationProvider
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -156,6 +157,9 @@ class FeedbackSmokeTest {
         rule.awaitUntil("linja «Hva er nytt» på forsiden") {
             rule.onAllNodesWithText("Oppdatert til T'OS", substring = true).fetchSemanticsNodes().isNotEmpty()
         }
+        // Les nytt.md på forhånd: da tegnes siden uten tur via bakgrunnstråd (den kunne en sjelden gang gi
+        // «The current thread must have a looper» i testmiljøet).
+        HelpDoc.load(ApplicationProvider.getApplicationContext(), NewsLogic.ASSET, "Hva er nytt")
         show(Screen.NEWS)
         rule.awaitUntil("nytt.md lest fra assets") { rule.countText("T'OS 5.10") > 0 }
         rule.awaitText("Send alt til utvikleren")

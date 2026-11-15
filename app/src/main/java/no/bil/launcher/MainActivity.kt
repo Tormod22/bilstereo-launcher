@@ -364,6 +364,7 @@ fun Root() {
                         Screen.SELFTEST -> SelfTestScreen(home)
                         Screen.HELP -> HelpScreen(home)
                         Screen.NEWS -> NewsScreen(home)
+                        Screen.TAKEOVER -> TakeoverScreen(home)
                         Screen.CLOCK -> {}
                     }
                 }

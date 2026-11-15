@@ -1,85 +1,73 @@
-# Oppsett av T'OS med PC – uten Android-menyene
+# T'OS-oppsett med PC – én fil, dobbeltklikk
 
-En vanlig app må be om hver tillatelse gjennom Androids egne menyer (knappestyring, varseltilgang,
-«vis over andre apper» osv.). Med en PC kan alt gis **på én gang**, uten at du ser noen av
-Android-menyene på stereoen. Det tar ca. 15 minutter første gang.
+Med en Windows-PC kan T'OS få alle tillatelsene og «Full kontroll» på én gang, uten Android-menyene
+på stereoen. Du trenger ikke installere noe, og du trenger ikke kabel. Det tar 5–10 minutter.
 
 Du trenger:
-- en Windows-PC (bærbar er fint) på **samme Wi-Fi** som stereoen (f.eks. delt nett fra iPhonen),
-- stereoen slått på, med T'OS installert.
+- en Windows-PC (bærbar er fint),
+- at PC-en og stereoen er på **samme Wi-Fi** (f.eks. delt nett fra iPhonen),
+- T'OS 5.12 eller nyere på stereoen.
 
-Du trenger *ikke* kabel.
+## 1) Last ned fila
+
+På PC-en: last ned **tos-oppsett.bat** her:
+https://github.com/Tormod22/bilstereo-launcher/releases/download/latest/tos-oppsett.bat
+
+Den havner i mappa **Nedlastinger**.
+
+## 2) Slå på feilsøking på stereoen
+
+I T'OS: **Innstillinger → Om stereoen → Ta over stereoen**. Der står det hvor du trykker for å slå på
+utviklermodus og feilsøking, og hvilken adresse stereoen har.
+
+## 3) Dobbeltklikk fila og følg teksten
+
+Dobbeltklikk **tos-oppsett.bat** i Nedlastinger. Et svart vindu åpnes og forteller deg hva som skjer.
+
+- Sier Windows **«Windows beskyttet PC-en»**: trykk **«Mer info»** og så **«Kjør likevel»**.
+  (Windows sier dette om alle filer fra nettet som ikke er fra en stor butikk.)
+- Fila laster ned Googles ADB-verktøy selv og finner stereoen på nettet selv.
+- Spør stereoen **«Vil du tillate USB-feilsøking?»**: kryss av **«Tillat alltid»** og trykk **OK**.
+- Spør den om Google-kontoen: følg teksten (kontosiden åpnes på stereoen, og du legger kontoen inn igjen etterpå).
+- Til slutt slår den av feilsøkingen igjen, så ingen andre kan koble seg til stereoen.
+
+Står det **FEIL** i oppsummeringen: send fila **tos-oppsett-logg.txt** (ligger i Nedlastinger) til utvikleren.
+
+**Angre:** dobbeltklikk fila igjen og velg **2**. Full kontroll slås av i T'OS:
+**Innstillinger → Om stereoen → Slå av full kontroll** (trykk to ganger).
 
 ---
 
-## Steg 1 – Last ned ADB på PC-en
+## For spesielt interesserte
 
-1. Gå til **developer.android.com/tools/releases/platform-tools** på PC-en.
-2. Trykk **«Download SDK Platform-Tools for Windows»**, godta vilkårene og last ned.
-3. Høyreklikk zip-fila → **«Pakk ut alle»** → velg f.eks. `C:\platform-tools`.
+Det samme for hånd, med ADB i et kommandovindu (`adb` = `platform-tools\adb.exe` fra
+developer.android.com/tools/releases/platform-tools).
 
-## Steg 2 – Slå på utvikleralternativer på stereoen
+### Koble til
 
-Dette er den eneste gangen du må inn i Android-menyene.
+```
+adb connect 192.168.1.50:5555
+adb devices
+```
+Bytt ut tallene med stereoens adresse (T'OS viser den). Stereoen skal stå som «device».
+Står den som «unauthorized»: trykk «Tillat alltid» på stereoen.
 
-1. I T'OS: **Innstillinger → Om stereoen → Android-innstillinger (avansert)** (trykk to ganger).
-2. Gå til **Om nettbrettet / Om enheten** (eller «System → Om»).
-3. Trykk **7 ganger** på **«Versjonsnummer»** (eller «Build number»). Det står «Du er nå utvikler».
-4. Gå tilbake til **System → Utvikleralternativer** og slå på én av disse (stereoene er forskjellige):
-   - **«Trådløs feilsøking»** (Android 11 og nyere), eller
-   - **«ADB over nettverk»** / **«Nettverks-ADB»**, eller
-   - **«USB-feilsøking»** (noen stereoer åpner da ADB på nettet av seg selv).
+### Tillatelsene
 
-Stereoens IP-adresse står i T'OS under **Om stereoen → Førstegangsoppsett → Med PC (ADB)**,
-eller i Android under Wi-Fi → nettet du er koblet til.
-
-## Steg 3 – Koble PC-en til stereoen
-
-1. Åpne mappa `C:\platform-tools` i Utforsker.
-2. Klikk i adresselinjen øverst, skriv `cmd` og trykk Enter. Et svart vindu («Ledetekst») åpnes.
-3. Skriv (bytt ut tallene med stereoens adresse):
-
-   **Med «ADB over nettverk»:**
-   ```
-   adb connect 192.168.1.50:5555
-   ```
-
-   **Med «Trådløs feilsøking» (Android 11+):** trykk «Par enhet med paringskode» på stereoen. Den viser
-   en adresse med port (f.eks. `192.168.1.50:37123`) og en 6-sifret kode.
-   ```
-   adb pair 192.168.1.50:37123
-   ```
-   Skriv koden. Deretter, med adressen og porten som står øverst på siden «Trådløs feilsøking»
-   (en annen port):
-   ```
-   adb connect 192.168.1.50:41234
-   ```
-4. Stereoen kan spørre **«Vil du tillate USB-feilsøking?»** – kryss av «Tillat alltid» og trykk OK.
-5. Sjekk med `adb devices`. Stereoen skal stå som «device».
-
-## Steg 4 – Gi T'OS alle tillatelsene
-
-**Enklest:** last ned [`tos-oppsett.bat`](tos-oppsett.bat) (høyreklikk → «Lagre som») til `C:\platform-tools`
-og dobbeltklikk på den. Den spør etter stereoens adresse og kjører alt under.
-
-**For hånd:** skriv eller lim inn linjene under, én og én, i det svarte vinduet.
-
-Knappestyring. Først: se om stereoen har egne tjenester på fra før:
+Knappestyring – legg T'OS til tjenestene stereoen alt har på (ikke slå av dem). Se først hva som står der:
 ```
 adb shell settings get secure enabled_accessibility_services
 ```
-- Står det `null` eller ingenting: skriv
+- `null` eller tomt:
   ```
   adb shell settings put secure enabled_accessibility_services no.bil.launcher/no.bil.launcher.KeyService
   ```
-- Står det noe annet (f.eks. `com.stereo/com.stereo.Tjeneste`): ta det med, med kolon imellom, så stereoens
-  egne tjenester ikke slås av:
+- Noe annet (f.eks. `com.stereo/com.stereo.Tjeneste`): ta det med, med kolon imellom:
   ```
   adb shell settings put secure enabled_accessibility_services com.stereo/com.stereo.Tjeneste:no.bil.launcher/no.bil.launcher.KeyService
   ```
-  (T'OS viser hele den riktige linjen under Førstegangsoppsett → Med PC.)
 
-Resten:
+Resten (i denne rekkefølgen – samme som tos-oppsett.bat og «Ta over stereoen» i T'OS):
 ```
 adb shell settings put secure accessibility_enabled 1
 adb shell cmd notification allow_listener no.bil.launcher/no.bil.launcher.MediaListener
@@ -103,9 +91,9 @@ adb shell cmd package set-home-activity no.bil.launcher/.MainActivity
 adb shell cmd role add-role-holder android.app.role.DIALER no.bil.launcher
 adb shell settings put system show_navigationbar 0
 adb shell pm grant no.bil.launcher android.permission.WRITE_SECURE_SETTINGS
+adb shell settings put global auto_time 1
+adb shell settings put global auto_time_zone 1
 ```
-
-Hva linjene gjør:
 
 | Linje | Gir T'OS |
 |---|---|
@@ -115,67 +103,62 @@ Hva linjene gjør:
 | `WRITE_SETTINGS` | Lysstyrke, nattdemping, tastelyd og 24-timers klokke |
 | `REQUEST_INSTALL_PACKAGES` | Installere oppdateringer av T'OS |
 | `ACCESS_RESTRICTED_SETTINGS` | Android 13: fjerner «begrenset innstilling» for apper fra Drive |
-| `GET_USAGE_STATS` | «Siste apper» i T'OS viser alle apper du har brukt (ikke bare de T'OS selv har sett) |
+| `GET_USAGE_STATS` | «Siste apper» i T'OS viser alle apper du har brukt |
 | `pm grant …` | Posisjon, Bluetooth, varsel, kontakter, anrop og telefon |
 | `network-suggestions-set-user-approved` | Wi-Fi-nett kan legges inn fra T'OS uten spørsmål (Android 11+) |
 | `deviceidle whitelist` | Batterisparing stopper ikke T'OS |
 | `set-home-activity` | T'OS blir startskjermen |
-| `add-role-holder … DIALER` | T'OS blir telefon-appen (samtaler vises i T'OS) |
-| `WRITE_SECURE_SETTINGS` | T'OS slår knappestyringen og varseltilgangen på igjen selv hvis de blir slått av (f.eks. etter en oppdatering) |
-| `show_navigationbar 0` | **Valgfritt, bare FYT-stereoer.** Skjuler stereoens egen statuslinje (hjem-knapp, klokke, volum, «siste apper») i *alle* apper, ikke bare i T'OS. Angre: `adb shell settings put system show_navigationbar 1` |
+| `add-role-holder … DIALER` | T'OS blir telefon-appen |
+| `show_navigationbar 0` | Bare FYT-stereoer: skjuler stereoens egen linje øverst i *alle* apper |
+| `WRITE_SECURE_SETTINGS` | T'OS slår knappestyringen og varseltilgangen på igjen selv hvis de blir slått av |
+| `auto_time`, `auto_time_zone` | Klokka og tidssonen stilles automatisk |
 
-**Feilmeldinger er ofte helt greit.** En linje som svarer f.eks. «Unknown permission», «Unknown operation»
-eller «not a changeable permission type» gjelder en annen Android-versjon enn stereoen har, og kan overses.
+Svar som «Unknown permission», «Unknown operation» eller «not a changeable permission type» gjelder en
+annen Android-versjon enn stereoen har, og kan overses.
 
-## Steg 5 – Sjekk i T'OS
+### Full kontroll (T'OS blir enhetseier)
 
-Åpne **Innstillinger → Om stereoen → Førstegangsoppsett**. Alt du har gitt, har fått en hake (✓).
-Hakene oppdateres av seg selv mens du skriver kommandoene.
-
-Til slutt kan du slå av «Trådløs feilsøking» / «ADB over nettverk» igjen hvis du vil (tillatelsene blir værende).
-
----
-
-### Valgfritt: rette klokka
-
-Vanlige apper får ikke stille klokka. Går den feil:
+Android tillater dette bare når ingen konto teller. tos-oppsett.bat slår derfor av Google-tjenestene
+i noen sekunder (så Google-kontoen ikke teller), gjør T'OS til enhetseier, og slår dem **alltid** på igjen:
 ```
-adb shell settings put global auto_time 1
-adb shell settings put global auto_time_zone 1
+adb shell pm disable-user --user 0 com.google.android.gms
+adb shell dpm set-device-owner no.bil.launcher/.TosAdmin
+adb shell pm enable com.google.android.gms
 ```
+Svaret på den midterste skal være «Success: Device owner set to package …».
+- «there are already some accounts on the device»: en konto teller fortsatt. Fjern Google-kontoen på
+  stereoen (`adb shell am start -a android.settings.SYNC_SETTINGS` åpner kontosiden), kjør
+  `dpm set-device-owner` igjen, og legg kontoen inn igjen etterpå
+  (`adb shell am start -a android.settings.ADD_ACCOUNT_SETTINGS`).
+- «there are already several users on the device»: stereoen har flere brukere. Da går det ikke uten å
+  nullstille stereoen – hopp over dette.
+- «Unknown admin»: T'OS er for gammel – oppdater til 5.12 eller nyere.
+
+Husk alltid `adb shell pm enable com.google.android.gms` til slutt, ellers virker ikke Play Butikk.
+
+Med full kontroll stenger T'OS Androids nedtrekksmeny, skjuler de gamle startskjermene, gir seg selv
+tillatelser, låser seg som startskjerm og oppdaterer seg uten spørsmål. FYT-tjenestene (radio,
+Bluetooth, rattknapper, CarPlay) røres ikke.
+
+### Slå av feilsøking igjen
+
+```
+adb shell settings put global adb_enabled 0
+```
+Tillatelsene T'OS har fått, blir værende.
+
+### Angre
+
+```
+adb shell settings put system show_navigationbar 1
+adb shell pm enable com.google.android.gms
+adb shell dumpsys deviceidle whitelist -no.bil.launcher
+```
+Full kontroll: I T'OS: **Innstillinger → Om stereoen → Slå av full kontroll** (trykk to ganger).
+Det finnes ingen ADB-kommando som fjerner en enhetseier fra en vanlig app – knappen i T'OS er måten å
+angre på. Siste utvei hvis T'OS ikke kan åpnes: nullstille stereoen til fabrikkinnstillinger (alt slettes).
 
 ### Oppdateringer
 
-Etter oppsettet trenger du ikke PC-en mer. Oppdateringsknappen i T'OS laster ned og installerer selv.
-Første gang ber Android om ett trykk på «Installer»; etter det går oppdateringene av seg selv (Android 12+).
-
----
-
-## Valgfritt: Full kontroll (T'OS tar over helt)
-
-Med full kontroll blir T'OS stereoens «enhetseier». Da kan T'OS selv:
-
-- stenge Androids nedtrekksmeny (og varsler som spretter ned øverst),
-- gi seg selv tillatelser, så Android aldri viser tillatelsesvinduer,
-- skjule stereoens andre startskjermer (launcher4/9/24/35/36 og Unisoc), så de aldri dukker opp,
-- låse seg som startskjerm, slå av skjermlåsen og stille klokka automatisk,
-- installere oppdateringer helt uten spørsmål.
-
-FYT-tjenestene (radio, Bluetooth, rattknapper, CarPlay) røres ikke.
-
-**Android tillater dette bare når det ikke finnes noen kontoer på stereoen.** Derfor:
-
-1. På stereoen: **Android-innstillinger → Kontoer → Google → Fjern konto** (Play Butikk virker ikke en liten stund).
-2. På PC-en:
-   ```
-   adb shell dpm set-device-owner no.bil.launcher/.TosAdmin
-   ```
-   Svaret skal være «Success: Device owner set to package …».
-   - «there are already some accounts on the device»: en konto finnes fortsatt (se `adb shell dumpsys account`). Fjern den og prøv igjen.
-   - «there are already several users on the device»: stereoen har flere brukere. Da går det ikke uten å nullstille stereoen – hopp over dette.
-3. Legg Google-kontoen inn igjen (**Android-innstillinger → Kontoer → Legg til konto**).
-4. I T'OS: **Innstillinger → Om stereoen → Full kontroll** står nå på «På». Hver bryter kan slås av for seg.
-
-**Angre:** I T'OS: **Innstillinger → Om stereoen → Slå av full kontroll** (trykk to ganger). Alt settes tilbake.
-Det finnes ingen ADB-kommando som fjerner en enhetseier fra en vanlig app – knappen i T'OS er måten å angre på.
-Siste utvei hvis T'OS ikke kan åpnes: nullstille stereoen til fabrikkinnstillinger (alt slettes).
+Etter oppsettet trenger du ikke PC-en mer. Oppdateringsknappen i T'OS laster ned og installerer selv
+(med full kontroll helt uten spørsmål).
