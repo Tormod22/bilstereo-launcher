@@ -102,6 +102,7 @@ adb shell dumpsys deviceidle whitelist +no.bil.launcher
 adb shell cmd package set-home-activity no.bil.launcher/.MainActivity
 adb shell cmd role add-role-holder android.app.role.DIALER no.bil.launcher
 adb shell settings put system show_navigationbar 0
+adb shell pm grant no.bil.launcher android.permission.WRITE_SECURE_SETTINGS
 ```
 
 Hva linjene gjør:
@@ -120,6 +121,7 @@ Hva linjene gjør:
 | `deviceidle whitelist` | Batterisparing stopper ikke T'OS |
 | `set-home-activity` | T'OS blir startskjermen |
 | `add-role-holder … DIALER` | T'OS blir telefon-appen (samtaler vises i T'OS) |
+| `WRITE_SECURE_SETTINGS` | T'OS slår knappestyringen og varseltilgangen på igjen selv hvis de blir slått av (f.eks. etter en oppdatering) |
 | `show_navigationbar 0` | **Valgfritt, bare FYT-stereoer.** Skjuler stereoens egen statuslinje (hjem-knapp, klokke, volum, «siste apper») i *alle* apper, ikke bare i T'OS. Angre: `adb shell settings put system show_navigationbar 1` |
 
 **Feilmeldinger er ofte helt greit.** En linje som svarer f.eks. «Unknown permission», «Unknown operation»
@@ -146,3 +148,34 @@ adb shell settings put global auto_time_zone 1
 
 Etter oppsettet trenger du ikke PC-en mer. Oppdateringsknappen i T'OS laster ned og installerer selv.
 Første gang ber Android om ett trykk på «Installer»; etter det går oppdateringene av seg selv (Android 12+).
+
+---
+
+## Valgfritt: Full kontroll (T'OS tar over helt)
+
+Med full kontroll blir T'OS stereoens «enhetseier». Da kan T'OS selv:
+
+- stenge Androids nedtrekksmeny (og varsler som spretter ned øverst),
+- gi seg selv tillatelser, så Android aldri viser tillatelsesvinduer,
+- skjule stereoens andre startskjermer (launcher4/9/24/35/36 og Unisoc), så de aldri dukker opp,
+- låse seg som startskjerm, slå av skjermlåsen og stille klokka automatisk,
+- installere oppdateringer helt uten spørsmål.
+
+FYT-tjenestene (radio, Bluetooth, rattknapper, CarPlay) røres ikke.
+
+**Android tillater dette bare når det ikke finnes noen kontoer på stereoen.** Derfor:
+
+1. På stereoen: **Android-innstillinger → Kontoer → Google → Fjern konto** (Play Butikk virker ikke en liten stund).
+2. På PC-en:
+   ```
+   adb shell dpm set-device-owner no.bil.launcher/.TosAdmin
+   ```
+   Svaret skal være «Success: Device owner set to package …».
+   - «there are already some accounts on the device»: en konto finnes fortsatt (se `adb shell dumpsys account`). Fjern den og prøv igjen.
+   - «there are already several users on the device»: stereoen har flere brukere. Da går det ikke uten å nullstille stereoen – hopp over dette.
+3. Legg Google-kontoen inn igjen (**Android-innstillinger → Kontoer → Legg til konto**).
+4. I T'OS: **Innstillinger → Om stereoen → Full kontroll** står nå på «På». Hver bryter kan slås av for seg.
+
+**Angre:** I T'OS: **Innstillinger → Om stereoen → Slå av full kontroll** (trykk to ganger). Alt settes tilbake.
+Det finnes ingen ADB-kommando som fjerner en enhetseier fra en vanlig app – knappen i T'OS er måten å angre på.
+Siste utvei hvis T'OS ikke kan åpnes: nullstille stereoen til fabrikkinnstillinger (alt slettes).

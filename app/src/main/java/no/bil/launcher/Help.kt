@@ -140,6 +140,9 @@ private fun styled(s: String): AnnotatedString {
     }
 }
 
+/** Hopp til en del av bruksanvisningen neste gang den åpnes (f.eks. «Full kontroll» fra Om stereoen). */
+object HelpJump { @Volatile var target: String? = null }
+
 /** Bruksanvisningen – og «Hva er nytt» (samme visning, annen tekst: [asset], [title], knapper i [extra]). */
 @Composable
 fun HelpScreen(
@@ -158,6 +161,11 @@ fun HelpScreen(
             val state = rememberLazyListState()
             val scope = rememberCoroutineScope()
             val current by remember(sections) { derivedStateOf { HelpDoc.currentSection(sections, state.firstVisibleItemIndex) } }
+            LaunchedEffect(sections) {
+                val t = HelpJump.target ?: return@LaunchedEffect
+                HelpJump.target = null
+                sections.firstOrNull { it.second.contains(t, ignoreCase = true) }?.let { state.scrollToItem(it.first) }
+            }
             Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(18.dp)) {
                 // Venstre: innholdet (trykk = hopp dit)
                 LazyColumn(Modifier.width(250.dp).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(4.dp)) {

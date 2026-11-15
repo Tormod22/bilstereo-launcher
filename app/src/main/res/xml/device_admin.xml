@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- «Full kontroll» (Owner.kt). Enhetseieren trenger ingen egne regler her; skjermlåsen styres med setKeyguardDisabled. -->
+<device-admin>
+    <uses-policies>
+        <disable-keyguard-features />
+    </uses-policies>
+</device-admin>

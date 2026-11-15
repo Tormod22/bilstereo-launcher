@@ -211,3 +211,35 @@ adb shell settings put system show_navigationbar 1
 ```
 
 Uten PC kan du prøve **Innstillinger → Skjerm → Skjul stereoens statuslinje overalt (FYT)**, eller stereoens eget oppsett (**Åpne FYT HideButton**).
+
+## Full kontroll
+
+Med full kontroll tar T'OS over stereoen helt. Det gjøres én gang med PC, og kan slås av igjen i T'OS uten PC.
+
+Dette skjer med full kontroll:
+
+- Androids nedtrekksmeny kan ikke åpnes. Drar du ned fra toppen, kommer bare T'OS sitt hurtigpanel.
+- Androids varsler spretter ikke ned øverst på skjermen.
+- Ingen vinduer der Android spør om tillatelser. T'OS gir seg selv det den trenger.
+- Stereoens andre startskjermer skjules, så de aldri kan dukke opp.
+- T'OS er alltid startskjermen.
+- Oppdateringer installeres helt av seg selv.
+- Klokka stilles automatisk.
+
+Slik slår du det på (med PC):
+
+1. Følg **docs/ADB-OPPSETT.md** til PC-en er koblet til stereoen.
+2. På stereoen: fjern Google-kontoen en liten stund (**Android-innstillinger → Kontoer → Google → Fjern konto**). Android tillater ikke full kontroll mens det finnes en konto.
+3. Skriv på PC-en:
+
+```
+adb shell dpm set-device-owner no.bil.launcher/.TosAdmin
+```
+
+4. Står det **Success**, er full kontroll på. Legg Google-kontoen inn igjen.
+
+Bryterne finner du under **Innstillinger → Om stereoen → Full kontroll**. Hver ting kan slås av for seg.
+
+Slik slår du det av: **Innstillinger → Om stereoen → Slå av full kontroll**, og trykk igjen. Da settes alt tilbake slik det var.
+
+Oppstartsbilde: under **Full kontroll** finnes også **Lagre T'OS-oppstartsbilde**. Bildet lagres i Bilder/T'OS, og stereoens logo-valg åpnes. Velg «egendefinert» og bildet **tos-oppstart**. Dette er ikke prøvd på stereoen ennå.

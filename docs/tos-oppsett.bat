@@ -55,6 +55,17 @@ adb shell cmd package set-home-activity no.bil.launcher/.MainActivity
 adb shell cmd role add-role-holder android.app.role.DIALER no.bil.launcher
 rem Valgfritt (bare FYT-stereoer): skjul stereoens statuslinje i alle apper. Angre: samme linje med 1 i stedet for 0
 adb shell settings put system show_navigationbar 0
+rem T'OS holder knappestyringen og varseltilgangen paa selv (ogsaa etter oppdateringer)
+adb shell pm grant no.bil.launcher android.permission.WRITE_SECURE_SETTINGS
+echo.
+echo  Valgfritt: FULL KONTROLL (T'OS tar over helt - se docs/ADB-OPPSETT.md).
+echo  Krever at Google-kontoen er fjernet fra stereoen foerst (legg den inn igjen etterpaa).
+echo  Kan slaas av igjen i T'OS: Innstillinger - Om stereoen - Slaa av full kontroll.
+set /p FULL= Slaa paa full kontroll naa? (j/n): 
+if /i "%FULL%"=="j" (
+  adb shell dpm set-device-owner no.bil.launcher/.TosAdmin
+  echo  Staar det "Success", er full kontroll paa. Ellers: se docs/ADB-OPPSETT.md.
+)
 echo.
 echo  Ferdig! Feilmeldinger som "Unknown permission" eller "Unknown operation" kan overses
 echo  (de gjelder andre Android-versjoner).
