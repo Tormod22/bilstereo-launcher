@@ -21,8 +21,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.*
-import androidx.compose.material.icons.filled.*
+import no.bil.launcher.icons.automirrored.filled.*
+import no.bil.launcher.icons.filled.*
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
@@ -528,12 +528,42 @@ private fun StorageSettings() {
                 }
             }
         }
-        SettingRow("Midlertidige filer", mb(u.cache) + " · kartbilder og ikoner lages på nytt ved behov", onClick = clear) {
+        SettingRow("Midlertidige filer", mb(u.cache) + " · ikoner lages på nytt ved behov (kartet ligger under Kart og kjøring)", onClick = clear) {
             Pill(if (ask) "Trykk igjen" else "Tøm", strong = ask, onClick = clear)
         }
         if (u.apk > 0 && UpdateState.busy.not()) SettingRow("Gammel oppdateringsfil", mb(u.apk), onClick = {
             Hub.scope.launch { withContext(Dispatchers.IO) { File(context.cacheDir, "apk").deleteRecursively() }; tick++; say("Slettet") }
         }) { Text("Slett", color = TextPrimary, fontSize = 15.sp) }
+    }
+}
+
+/**
+ * Kartbufferen (MapCache.kt): fliser og fartsgrenser T'OS har lagret, så kartet virker uten nett.
+ * «Tøm kartbufferen» må trykkes to ganger.
+ */
+@Composable
+private fun MapBufferRow() {
+    var tick by remember { mutableIntStateOf(0) }
+    var ask by remember { mutableStateOf(false) }
+    val info by produceState<Triple<Long, Int, Int>?>(null, tick) {
+        value = withContext(Dispatchers.IO) { Triple(TileCache.bytes, TileCache.count, SpeedCache.size) }
+    }
+    val text = info?.let { (bytes, tiles, ways) ->
+        if (tiles == 0 && ways == 0) "Tomt ennå. Kartbiter og fartsgrenser du har sett, lagres her og vises når nettet mangler."
+        else "${bytes / 1_048_576} MB · $tiles kartbiter · fartsgrense for $ways veier – vises når nettet mangler"
+    } ?: "Teller …"
+    val clear: () -> Unit = {
+        if (!ask) ask = true
+        else {
+            ask = false
+            Hub.scope.launch {
+                withContext(Dispatchers.IO) { TileCache.clear(); SpeedCache.clear() }
+                tick++; say("Kartbufferen er tømt")
+            }
+        }
+    }
+    SettingRow("Kart lagret på stereoen", if (ask) "Trykk igjen for å tømme. Kartet må da hentes fra nettet på nytt." else text, onClick = clear) {
+        Pill(if (ask) "Trykk igjen" else "Tøm kartbufferen", strong = ask, onClick = clear)
     }
 }
 
@@ -634,6 +664,7 @@ private fun MapSettings() {
             else -> Pill("Last ned", Icons.Default.Download, strong = true) { OfflineMaps.download(context) }
         }
     }
+    MapBufferRow()
     PrefField("Hjem-adresse", "addr_home", "Gate og sted")
     PrefField("Jobb-adresse", "addr_work", "Gate og sted")
     // Alle kartapper på stereoen (Google Maps, Waze, iGO, Yandex …): de som åpner en «geo:»-adresse

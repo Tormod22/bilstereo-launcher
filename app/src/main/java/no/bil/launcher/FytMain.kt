@@ -7,6 +7,7 @@ import android.content.IntentFilter
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
+import kotlinx.coroutines.launch
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -323,6 +324,8 @@ object FytMain {
                 // Før GPS-en stoppes (Power går i dvale først når skjermen er av): siste gode posisjon blir parkeringen
                 runCatching { Trip.flush() }
                 runCatching { Parking.saveNow(Hub.gps) }
+                // Fartsgrensene som er hentet denne turen (lagres ellers samlet hvert 30. s)
+                runCatching { Hub.scope.launch(kotlinx.coroutines.Dispatchers.IO) { SpeedCache.save() } }
                 // Søk/innstilling på radioen skal ikke fortsette i blinde gjennom dvalen (forvalgene røres ikke)
                 runCatching { FytRadio.stopForSleep() }
                 // Etter ACC av er lysene av; MCU-en melder dem først når de endres (vasyl91) – la sola avgjøre til da

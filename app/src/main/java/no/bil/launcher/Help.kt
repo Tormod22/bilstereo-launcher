@@ -32,6 +32,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.flow.first
 
 /*
  * «Bruksanvisning» (Screen.HELP; Innstillinger → Om stereoen og Sikkerhetskopi og hjelp) og den rolige oppstartsskjermen.
@@ -228,8 +230,9 @@ private fun HelpItem(b: HelpBlock) {
 object SplashLogic {
     /** Skjermen må ha vært av så lenge før «våkne» regnes som en ny start (som Startup sine 2 min). */
     const val WAKE_MS = 120_000L
-    const val HOLD_MS = 200L
-    const val FADE_MS = 600L
+    /** Lengste vent på at forsiden er klar (bilbildet lest) før merket tones ut – aldri lenger enn dette. */
+    const val MAX_WAIT_MS = 600L
+    const val FADE_MS = 300L
 
     /** T'OS kom fram igjen etter at skjermen var av (tenning av/på), ikke etter at du bare brukte en annen app. */
     fun afterWake(stoppedWithScreenOff: Boolean, stoppedAt: Long, now: Long): Boolean =
@@ -263,7 +266,10 @@ fun SplashHost() {
     if (done) return
     val a = remember(at) { Animatable(1f) }
     LaunchedEffect(at) {
-        delay(SplashLogic.HOLD_MS)
+        // Tones ut så snart forsiden er klar (første bilde tegnet og bilbildet lest), ikke etter en fast pause
+        withFrameNanos { }
+        withTimeoutOrNull(SplashLogic.MAX_WAIT_MS) { snapshotFlow { CarArt.ready }.first { it } }
+        StartTiming.mark(StartTiming.READY)
         a.animateTo(0f, tween(SplashLogic.FADE_MS.toInt(), easing = LinearOutSlowInEasing))
         done = true
     }

@@ -4,6 +4,19 @@ Her står det som er nytt, og hva du kan prøve. Det nyeste står først.
 
 Virker noe ikke som det skal? Gå til **Innstillinger → Sikkerhetskopi og hjelp** og trykk **Send alt til utvikleren**. Skriv gjerne kort hva som skjedde. Da får utvikleren alt som trengs, i én fil.
 
+## T'OS 5.15
+
+- **Kartet uten nett.** Kartet lagres nå på stereoen. Når du starter bilen, vises kartet med en gang der bilen sist sto, også uten nett. Står bilen stille med nett, henter T'OS litt kart rundt deg på forhånd.
+- **Fartsgrenser uten nett.** Veier du har kjørt, husker T'OS fartsgrensen for, også når nettet er borte.
+- **Klar med en gang.** Når du starter bilen, viser musikkortet sist spilte sang eller radiostasjon med en gang, til stereoen er helt våken.
+- **Mindre og raskere.** T'OS er blitt mye mindre (33 → 21 MB). Det gir raskere oppstart og raskere oppdateringer.
+- **Kartbufferen** kan tømmes under **Innstillinger → Kart og kjøring**.
+
+Prøv dette:
+
+1. Start bilen uten nett og se om kartet og den siste sangen kommer fram med en gang.
+2. Trykk **Send alt til utvikleren** etter noen turer. Da får utvikleren for første gang ekte tall for hvor lang tid oppstarten tar.
+
 ## T'OS 5.14
 
 - **Samme stil overalt.** Alle sider har samme topp og etiketter. Telefontastaturet, samtaletiden og motordata vises med prikktall, og musikksiden har den hvite spill-knappen.

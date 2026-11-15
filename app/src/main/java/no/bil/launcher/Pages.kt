@@ -35,8 +35,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.*
-import androidx.compose.material.icons.filled.*
+import no.bil.launcher.icons.automirrored.filled.*
+import no.bil.launcher.icons.filled.*
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
@@ -222,36 +222,49 @@ fun Context.toast(msg: String) = Notify.show(msg)
 @Composable
 fun Cover(size: androidx.compose.ui.unit.Dp, radius: androidx.compose.ui.unit.Dp = 14.dp) {
     val context = LocalContext.current
-    val art = NowPlaying.art
-    val icon = remember(NowPlaying.pkg, Prefs.str("music_pkg")) {
-        (NowPlaying.pkg ?: Prefs.str("music_pkg").ifBlank { null })
+    // Ved kald start: det lagrede (sist spilt) til mediatjenesten har koblet til – samme plass, ingen hopp
+    val restored = musicRestored
+    val art = NowPlaying.art ?: restored?.takeIf { it.kind == LastStateLogic.MUSIC }?.let { LastState.cover }
+    val iconPkg = NowPlaying.pkg ?: restored?.pkg
+    val icon = remember(iconPkg, Prefs.str("music_pkg")) {
+        (iconPkg ?: Prefs.str("music_pkg").ifBlank { null })
             ?.let { runCatching { context.packageManager.getApplicationIcon(it) }.getOrNull() }
             ?: AppRepository.tileIcon(context, Tiles.byPrefix("Mus"))
     }
     Box(Modifier.size(size).clip(RoundedCornerShape(radius)).background(Card), contentAlignment = Alignment.Center) {
         when {
-            NetRadio.active || FytRadio.onAir -> Icon(Icons.Default.Radio, "Radio", tint = TextPrimary, modifier = Modifier.size(size * 0.5f))
+            NetRadio.active || FytRadio.onAir || restored?.isRadio == true -> Icon(Icons.Default.Radio, "Radio", tint = TextPrimary, modifier = Modifier.size(size * 0.5f))
+            restored?.kind == LastStateLogic.BT -> Icon(Icons.Default.Bluetooth, "Bluetooth-musikk", tint = TextPrimary, modifier = Modifier.size(size * 0.5f))
             // BT-musikk via stereoens BT-brikke: ikke Spotify-ikonet (den spiller ikke) – Bluetooth-merket
             fytBtMusicShown -> Icon(Icons.Default.Bluetooth, "Bluetooth-musikk", tint = TextPrimary, modifier = Modifier.size(size * 0.5f))
             art != null -> Image(art.asImageBitmap(), null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
-            icon != null -> AppIcon(icon, size * 0.7f, "cover:" + (NowPlaying.pkg ?: Prefs.str("music_pkg")))
+            icon != null -> AppIcon(icon, size * 0.7f, "cover:" + (iconPkg ?: Prefs.str("music_pkg")))
             else -> Icon(Icons.Default.MusicNote, null, tint = TextPrimary, modifier = Modifier.size(size * 0.5f))
         }
     }
 }
+
+/**
+ * Kald start (LastState.kt): ingen ekte kilde ennå (mediatjenesten/stereoen ikke klar) → det som var sist, merket
+ * «Sist spilt»/«Sist hørt». Forsvinner av seg selv så snart noe ekte vises.
+ */
+internal val musicRestored: LastStateLogic.Snap? get() =
+    if (NetRadio.active || FytRadio.onAir || fytBtMusicShown || !NowPlaying.title.isNullOrBlank()) null
+    else LastState.restored?.takeIf { it.title.isNotBlank() }
 
 // Musikkortet: nettradio, FYT-radioen (stasjon/frekvens, spill/pause = lyd av/på) eller BT-musikk via stereoens BT-brikke
 val musicTitle: String? get() = when {
     NetRadio.active -> NetRadio.current?.name
     FytRadio.onAir -> FytRadio.cardTitle
     fytBtMusicShown -> Fyt.btavTitle ?: "Bluetooth-musikk"
-    else -> NowPlaying.title
+    else -> NowPlaying.title?.takeIf { it.isNotBlank() } ?: musicRestored?.title
 }
 val musicSub: String? get() = when {
     NetRadio.active -> if (NetRadio.buffering) "Kobler til …" else NetRadio.error ?: "Nettradio"
     FytRadio.onAir -> FytRadio.cardSub
     fytBtMusicShown -> listOfNotNull(Fyt.btavArtist, FytPhone.btavAlbum).joinToString(" · ").ifEmpty { Fyt.phoneName ?: "Telefonen" }
-    else -> NowPlaying.artist
+    !NowPlaying.title.isNullOrBlank() -> NowPlaying.artist
+    else -> musicRestored?.let { LastStateLogic.subLine(it, System.currentTimeMillis()) }
 }
 /** Radio (FYT eller nett): neste/forrige bytter stasjon, ikke sang. */
 val musicIsRadio: Boolean get() = NetRadio.active || FytRadio.onAir

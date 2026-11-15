@@ -38,8 +38,8 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
-import androidx.compose.material.icons.automirrored.filled.OpenInNew
+import no.bil.launcher.icons.filled.*
+import no.bil.launcher.icons.automirrored.filled.OpenInNew
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
@@ -59,6 +59,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Density
@@ -115,7 +116,11 @@ class MainActivity : ComponentActivity() {
         if (CarArt.bitmap == null) Hub.scope.launch(Dispatchers.IO) { CarArt.load(applicationContext) }
         Splash.onCreate()
         News.check(applicationContext)      // oppdatert siden sist? Da «Hva er nytt» på forsiden
-        setContent { Root() }
+        setContent {
+            Root()
+            // Oppstartstid: første bilde er tegnet (LastState.kt, StartTiming)
+            LaunchedEffect(Unit) { withFrameNanos { }; StartTiming.mark(StartTiming.FRAME) }
+        }
     }
 
     override fun onStart() {
@@ -502,6 +507,9 @@ object CarArt {
     /** Ingen innebygd bilbilde (eller det kunne ikke leses): vis bil-symbolet. */
     var missing by mutableStateOf(false)
         private set
+    /** Bilbildet er lest (eller finnes ikke) – oppstartsskjermen kan forsvinne (SplashHost). */
+    var ready by mutableStateOf(false)
+        private set
     private val lock = Any()
 
     /** Trygt å kalle fra hvilken som helst tråd (helst ikke hovedtråden); gjør jobben bare én gang. */
@@ -512,7 +520,7 @@ object CarArt {
             val res = c.resources.getIdentifier("car_png", "drawable", c.packageName)
             val bmp = if (res == 0) null else runCatching { BitmapFactory.decodeResource(c.resources, res)?.asImageBitmap() }.getOrNull()
             bitmap = bmp
-            if (bmp == null) android.os.Handler(android.os.Looper.getMainLooper()).post { missing = true }
+            android.os.Handler(android.os.Looper.getMainLooper()).post { if (bmp == null) missing = true; ready = true }
             return bmp
         }
     }
@@ -582,26 +590,29 @@ fun CarCard(modifier: Modifier) {
     }
 
     Column(modifier.clip(Shape).background(Panel).dotGrid().padding(28.dp)) {
+        // Klokka og statusikonene på én linje; datoen og meldingen under får hele bredden (ble kuttet når
+        // batterispenningen sto ved siden av: «SØNDAG 15. NOV…»)
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
-            Column(Modifier.weight(1f)) {
-                // Prikkstil: klokka i store prikktall, datoen som liten etikett
-                Text(time, style = dotStyle(62.sp), maxLines = 1)
-                Spacer(Modifier.height(6.dp))
-                Text(caps(date), style = capsStyle(13.sp), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Notice()
-            }
+            // Prikkstil: klokka i store prikktall
+            Text(time, style = dotStyle(62.sp), maxLines = 1, modifier = Modifier.weight(1f))
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 // Bare det som er verdt å vite: uten nett, og tilkoblet telefon
                 StatusIcons(full = false)
-                val bv = CarBattery.volt
+                // Ved kald start: sist kjente spenning (dempet) til ny måling kommer – ingen hopp i raden
+                val live = CarBattery.volt
+                val bv = live ?: LastState.restored?.volts
                 if (CarBattery.enabled && bv != null) {
-                    Icon(Icons.Default.BatteryChargingFull, "Bilbatteri", tint = TextMuted, modifier = Modifier.size(18.dp))
-                    Text(CarBattery.text(bv), style = capsStyle(14.sp, TextPrimary))
+                    Icon(Icons.Default.BatteryChargingFull, if (live == null) "Bilbatteri (sist målt)" else "Bilbatteri", tint = TextMuted, modifier = Modifier.size(18.dp))
+                    Text(CarBattery.text(bv), style = capsStyle(14.sp, if (live == null) TextMuted else TextPrimary))
                     Spacer(Modifier.width(4.dp))
                 }
                 Text(caps("Avensis"), style = capsStyle(13.sp))
             }
         }
+        Spacer(Modifier.height(6.dp))
+        // Datoen som liten etikett
+        Text(caps(date), style = capsStyle(13.sp), maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Notice()
 
         // Bilbildet – stort og luftig, på en svak lys "scene" under. Trykk = Bil og tur.
         Box(
@@ -634,9 +645,10 @@ private fun SpeedRow() {
             val over = SpeedLimit.over
             // Prikkstil: farten i store prikktall. Over fartsgrensen: hvitt felt med svarte prikker.
             Text(
-                // Uten fart: «--» i dempet grå (den lange streken «–» ble en strek nede i hjørnet i prikkskriften).
-                if (gps?.speed == null) "--" else speedText(gps),
-                style = dotStyle(80.sp, if (over) Bg else if (gps?.speed == null) TextMuted else TextPrimary), maxLines = 1,
+                // Uten fart: en dempet strek i vanlig skrift. I prikkskriften ble «–»/«--» lave streker nede i hjørnet.
+                speedText(gps),
+                style = if (gps?.speed == null) TextStyle(fontSize = 80.sp, color = TextMuted, fontWeight = FontWeight.Light)
+                else dotStyle(80.sp, if (over) Bg else TextPrimary), maxLines = 1,
                 modifier = if (over) Modifier.clip(RoundedCornerShape(16.dp)).background(TextPrimary).padding(horizontal = 12.dp, vertical = 4.dp) else Modifier,
             )
             Spacer(Modifier.width(12.dp))
@@ -685,6 +697,10 @@ internal fun tileOf(lat: Double, lon: Double, z: Int): Pair<Int, Int> {
  */
 internal fun mapReach(pos: Float, size: Float, half: Float): Float = minOf(pos, size - pos, half).coerceAtLeast(1f)
 
+/** Der bilen sist sto (parkeringen), som «posisjon» for kartet før GPS-en har funnet seg til rette. */
+internal fun lastKnownPos(): Gps? =
+    if (Parking.known) Gps(speedKmh = 0, lat = Parking.lat, lon = Parking.lon, bearing = 0f, stale = true) else null
+
 fun zoomFor(speed: Int): Int =
     if (!Prefs.bool("map_zoom_speed", true)) 15 else when { speed < 35 -> 16; speed < 70 -> 15; speed < 100 -> 14; else -> 13 }
 
@@ -697,13 +713,17 @@ fun MapView(gps: Gps?, modifier: Modifier, zoomOffset: Int = 0) {
     // Fila sjekkes bare når kartet lastes ned/slettes, innstillinger endres, eller hvert 30. sekund – ikke hvert sekund.
     val recheck by produceState(0) { while (true) { delay(30_000); value = value + 1 } }
     val offline by remember(recheck, Prefs.version) { derivedStateOf { OfflineMaps.ready(context) } }
-    if (offline && !SafeMode.on) { OfflineMapView(gps, modifier, zoom, rotate); return }
+    // Kartmotoren (MapLibre) følger bare med som 64-bit (abiFilters arm64-v8a). Kjører T'OS mot formodning som 32-bit,
+    // brukes nettkartet i stedet for å krasje.
+    if (offline && !SafeMode.on && android.os.Process.is64Bit()) { OfflineMapView(gps, modifier, zoom, rotate); return }
     OnlineMapView(gps, modifier, zoom, rotate)
 }
 
 @Composable
-private fun OnlineMapView(gps: Gps?, modifier: Modifier, zoom: Int, rotate: Boolean) {
+private fun OnlineMapView(live: Gps?, modifier: Modifier, zoom: Int, rotate: Boolean) {
     var map by remember { mutableStateOf<MapTiles.MapImage?>(null) }
+    // Før GPS-en har posisjon (kaldstart): vis kartet der bilen sist sto, fra kartbufferen på disk (MapCache.kt)
+    val gps = live ?: remember(Prefs.version) { lastKnownPos() }
     val tz = tileZoom(zoom)
     // Nytt bilde hver gang du kjører inn i en ny flis – da ligger posisjonen alltid i midten av bildet
     val key = gps?.let { val (tx, ty) = tileOf(it.lat, it.lon, tz); Triple(tz, tx, ty) }
@@ -750,6 +770,10 @@ private fun OnlineMapView(gps: Gps?, modifier: Modifier, zoom: Int, rotate: Bool
                     val p = Path().apply { moveTo(c.x, c.y - 16f); lineTo(c.x + 11f, c.y + 12f); lineTo(c.x, c.y + 6f); lineTo(c.x - 11f, c.y + 12f); close() }
                     drawCircle(TextPrimary.copy(alpha = 0.15f), 30f, c)
                     drawPath(p, TextPrimary)
+                } else if (live == null) {
+                    // Siste kjente posisjon: bare en hul ring – ikke en «levende» prikk
+                    drawCircle(Bg.copy(alpha = 0.6f), 13f, c)
+                    drawCircle(TextMuted, 10f, c, style = androidx.compose.ui.graphics.drawscope.Stroke(width = 3f))
                 } else {
                     // Prikkstil: hvit prikk med myk glorie
                     drawCircle(TextPrimary.copy(alpha = 0.10f), 40f, c)
@@ -758,6 +782,7 @@ private fun OnlineMapView(gps: Gps?, modifier: Modifier, zoom: Int, rotate: Bool
                     drawCircle(TextPrimary, 10f, c)
                 }
             }
+            if (live == null) Text(caps("Siste posisjon"), style = capsStyle(12.sp), modifier = Modifier.align(Alignment.TopEnd).padding(16.dp))
         } else {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Text(if (gps == null) "Venter på GPS" else "Laster kart …", color = TextMuted, fontSize = 15.sp)
@@ -843,13 +868,17 @@ fun ActionRow(onApps: () -> Unit, onPickSlot: () -> Unit, modifier: Modifier) {
         // Musikk: cover, tittel, spill/pause, neste, og en tynn linje for hvor langt i sangen
         Box(Modifier.weight(2.6f).fillMaxHeight().clip(Shape).background(Panel)) {
             Row(Modifier.fillMaxSize().padding(start = 18.dp, end = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                Box(Modifier.clip(RoundedCornerShape(14.dp)).combinedClickable(onClick = { Nav.screen = Screen.MUSIC }, onLongClick = { Buttons.openMusic(context) })) { Cover(52.dp) }
-                Column(Modifier.weight(1f).padding(horizontal = 10.dp).clickable { Nav.screen = Screen.MUSIC }) {
-                    Text(musicTitle ?: "Musikk", color = TextPrimary, fontSize = 18.sp, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    Text(musicSub ?: if (MediaListener.enabled(context)) "Ingenting spiller" else "Trykk for mer", color = TextMuted, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Box(Modifier.clip(RoundedCornerShape(14.dp)).combinedClickable(onClick = { Nav.screen = Screen.MUSIC }, onLongClick = { Buttons.openMusic(context) })) { Cover(44.dp) }
+                Column(Modifier.weight(1f).padding(horizontal = 8.dp).clickable { Nav.screen = Screen.MUSIC }) {
+                    // Sist spilt (kald start, før mediatjenesten er klar): dempet, så det ikke ser ut som om det spiller nå
+                    val restored = musicRestored
+                    // Smal flis: tittelen får to linjer (ble kuttet til «Moonli…» med tekstskala 1,25)
+                    Text(musicTitle ?: "Musikk", color = if (restored != null) TextMuted else TextPrimary, fontSize = 16.sp, lineHeight = 18.sp, fontWeight = FontWeight.Medium, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    Text(musicSub ?: if (MediaListener.enabled(context)) "Ingenting spiller" else "Trykk for mer", color = TextMuted, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
                 // Prikkstil: hvit, fylt spill-knapp
-                PlayButton(musicPlayIcon, 48.dp, musicPlayLabel) { Media.playPause(context) }
+                // Sist hørt var radio og stereoen har ikke meldt seg ennå: radiosiden (spill her kunne startet feil kilde)
+                PlayButton(musicPlayIcon, 48.dp, musicPlayLabel) { if (musicRestored?.isRadio == true) Nav.screen = Screen.RADIO else Media.playPause(context) }
                 RoundIcon(Icons.Default.SkipNext, 48.dp, desc = musicNextLabel) { Media.next(context) }
             }
             // Tynn linje helt nederst i flisa: hvor langt i sangen
