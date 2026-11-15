@@ -624,7 +624,7 @@ fun SelfTestScreen(onClose: () -> Unit) {
             ) {
                 val live = SelfTest.live
                 if (live != null) LiveStep(live) else {
-                    Text(if (checks.isEmpty()) "Tester …" else SelfTestLogic.summary(checks), color = TextPrimary, fontSize = 32.sp, fontWeight = FontWeight.Medium)
+                    Text(if (checks.isEmpty()) "Tester …" else SelfTestLogic.summary(checks), style = dotStyle(34.sp, weight = FontWeight.Bold), maxLines = 1)
                     val detail = SelfTestLogic.summaryDetail(checks)
                     if (detail.isNotEmpty()) Text(detail, color = TextMuted, fontSize = 15.sp)
                     Text(SelfTest.phase ?: SelfTest.doneAt?.let { "Ferdig $it" } ?: "", color = TextPrimary, fontSize = 15.sp)
@@ -653,7 +653,7 @@ private fun LiveStep(live: SelfTest.Live) {
     val left = ((live.endsAt - now + 999) / 1000).coerceAtLeast(0)
     Text(live.title, color = TextPrimary, fontSize = 22.sp, fontWeight = FontWeight.Medium)
     Text(live.text, color = TextMuted, fontSize = 15.sp)
-    Text("$left", color = TextPrimary, fontSize = 56.sp, fontWeight = FontWeight.Medium)
+    Text("$left", style = dotStyle(64.sp), maxLines = 1)
     Pill("Avbryt") { SelfTest.cancelLive() }
 }
 

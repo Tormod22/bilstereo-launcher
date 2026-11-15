@@ -25,6 +25,9 @@ class TosApp : Application() {
         runCatching { FytMain.sanitizeOnStart() }
         Hub.start(this)
         runCatching { FytSafety.noticeOnStart() }
+        // «Full kontroll» (bare når T'OS er enhetseier) og knappestyring som holdes på (bare med PC-tillatelse)
+        Prefs.onOwnerToggle = { Owner.apply(this) }
+        runCatching { Owner.apply(this) }
     }
 }
 
@@ -37,6 +40,8 @@ object Prefs {
     var version by mutableIntStateOf(0)
         private set
 
+    /** Kalles når en «owner_»-bryter endres («Full kontroll», satt av [TosApp]). */
+    var onOwnerToggle: (() -> Unit)? = null
     fun init(c: Context) { sp = c.applicationContext.getSharedPreferences("tos", Context.MODE_PRIVATE) }
 
     // Har en verdi feil type (f.eks. fra en gammel sikkerhetskopi), brukes standardverdien i stedet for å krasje
@@ -61,6 +66,8 @@ object Prefs {
         bump()
         // Hovedbryteren for FYT: koble til/fra med en gang, og sett bryterne tilbake (FytSafety)
         if (k == FytSafetyLogic.MASTER && v is Boolean) runCatching { FytSafety.onMaster(v) }
+        // «Full kontroll» (Owner.kt): bryterne virker med en gang
+        if (k.startsWith("owner_") && v is Boolean) runCatching { onOwnerToggle?.invoke() }
     }
 
     private val main by lazy { android.os.Handler(android.os.Looper.getMainLooper()) }
@@ -358,6 +365,7 @@ object SetupReport {
         listOf("music_pkg", "carplay_pkg", "radio_pkg", "phone_pkg", "camera_pkg", "btmusic_pkg", "nav_app", "last_app", "last_player", "recents_seen", "shade_seen")
             .forEach { appendLine("$it: ${Prefs.str(it)}") }
         val pw = c.getSystemService(Context.POWER_SERVICE) as? android.os.PowerManager
+        append(runCatching { Owner.report(c) }.getOrDefault(""))
         appendLine("Unntatt batterisparing: ${runCatching { pw?.isIgnoringBatteryOptimizations(c.packageName) }.getOrNull()}")
         appendLine("Siste krasj: ${runCatching { File(c.filesDir, "krasj.txt").takeIf { it.exists() }?.useLines { l -> l.take(4).joinToString(" | ") } }.getOrNull() ?: "ingen"}")
         appendLine()

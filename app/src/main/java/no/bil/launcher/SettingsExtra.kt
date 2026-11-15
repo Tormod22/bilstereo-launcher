@@ -509,6 +509,7 @@ internal fun adbSetupCommands(pkg: String, accessibility: String = "$pkg/$pkg.Ke
         AdbStep("adb shell cmd package set-home-activity $pkg/.MainActivity", "T'OS som startskjerm"),
         AdbStep("adb shell cmd role add-role-holder android.app.role.DIALER $pkg", "T'OS som telefon-app"),
         AdbStep(FytBars.ADB_HIDE, "Valgfritt, bare FYT-stereoer: skjuler stereoens statuslinje i alle apper (angre: samme linje med 1 til slutt)"),
+        AdbStep("adb shell pm grant $pkg android.permission.WRITE_SECURE_SETTINGS", "Holder knappestyringen og varseltilgangen på (også etter oppdateringer)"),
     )
 }
 

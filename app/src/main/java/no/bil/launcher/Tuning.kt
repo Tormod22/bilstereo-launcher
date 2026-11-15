@@ -191,7 +191,7 @@ fun TuningScreen(onClose: () -> Unit) {
                         Accel.runs.forEach { r ->
                             Column(Modifier.weight(1f).clip(RoundedCornerShape(18.dp)).background(Card).padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                                 Text(r.name + " km/t", color = TextMuted, fontSize = 13.sp)
-                                Text(Accel.fmt(Accel.last(r)), color = TextPrimary, fontSize = 30.sp, fontWeight = FontWeight.Medium)
+                                Text(Accel.fmt(Accel.last(r)), style = dotStyle(32.sp, weight = FontWeight.Bold), maxLines = 1)
                                 Text("Beste: ${Accel.fmt(Accel.best(r))}", color = TextMuted, fontSize = 13.sp)
                                 Spacer(Modifier.height(6.dp))
                                 val on = Accel.armed == r

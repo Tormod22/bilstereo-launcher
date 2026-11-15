@@ -80,6 +80,15 @@ class FontScaleSmokeTest {
             show("siste", night) { RecentsScreen {} }
             show("hurtigpanel", night) { QuickPanel(onClose = {}, onGo = {}) }
         }
+        // Prikkstil (v5.12): forsiden, klokka og FYT-radioen med prikktall
+        for (night in listOf(false, true)) {
+            show("forside", night) { Dashboard({}, {}) }
+            show("klokke", night) { ClockScreen {} }
+        }
+        rule.runOnUiThread { FytRadio.fake = FytRadio.Fake(10160, "Radio Stavanger", "Musikk og nyheter", stereo = true, onAir = true) }
+        show("radio_fyt") { RadioScreen {} }
+        rule.awaitText("Radio Stavanger")
+        rule.runOnUiThread { FytRadio.fake = null }
         // Musikkortet på forsiden følger kilden: FYT-radio = radiosymbol, «Lyd av» i stedet for pause, neste = neste stasjon
         rule.runOnUiThread { FytRadio.fake = FytRadio.Fake(10170, "NRK P1", null, stereo = true, onAir = true) }
         show("musikkort_radio") { ActionRow({}, {}, Modifier.size(1000.dp, 110.dp)) }

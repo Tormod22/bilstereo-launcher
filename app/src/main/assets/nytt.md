@@ -4,6 +4,28 @@ Her står det som er nytt, og hva du kan prøve. Det nyeste står først.
 
 Virker noe ikke som det skal? Gå til **Innstillinger → Sikkerhetskopi og hjelp** og trykk **Send alt til utvikleren**. Skriv gjerne kort hva som skjedde. Da får utvikleren alt som trengs, i én fil.
 
+## T'OS 5.12
+
+Nytt utseende – prikkstil:
+
+- Klokka, farten, radiofrekvensen og volumet vises med store prikktall.
+- Alt er svart, hvitt og grått. Kartet er også i gråtoner, og posisjonen din er en hvit prikk.
+- Raden nederst har runde ikoner og en hvit spill-knapp.
+
+Full kontroll (valgfritt, krever PC én gang):
+
+- T'OS kan bli «sjef» over stereoen. Da stenges Androids nedtrekksmeny, de gamle startskjermene skjules, T'OS gir seg selv tillatelser, og oppdateringer skjer helt av seg selv.
+- Se **Innstillinger → Om stereoen → Full kontroll**. Der står det hvordan du slår det på, og du kan slå det av igjen med én knapp.
+
+Eget oppstartsbilde:
+
+- **Innstillinger → Om stereoen → Lagre T'OS-oppstartsbilde** lagrer et svart bilde med «T'OS» i prikker, som du kan velge som oppstartslogo i stereoens egen innstilling.
+
+Prøv dette:
+
+1. Se på forsiden og radioen, og si fra om noe er for lite, for stort eller kuttet.
+2. Trykk **Send alt til utvikleren** og fortell hvordan det ser ut.
+
 ## T'OS 5.11
 
 - **Send alt til utvikleren**: én knapp lager én fil med alt utvikleren trenger (selvtest, oppsett, feil og kort kartlegging). Du finner den øverst i **Innstillinger → Sikkerhetskopi og hjelp**, og på Selvtest-siden. Skriv gjerne kort hva som skjedde.

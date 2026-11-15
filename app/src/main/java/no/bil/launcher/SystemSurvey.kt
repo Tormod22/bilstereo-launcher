@@ -275,6 +275,7 @@ object SystemSurvey {
             }
         }
         part("Strøm (tenning/skjerm: hva T'OS lar gå)") { append(Power.report()) }
+        part("Full kontroll (enhetseier)") { append(Owner.report(c)) }
         part("Bluetooth") { append(BtLink.report(c)) }
         part("FYT-canbus (bil-data: dører, klima – com.syu.canbus)") { append(FytCan.report()) }
         part("FYT-tjenesten (com.syu.ms: radio, BT-telefon, lydkilde, volum)") {

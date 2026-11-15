@@ -79,7 +79,8 @@ object Updater {
      */
     suspend fun downloadAndInstall(context: Context, onProgress: (Int) -> Unit): String? =
         withContext(Dispatchers.IO) {
-            if (!canInstall(context)) {
+            // Enhetseier (full kontroll): Android installerer uten spørsmål, og trenger ikke denne tillatelsen
+            if (!canInstall(context) && !Owner.active(context)) {
                 withContext(Dispatchers.Main) { openInstallPermission(context) }
                 return@withContext "Gi T'OS lov til å installere apper, og trykk igjen"
             }
