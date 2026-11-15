@@ -633,7 +633,9 @@ private fun SpeedRow() {
             val over = SpeedLimit.over
             // Prikkstil: farten i store prikktall. Over fartsgrensen: hvitt felt med svarte prikker.
             Text(
-                speedText(gps), style = dotStyle(80.sp, if (over) Bg else TextPrimary), maxLines = 1,
+                // Uten fart: «--» i dempet grå (den lange streken «–» ble en strek nede i hjørnet i prikkskriften).
+                if (gps?.speed == null) "--" else speedText(gps),
+                style = dotStyle(80.sp, if (over) Bg else if (gps?.speed == null) TextMuted else TextPrimary), maxLines = 1,
                 modifier = if (over) Modifier.clip(RoundedCornerShape(16.dp)).background(TextPrimary).padding(horizontal = 12.dp, vertical = 4.dp) else Modifier,
             )
             Spacer(Modifier.width(12.dp))
