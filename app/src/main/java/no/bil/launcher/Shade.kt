@@ -309,7 +309,7 @@ internal fun NotificationsSection(
     val now by produceState(System.currentTimeMillis()) { while (true) { delay(30_000); value = System.currentTimeMillis() } }
     Column(modifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(Modifier.fillMaxWidth().heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text("Varsler", color = TextPrimary, fontSize = 17.sp, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f))
+            Text(caps("Varsler"), style = capsStyle(13.sp), modifier = Modifier.weight(1f))
             if (items.any { it.meta.clearable }) {
                 Pill(if (armed) "Trykk igjen for å fjerne alle" else "Fjern alle", Icons.Default.ClearAll, strong = armed) {
                     if (armed) { armed = false; onClearAll() } else armed = true

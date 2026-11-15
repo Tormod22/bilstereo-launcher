@@ -105,4 +105,40 @@ class FontScaleSmokeTest {
         rule.awaitText("Knappestyring")
         rule.awaitText("Varseltilgang")
     }
+
+    /** De øvrige sidene og overleggene (v5.14: én stil overalt). Bilder bare med TOS_SHOTS, men tegnes alltid (fanger krasj). */
+    @Test fun resten() {
+        rule.mainClock.autoAdvance = false
+        rule.setContent {
+            view = androidx.compose.ui.platform.LocalView.current
+            CompositionLocalProvider(LocalDensity provides Density(1f, 1.25f)) {
+                Box(Modifier.size(1024.dp, 600.dp).background(Bg).padding(12.dp)) { page?.invoke() }
+            }
+        }
+        for (night in listOf(false, true)) {
+            show("apper", night) { AppDrawer {} }
+            show("navigasjon", night) { NavScreen {} }
+            show("selvtest", night) { SelfTestScreen {} }
+            show("hjelp", night) { HelpScreen({}) }
+            show("nytt", night) { NewsScreen {} }
+        }
+        for (c in SetCat.entries) {
+            rule.runOnUiThread { Prefs.set("settings_cat", c.name) }
+            show("innst_" + c.name.lowercase()) { SettingsScreen {} }
+        }
+        rule.runOnUiThread {
+            Phone.calls = listOf(PhoneCall(1, "+4790000000", "Ola Nordmann", CallState.ACTIVE, false, System.currentTimeMillis() - 65_000, true))
+        }
+        show("samtale") { CallScreen {} }
+        rule.runOnUiThread {
+            Phone.calls = listOf(PhoneCall(1, "+4790000000", "Ola Nordmann", CallState.RINGING, true, 0, true))
+        }
+        show("samtale_ringer") { CallScreen {} }
+        show("samtalebanner") { Box(Modifier.size(1000.dp, 200.dp)) { PhoneCallBanner() } }
+        rule.runOnUiThread { Phone.calls = emptyList() }
+        show("volum") { Box(Modifier.size(1000.dp, 200.dp)) { VolumeBar(12, 40) } }
+        rule.runOnUiThread { Notify.show("Oppdatert til T'OS 5.14") }
+        show("melding") { Box(Modifier.size(1000.dp, 300.dp)) { NoticeHost() } }
+        rule.runOnUiThread { Prefs.set("settings_cat", SetCat.entries.first().name) }
+    }
 }

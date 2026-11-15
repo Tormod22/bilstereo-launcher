@@ -42,14 +42,7 @@ import kotlinx.coroutines.withContext
 /* ---------- Felles topp: tittel + lukk ---------- */
 
 @Composable
-private fun PageHeader(title: String, onClose: () -> Unit, extra: @Composable RowScope.() -> Unit = {}) {
-    Row(Modifier.fillMaxWidth().padding(bottom = 16.dp), verticalAlignment = Alignment.CenterVertically) {
-        Text(title, color = TextPrimary, fontSize = 28.sp, fontWeight = FontWeight.Medium, maxLines = 1,
-            overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-        extra()
-        RoundIcon(Icons.Default.Close, 48.dp, desc = "Lukk") { onClose() }
-    }
-}
+private fun PageHeader(title: String, onClose: () -> Unit, extra: @Composable RowScope.() -> Unit = {}) = PageTitle(title, onClose, extra)
 
 /* ======================= Bluetooth-side ======================= */
 
@@ -114,10 +107,9 @@ fun BluetoothScreen(onClose: () -> Unit) {
 
                 // Musikk fra telefonen over Bluetooth
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text("Musikk", color = TextMuted, fontSize = 14.sp, modifier = Modifier.weight(1f))
+                    Text(caps("Musikk"), style = capsStyle(12.sp), modifier = Modifier.weight(1f))
                     RoundIcon(Icons.Default.SkipPrevious, 48.dp, desc = musicPrevLabel) { Media.previous(context) }
-                    RoundIcon(musicPlayIcon, 56.dp, outlined = true,
-                        desc = musicPlayLabel) { Media.playPause(context) }
+                    PlayButton(musicPlayIcon, 56.dp, desc = musicPlayLabel) { Media.playPause(context) }
                     RoundIcon(Icons.Default.SkipNext, 48.dp, desc = musicNextLabel) { Media.next(context) }
                 }
             }

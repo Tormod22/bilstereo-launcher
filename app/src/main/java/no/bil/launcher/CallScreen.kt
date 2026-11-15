@@ -139,7 +139,13 @@ fun CallScreen(onHide: () -> Unit) {
                         if (!call.name.isNullOrBlank() && call.number.isNotBlank() && call.number != call.name)
                             Text(call.number, color = TextMuted, fontSize = 20.sp, maxLines = 1)
                         Spacer(Modifier.height(10.dp))
-                        Text(callStatusText(call.state, call.connectedAt, now, call.ended), color = if (call.state == CallState.ENDED) TextMuted else TextPrimary, fontSize = 24.sp)
+                        if (call.state == CallState.ACTIVE && call.connectedAt > 0) {
+                            // Prikkstil: samtaletiden som stort prikktall, «SAMTALE» som liten etikett (lest som én tekst)
+                            Column(Modifier.semantics(mergeDescendants = true) {}) {
+                                Text(caps("Samtale"), style = capsStyle(14.sp))
+                                Text(formatDuration(now - call.connectedAt), style = dotStyle(44.sp))
+                            }
+                        } else Text(callStatusText(call.state, call.connectedAt, now, call.ended), color = if (call.state == CallState.ENDED) TextMuted else TextPrimary, fontSize = 24.sp)
                         others.forEach { o ->
                             Spacer(Modifier.height(18.dp))
                             Row(Modifier.clip(RoundedCornerShape(18.dp)).background(Card).padding(horizontal = 18.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -209,7 +215,7 @@ private val DTMF = listOf("1", "2", "3", "4", "5", "6", "7", "8", "9", "*", "0",
 private fun DtmfPad(id: Int, typed: String, onTyped: (String) -> Unit, onClose: () -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(typed.ifEmpty { " " }, color = TextPrimary, fontSize = 28.sp, maxLines = 1, modifier = Modifier.weight(1f))
+            Text(typed.ifEmpty { " " }, style = dotStyle(30.sp), maxLines = 1, modifier = Modifier.weight(1f))
             Box(Modifier.height(56.dp).clip(RoundedCornerShape(28.dp)).background(Line).clickable(onClick = onClose).padding(horizontal = 20.dp),
                 contentAlignment = Alignment.Center) { Text("Ferdig", color = TextPrimary, fontSize = 16.sp) }
         }
@@ -226,7 +232,7 @@ private fun DtmfPad(id: Int, typed: String, onTyped: (String) -> Unit, onClose: 
                                 })
                             },
                         contentAlignment = Alignment.Center,
-                    ) { Text(k, color = TextPrimary, fontSize = 28.sp, fontWeight = FontWeight.Medium) }
+                    ) { Text(k, style = keyStyle(k, 30.sp)) }
                 }
             }
         }

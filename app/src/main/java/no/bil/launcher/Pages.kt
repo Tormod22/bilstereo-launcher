@@ -78,13 +78,19 @@ private val Small = RoundedCornerShape(18.dp)
 @Composable
 fun Page(title: String, onClose: () -> Unit, extra: @Composable RowScope.() -> Unit = {}, content: @Composable ColumnScope.() -> Unit) {
     Column(Modifier.fillMaxSize().clip(Round).background(Panel).padding(24.dp)) {
-        Row(Modifier.fillMaxWidth().padding(bottom = 16.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text(title, color = TextPrimary, fontSize = 28.sp, fontWeight = FontWeight.Medium, maxLines = 1,
-                overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-            extra()
-            RoundIcon(Icons.Default.Close, 48.dp, desc = "Lukk") { onClose() }
-        }
+        PageTitle(title, onClose, extra)
         content()
+    }
+}
+
+/** Toppen på alle T'OS-sider: tittel, valgfrie knapper og lukk – én utgave, så alle sider ser like ut. */
+@Composable
+fun PageTitle(title: String, onClose: () -> Unit, extra: @Composable RowScope.() -> Unit = {}) {
+    Row(Modifier.fillMaxWidth().padding(bottom = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text(title, color = TextPrimary, fontSize = 28.sp, fontWeight = FontWeight.Medium, maxLines = 1,
+            overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+        extra()
+        RoundIcon(Icons.Default.Close, 48.dp, desc = "Lukk") { onClose() }
     }
 }
 
@@ -103,7 +109,7 @@ fun Pill(label: String, icon: androidx.compose.ui.graphics.vector.ImageVector? =
 
 @Composable
 fun Section(title: String) =
-    Text(title.uppercase(), color = TextMuted, fontSize = 12.sp, letterSpacing = 1.sp, modifier = Modifier.padding(top = 18.dp, bottom = 8.dp))
+    Text(caps(title), style = capsStyle(12.sp), modifier = Modifier.padding(top = 18.dp, bottom = 8.dp))
 
 @Composable
 fun SettingRow(title: String, sub: String? = null, onClick: (() -> Unit)? = null, trailing: @Composable () -> Unit = {}) {
@@ -346,7 +352,7 @@ fun MusicScreen(onClose: () -> Unit) {
                 Spacer(Modifier.height(16.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(24.dp), verticalAlignment = Alignment.CenterVertically) {
                     RoundIcon(Icons.Default.SkipPrevious, 64.dp, desc = musicPrevLabel) { Media.previous(context) }
-                    RoundIcon(musicPlayIcon, 84.dp, outlined = true, desc = musicPlayLabel) { Media.playPause(context) }
+                    PlayButton(musicPlayIcon, 84.dp, desc = musicPlayLabel) { Media.playPause(context) }
                     RoundIcon(Icons.Default.SkipNext, 64.dp, desc = musicNextLabel) { Media.next(context) }
                 }
                 if (!MediaListener.enabled(context)) {
@@ -415,7 +421,7 @@ private fun HwRadioCard() {
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         Column(Modifier.weight(1f)) {
-            Text("STEREOENS RADIO", color = TextMuted, fontSize = 12.sp, letterSpacing = 1.sp)
+            Text(caps("Stereoens radio"), style = capsStyle(12.sp))
             if (hw != null) {
                 Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     Text(hw.freq, style = dotStyle(44.sp), maxLines = 1)
@@ -787,8 +793,10 @@ private fun Keypad(number: String, onChange: (String) -> Unit, contacts: List<Co
     Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
         Column(Modifier.weight(1f).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Row(Modifier.fillMaxWidth().height(76.dp).clip(Small).background(Card).padding(start = 18.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text(if (number.length > 20) "…" + number.takeLast(19) else number.ifEmpty { "Skriv et nummer" }, color = if (number.isEmpty()) TextMuted else TextPrimary,
-                    fontSize = if (number.length > 13) 24.sp else 32.sp, maxLines = 1, modifier = Modifier.weight(1f))
+                // Nummeret i prikkskrift når det er skrevet noe; hjelpeteksten i vanlig skrift
+                if (number.isEmpty()) Text("Skriv et nummer", color = TextMuted, fontSize = 24.sp, maxLines = 1, modifier = Modifier.weight(1f))
+                else Text(if (number.length > 20) "…" + number.takeLast(19) else number,
+                    style = dotStyle(if (number.length > 13) 24.sp else 32.sp), maxLines = 1, modifier = Modifier.weight(1f))
                 if (number.isNotEmpty()) Box(
                     Modifier.size(76.dp).tapOrHold("Slett", onLongClick = { onChange("") }) { onChange(appendKey(number, "⌫")) },
                     contentAlignment = Alignment.Center,
@@ -825,8 +833,9 @@ private fun Keypad(number: String, onChange: (String) -> Unit, contacts: List<Co
                                 .tapOrHold(k, onLongClick = if (k == "0") ({ onChange(appendKey(number, "+")) }) else null) { onChange(appendKey(number, k)) },
                             verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally,
                         ) {
-                            Text(k, color = TextPrimary, fontSize = 30.sp, fontWeight = FontWeight.Medium)
-                            KEY_LETTERS[k]?.let { Text(it, color = TextMuted, fontSize = 11.sp, letterSpacing = 1.sp) }
+                            // Prikkstil: tastene i prikkskrift, bokstavene som små etiketter
+                            Text(k, style = keyStyle(k, 32.sp))
+                            KEY_LETTERS[k]?.let { Text(it, style = capsStyle(10.sp)) }
                         }
                     }
                 }
@@ -948,7 +957,7 @@ private fun FavoriteGrid(onCall: (String) -> Unit) {
     var num by remember { mutableStateOf("") }
     Column(Modifier.fillMaxSize()) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("FAVORITTER", color = TextMuted, fontSize = 12.sp, letterSpacing = 1.sp, modifier = Modifier.weight(1f))
+            Text(caps("Favoritter"), style = capsStyle(12.sp), modifier = Modifier.weight(1f))
             Text(if (adding) "Ferdig" else "+ Legg til / endre", color = TextPrimary, fontSize = 15.sp,
                 modifier = Modifier.heightIn(min = 48.dp).clip(RoundedCornerShape(12.dp)).clickable { adding = !adding; confirmDel = null }.padding(horizontal = 12.dp, vertical = 14.dp))
         }
@@ -1031,7 +1040,7 @@ fun CarScreen(onClose: () -> Unit) {
                 Spacer(Modifier.height(10.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     BigNumber("${Trip.avgKmh}", "snittfart km/t", Modifier.weight(1f))
-                    BigNumber("${Trip.maxKmh}", "høyeste fart km/t", Modifier.weight(1f))
+                    BigNumber("${Trip.maxKmh}", "maks km/t", Modifier.weight(1f))
                     BigNumber(Hub.gps?.let { Hub.compass(it.bearing) } ?: "–", "retning", Modifier.weight(1f))
                 }
 
@@ -1063,7 +1072,7 @@ fun CarScreen(onClose: () -> Unit) {
             // Parkering med QR-kode til iPhonen (punkt 20)
             Column(Modifier.weight(0.38f).fillMaxHeight().clip(Small).background(Card).padding(18.dp),
                 horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text("Hvor står bilen?", color = TextPrimary, fontSize = 18.sp, fontWeight = FontWeight.Medium)
+                Text(caps("Hvor står bilen?"), style = capsStyle(12.sp))
                 if (park.first != 0.0 || park.second != 0.0) {
                     val bmp = remember(park.first, park.second) { qr(Parking.appleMapsUrl()) }
                     Image(bmp.asImageBitmap(), null, Modifier.size(200.dp).clip(RoundedCornerShape(12.dp)))
