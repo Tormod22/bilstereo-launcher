@@ -31,7 +31,17 @@ Snakk norsk med brukeren. Han er ikke utvikler – forklar enkelt, ikke bruk fag
 - Løsningen han godkjente: **tre ting** – (1) bilkort med klokke, stort bilbilde og fart som stort tall, (2) ekte kart, (3) én rad nederst: musikk/telefon/apper. Ingen kalender, ingen vær.
 - Kalkulator skal være skjult i app-skuffen (`HiddenApps` i `Apps.kt`).
 
-## Nåværende tilstand (v5.15)
+## Nåværende tilstand (v5.16)
+- v5.16 (16. nov): brukeren oppdaterte og kjørte «Ta over»: punkt 1–2 hake, punkt 3 «stereoen åpner ikke» (BEKREFTET: port 5555
+  er lukket selv med USB-feilsøking på – Android 10 trenger `adb tcpip`). Brukeren: «jeg trenger en enda lettere måte».
+  LØSNING (fra github.com/DJ-MARINO/atoto-adb-via-wifi, MIT, ingen kode kopiert): stereoens FYT-tjeneste kan sette systemverdier –
+  hovedmodul 0, cmd 161, ints [0,0], strings [navn, verdi] → SystemProperties.set i com.syu.ms (system). `Fyt.setSystemProperty`
+  (force, tom verdi avvises). `Takeover.openPortViaFyt`: service.adb.tcp.port=5555, 400 ms, ctl.restart=adbd, venter ≤ 6 s på porten.
+  Siden gjør det AUTOMATISK én gang når feilsøking er på og porten lukket (og Fyt.connected), og kobler så til AUTOMATISK én gang
+  når porten er åpen (`autoConnectDone`) → brukeren trykker bare «Tillat alltid» + «Ta over». Knapp «Åpne»/«Prøv igjen»; uten
+  FYT-tjeneste «Bruk PC». «Slå av feilsøking etterpå» lukker også porten via FYT (persist/service.adb.tcp.port=-1 + restart).
+  Midlertidig: porten gjelder til omstart. Test TakeoverFytPortTest (1). UVERIFISERT: at cmd 161 finnes i denne com.syu.ms
+  (26.0331; testet der på 25.1119), at SELinux tillater ctl.restart fra com.syu.ms her. Totalt 343 tester.
 - v5.15 (16. nov, «se på måter du kan gjøre ting enda bedre på»: 3 parallelle grener KART/SLANK/START, flettet).
   (kart uten nett) Kartflisene lagres på disk (`MapCache.kt`, `TileCache`): filesDir/kartfliser/<z>/<x>_<y>.tile (filesDir fordi
   Android/«StorageClearManage» kan tømme cacheDir), maks 150 MB (`TileCacheLogic.evict`: minst brukte først ned til 135 MB), skriving via

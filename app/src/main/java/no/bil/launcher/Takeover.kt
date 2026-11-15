@@ -223,6 +223,44 @@ object Takeover {
 
     suspend fun portOpen(): Boolean = withContext(Dispatchers.IO) { portOpenBlocking() }
 
+    /* ---------- Åpne nettverksporten via stereoens FYT-tjeneste (uten PC) ---------- */
+
+    /** Ber om åpning nå / har bedt om det (siden viser «Åpner …» og så «Bruk PC» hvis det ikke virket). */
+    var opening by mutableStateOf(false); private set
+    var openTried by mutableStateOf(false); private set
+    /** Bare én automatisk tilkobling per gang porten åpnes (siden kobler til av seg selv – stereoen spør «Tillat?»). */
+    @Volatile var autoConnectDone = false
+
+    /**
+     * Android 10 åpner ikke ADB på nettverket bare fordi «USB-feilsøking» er på (det krever normalt `adb tcpip` fra en PC
+     * med kabel). Stereoens FYT-tjeneste kan sette systemverdien selv: service.adb.tcp.port=5555 og så start adbd på nytt
+     * (`Fyt.setSystemProperty`). Midlertidig: gjelder til stereoen startes på nytt, og «Slå av feilsøking etterpå» lukker den.
+     */
+    fun openPortViaFyt(c: Context) {
+        if (opening) return
+        if (!Fyt.connected) { message = "Stereoens FYT-tjeneste svarer ikke ennå – vent litt og prøv igjen, eller bruk PC."; return }
+        opening = true; openTried = true; message = null
+        scope.launch {
+            try {
+                Fyt.setSystemProperty("service.adb.tcp.port", TakeoverLogic.PORT.toString())
+                delay(400)
+                Fyt.setSystemProperty("ctl.restart", "adbd")
+                // adbd bruker et par sekunder på å starte og lytte på porten
+                repeat(12) { if (portOpenBlocking()) return@launch; delay(500) }
+                ui { message = "Stereoen åpnet ikke porten (${tcpProps()}). Bruk PC – se punkt 3." }
+            } finally { ui { opening = false } }
+        }
+    }
+
+    /** Lukker nettverksporten igjen via FYT (etter «Ta over», sammen med «Slå av feilsøking etterpå»). */
+    private suspend fun closePortViaFyt() {
+        if (!Fyt.connected) return
+        Fyt.setSystemProperty("persist.adb.tcp.port", "-1")
+        Fyt.setSystemProperty("service.adb.tcp.port", "-1")
+        delay(400)
+        Fyt.setSystemProperty("ctl.restart", "adbd")
+    }
+
     @android.annotation.SuppressLint("PrivateApi")   // samme som Fyt.kt: lese systemegenskaper (uendret siden Android 1)
     private fun prop(name: String): String = runCatching {
         Class.forName("android.os.SystemProperties").getMethod("get", String::class.java).invoke(null, name) as? String
@@ -419,6 +457,8 @@ object Takeover {
                         }.isSuccess
                         if (!self) runCatching { adb?.shell("settings put global adb_enabled 0") }
                         closeQuiet(); ui { connected = false }
+                        // Åpnet T'OS nettverksporten via FYT, lukkes den også (ingen åpen ADB på Wi-Fi-en)
+                        if (openTried) runCatching { closePortViaFyt() }
                         add(TakeoverLogic.Result.OK, "Feilsøking slått av igjen", "tryggere – T'OS trenger den ikke lenger")
                     }
                 }
@@ -579,6 +619,16 @@ fun TakeoverScreen(onClose: () -> Unit) {
     val net = TakeoverLogic.net(open, adbOn)
     val n = TakeoverLogic.progress(dev, adbOn, open, connected, done)
     val busy = Takeover.running || Takeover.connecting
+    val fyt = Fyt.connected
+    // Enklest mulig: feilsøking er på men porten lukket → T'OS ber stereoen åpne den selv (én gang). Porten åpen → T'OS kobler
+    // til selv (én gang), og stereoen spør «Tillat USB-feilsøking?». Brukeren trykker bare «Tillat alltid» og «Ta over».
+    LaunchedEffect(net, fyt, done) {
+        if (done) return@LaunchedEffect
+        if (net == TakeoverLogic.Net.NO_NETWORK_ADB && fyt && !Takeover.openTried) Takeover.openPortViaFyt(context)
+        if (net == TakeoverLogic.Net.OPEN && !Takeover.connected && !busy && !Takeover.autoConnectDone) {
+            Takeover.autoConnectDone = true; Takeover.connect(context)
+        }
+    }
 
     Page("Ta over stereoen", onClose) {
         Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
@@ -618,13 +668,24 @@ fun TakeoverScreen(onClose: () -> Unit) {
                 StepRow(3, "Stereoen åpner for T'OS",
                     when {
                         !checked -> "Sjekker …"
-                        net == TakeoverLogic.Net.OPEN -> "Klar (port 5555)."
+                        net == TakeoverLogic.Net.OPEN -> "Klar."
                         net == TakeoverLogic.Net.ADB_OFF -> "Kommer av seg selv når punkt 2 er gjort."
-                        else -> "Feilsøking er på, men stereoen åpner ikke for T'OS. Se etter «ADB over nettverk» i Utvikleralternativer, " +
-                            "eller i stereoens fabrikkinnstillinger (ikke prøvd). Ellers: bruk PC."
+                        Takeover.opening -> "T'OS ber stereoen åpne … (et par sekunder)"
+                        fyt && !Takeover.openTried -> "T'OS ber stereoen åpne for seg selv – trykk «Åpne» om det ikke skjer."
+                        fyt -> "Stereoen åpnet ikke. Trykk «Prøv igjen», eller bruk PC (se bruksanvisningen: «Med PC»)."
+                        else -> "Feilsøking er på, men stereoen åpner ikke for T'OS, og stereoens FYT-tjeneste svarer ikke. Bruk PC."
                     },
-                    open || done, if (net == TakeoverLogic.Net.NO_NETWORK_ADB) "Bruk PC" else null,
-                ) { HelpJump.target = "Med PC"; Nav.screen = Screen.HELP }
+                    open || done,
+                    when {
+                        net != TakeoverLogic.Net.NO_NETWORK_ADB || Takeover.opening -> null
+                        fyt && !Takeover.openTried -> "Åpne"
+                        fyt -> "Prøv igjen"
+                        else -> "Bruk PC"
+                    },
+                ) {
+                    if (fyt) Takeover.openPortViaFyt(context)
+                    else { HelpJump.target = "Med PC"; Nav.screen = Screen.HELP }
+                }
                 StepRow(4, "Koble til",
                     Takeover.message ?: if (connected) "Tilkoblet." else "Stereoen spør «Tillat USB-feilsøking?». Trykk «Tillat alltid …» og «OK».",
                     connected || done, if (Takeover.connecting) "Vent …" else if (open && !connected) "Koble til" else null,

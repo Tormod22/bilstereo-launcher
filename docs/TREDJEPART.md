@@ -76,6 +76,14 @@ Ingen kode er kopiert; bare tallene og formatet.
   (127.0.0.1:5555) og kjører de samme kommandoene som PC-oppsettet (`Takeover.kt`).
 - dadb trekker inn **Okio** (Square, Apache License 2.0), som T'OS allerede hadde via andre biblioteker.
 
+## atoto-adb-via-wifi (åpne ADB på nettverket via FYT, v5.16)
+
+- **atoto-adb-via-wifi** av DJ-MARINO / lrehmann og bidragsytere – https://github.com/DJ-MARINO/atoto-adb-via-wifi.
+  Lisens: **MIT** (Copyright (c) 2026 lrehmann and contributors).
+- Ingen kode er kopiert. T'OS bruker samme fremgangsmåte, skrevet på nytt i Kotlin (`Fyt.setSystemProperty`, `Takeover.openPortViaFyt`):
+  stereoens FYT-tjeneste (com.syu.ms, hovedmodul 0, kommando 161 med [navn, verdi]) setter `service.adb.tcp.port=5555`
+  og `ctl.restart=adbd`, så T'OS kan koble seg til sin egen ADB uten PC.
+
 ## Material-ikoner (v5.15)
 
 - Ikonene i `app/src/main/java/no/bil/launcher/icons/` (`Filled.kt`, `AutoMirroredFilled.kt`) er kopiert fra

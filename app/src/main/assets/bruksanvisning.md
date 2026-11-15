@@ -200,8 +200,8 @@ Det enkleste: T'OS gjør alt selv. Du trenger ingen PC.
 
 1. **Utviklermodus.** Trykk **Åpne**, og trykk 7 ganger på **Versjonsnummer** (eller **Build number**). Trykk tilbake.
 2. **USB-feilsøking.** Trykk **Åpne**, og slå på **USB-feilsøking**. Har stereoen **ADB over nettverk**, slå på den også.
-3. **Stereoen åpner for T'OS.** Får hake av seg selv. Kommer den ikke, kan ikke stereoen dette – bruk PC i stedet (se under).
-4. **Koble til.** Trykk **Koble til**. Stereoen spør «Tillat USB-feilsøking?». Kryss av for **Tillat alltid** og trykk **OK**.
+3. **Stereoen åpner for T'OS.** Skjer av seg selv: T'OS ber stereoen åpne. Det tar et par sekunder. Kommer ikke haken, trykk **Prøv igjen**. Virker det fortsatt ikke, bruk PC (se under).
+4. **Koble til.** Skjer også av seg selv. Stereoen spør «Tillat USB-feilsøking?». Kryss av for **Tillat alltid** og trykk **OK**.
 5. **Ta over.** Trykk den store knappen. T'OS gir seg selv alle tillatelsene, slår på knappestyringen, skjuler stereoens linje øverst og slår på full kontroll. Du ser hver ting med hake.
 
 Til slutt slår T'OS av feilsøkingen igjen (tryggere). T'OS trenger den ikke lenger.
