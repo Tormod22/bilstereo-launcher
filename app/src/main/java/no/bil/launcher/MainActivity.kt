@@ -246,7 +246,7 @@ fun Root() {
     LaunchedEffect(resumeTick) { shownAt = SystemClock.elapsedRealtime() }
     LaunchedEffect(Unit) {
         while (true) {
-            delay(5000)
+            Power.uiDelay(5000)             // står stille mens en annen app vises / skjermen er av
             val mins = Prefs.str("saver_min", "3").toIntOrNull() ?: 0
             // Ikke over neste sving (navigasjon i kø) eller en app-velger som er åpen
             val free = Nav.screen == Screen.DASH && !Nav.quick && Nav.pick == null && !Ui.pickSlot && !NavInfo.active
@@ -293,7 +293,7 @@ fun Root() {
     LaunchedEffect(BtLink.version) {
         while (true) {
             if (Notify.appVisible) TosStatus.bt = withContext(Dispatchers.IO) { btState(btStatus(context)) }
-            delay(5000)
+            Power.uiDelay(5000)
         }
     }
 

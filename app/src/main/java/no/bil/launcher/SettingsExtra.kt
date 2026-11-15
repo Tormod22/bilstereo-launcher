@@ -117,11 +117,11 @@ fun WifiPanel() {
             // Noen stereoer svarer null i stedet for en tom liste
             value = runCatching { wm.scanResults }.getOrNull().orEmpty()
                 .filter { !it.SSID.isNullOrBlank() }.sortedByDescending { it.level }.distinctBy { it.SSID }
-            delay(30_000)   // Android tillater bare noen få søk per 2 min
+            Power.uiDelay(30_000)   // Android tillater bare noen få søk per 2 min (og ikke søk mens T'OS er skjult)
         }
     }
     var tick by remember { mutableIntStateOf(0) }
-    LaunchedEffect(Unit) { while (true) { delay(2000); tick++ } }
+    LaunchedEffect(Unit) { while (true) { Power.uiDelay(2000); tick++ } }
     val current = remember(tick) { runCatching { wm.connectionInfo?.ssid?.trim('"') }.getOrNull()?.takeIf { it.isNotBlank() && it != "<unknown ssid>" } }
     val wifiOn = remember(tick) { runCatching { wm.isWifiEnabled }.getOrDefault(false) }
 
@@ -275,7 +275,7 @@ fun BtPanel() {
     val context = LocalContext.current
     val adapter = remember { (context.getSystemService(Context.BLUETOOTH_SERVICE) as? BluetoothManager)?.adapter }
     val status by produceState(initialValue = BtLink.current, Prefs.version, BtLink.version) {
-        while (true) { value = withContext(Dispatchers.IO) { btStatus(context) }; delay(3000) }
+        while (true) { value = withContext(Dispatchers.IO) { btStatus(context) }; Power.uiDelay(3000) }
     }
     val found = remember { mutableStateListOf<BluetoothDevice>() }
     var scanning by remember { mutableStateOf(false) }
@@ -564,7 +564,7 @@ fun SetupScreen(onClose: () -> Unit) {
     val resume = rememberResumeTick()
     var poll by remember { mutableIntStateOf(0) }
     // Sjekk igjen når du kommer tilbake fra Android, og hvert 1,5 s (så hakene kommer med en gang ved oppsett med PC)
-    LaunchedEffect(Unit) { while (true) { delay(1500); poll++ } }
+    LaunchedEffect(Unit) { while (true) { Power.uiDelay(1500); poll++ } }
     val tick = resume * 100_000 + poll
     val isHome = remember(tick) {
         context.packageManager.resolveActivity(Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME), 0)?.activityInfo?.packageName == context.packageName

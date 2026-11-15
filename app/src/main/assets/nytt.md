@@ -4,6 +4,18 @@ Her står det som er nytt, og hva du kan prøve. Det nyeste står først.
 
 Virker noe ikke som det skal? Gå til **Innstillinger → Sikkerhetskopi og hjelp** og trykk **Send alt til utvikleren**. Skriv gjerne kort hva som skjedde. Da får utvikleren alt som trengs, i én fil.
 
+## T'OS 5.14
+
+- **Samme stil overalt.** Alle sider har samme topp og etiketter. Telefontastaturet, samtaletiden og motordata vises med prikktall, og musikksiden har den hvite spill-knappen.
+- **Tryggere «Ta over stereoen».** T'OS prøver nå først uten å røre Google-tjenestene. Blir de likevel stående av, slår T'OS dem på igjen av seg selv.
+- **Nødstopp.** Krasjer T'OS flere ganger på rad mens den har full kontroll, slipper den taket av seg selv, og stereoens egen startskjerm kommer fram. Du blir aldri stående uten startskjerm.
+- **Raskere og mer stabil.** T'OS starter litt raskere, bruker mindre strøm når den ikke vises, og en feil i bakgrunnen stopper ikke lenger hele T'OS.
+
+Prøv dette:
+
+1. Bla gjennom sidene og si fra om noe ser rart ut eller er kuttet.
+2. Gjør **Ta over stereoen** og trykk **Send alt til utvikleren** etterpå.
+
 ## T'OS 5.13
 
 **Ta over stereoen – uten PC.** T'OS kan nå gjøre oppsettet selv:

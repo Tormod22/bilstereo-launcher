@@ -72,7 +72,7 @@ fun BluetoothScreen(onClose: () -> Unit) {
     val context = LocalContext.current
     val status by produceState(initialValue = BtLink.current, BtLink.version) {
         // Bluetooth-oppslaget går via systemet (og prøver skjulte funksjoner) – ikke på hovedtråden hvert 3. sekund
-        while (true) { value = withContext(Dispatchers.IO) { btStatus(context) }; delay(3000) }
+        while (true) { value = withContext(Dispatchers.IO) { btStatus(context) }; Power.uiDelay(3000) }
     }
 
     Column(Modifier.fillMaxSize().clip(RoundedCornerShape(28.dp)).background(Panel).padding(24.dp)) {
@@ -182,7 +182,7 @@ fun ActionPicker(current: Action, modifier: Modifier, prefix: String = "", onPic
 fun KeysScreen(onClose: () -> Unit) {
     val context = LocalContext.current
     val serviceOn by produceState(initialValue = Buttons.serviceEnabled(context)) {
-        while (true) { value = Buttons.serviceEnabled(context); delay(1500) }
+        while (true) { value = Buttons.serviceEnabled(context); Power.uiDelay(1500) }
     }
     // Forlates siden (Hjem, en annen side …), stopper læringen – ellers ville neste app som åpnes bli «lært»
     DisposableEffect(Unit) { onDispose { if (Learn.target != null) Learn.cancel() } }

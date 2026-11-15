@@ -717,7 +717,7 @@ fun PhoneScreen(onClose: () -> Unit) {
     val isDialer = remember(tick) { Phone.isDialer(context) }
     val roleOk = remember(tick) { Phone.dialerAvailable(context) }
     var canPlace by remember { mutableStateOf(true) }
-    LaunchedEffect(tick) { while (true) { canPlace = withContext(Dispatchers.IO) { Phone.canPlaceCalls(context) }; delay(5000) } }
+    LaunchedEffect(tick) { while (true) { canPlace = withContext(Dispatchers.IO) { Phone.canPlaceCalls(context) }; Power.uiDelay(5000) } }
     val androidContacts by produceState<List<Contact>?>(null, tick) { value = withContext(Dispatchers.IO) { Phone.contacts(context) } }
     val androidRecents by produceState<List<RecentCall>?>(null, tick, Phone.inCall) { value = withContext(Dispatchers.IO) { Phone.recents(context) } }
     // FYT-stereoen: Android har verken kontaktene eller anropene (iPhonen er koblet til stereoens BT-brikke) –
@@ -1029,7 +1029,7 @@ fun CarScreen(onClose: () -> Unit) {
     }) {
         // Parkeringen lagres i bakgrunnen uten å tegne skjermen på nytt – sjekk den hvert 5. sekund
         var parkTick by remember { mutableIntStateOf(0) }
-        LaunchedEffect(Unit) { while (true) { delay(5000); parkTick++ } }
+        LaunchedEffect(Unit) { while (true) { Power.uiDelay(5000); parkTick++ } }
         val park = remember(parkTick, Prefs.version) { Triple(Parking.lat, Parking.lon, Parking.time) }
         Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
             Column(Modifier.weight(0.62f).verticalScroll(rememberScrollState())) {

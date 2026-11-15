@@ -31,7 +31,38 @@ Snakk norsk med brukeren. Han er ikke utvikler – forklar enkelt, ikke bruk fag
 - Løsningen han godkjente: **tre ting** – (1) bilkort med klokke, stort bilbilde og fart som stort tall, (2) ekte kart, (3) én rad nederst: musikk/telefon/apper. Ingen kalender, ingen vær.
 - Kalkulator skal være skjult i app-skuffen (`HiddenApps` i `Apps.kt`).
 
-## Nåværende tilstand (v5.13)
+## Nåværende tilstand (v5.14)
+- v5.14 (15. nov, «se etter enda mer forbedringer»: 3 parallelle grener TRYGG/STIL/KJERNE, flettet).
+  (trygg overtakelse) Gjennomgang av «Ta over»/«Full kontroll» før brukeren kjører det. NØDSTOPP: krasjer T'OS ≥ 4 ganger på 3 min
+  (`SafeMode.recentCrashes`, `OwnerLogic.shouldEscape`; sikker modus slår inn ved 3) og T'OS er enhetseier, kaller `TosApp` `Owner.escape`
+  FØR Hub.start: alt vises igjen, nedtrekksmenyen åpnes, stereoens egen startskjerm låses som HOME (`OwnerLogic.escapeHome`:
+  ro.fyt.launcher, ellers en annen launcher), keep_home er av (KeyService). Prefs «ownerfix_escaped»/«ownerfix_escaped_why» (ikke
+  «owner_»-prefiks); melding + rad «Nødstopp …» med «Bruk T'OS igjen» (`Owner.endEscape`); `Owner.apply` respekterer nødstoppen.
+  Hovedstartskjermen (ro.fyt.launcher → `Owner.mainLauncher`, standard launcher9) skjules bare med bryter «owner_hide_main» (av):
+  com.syu.ms kan starte den direkte. Unisoc-tilpasningen er ute av LAUNCHERS. `Owner.release` setter tillatelsene tilbake til DEFAULT.
+  Ta over: dpm prøves ALLTID rett på først; Play-tjenester slås bare av ved «accounts» og bare med Google-kontoer
+  (`TakeoverLogic.googleTrickAllowed`), to forsøk (1,5 s/3 s), `pm enable` i finally + `healGmsNow` (kobler til selv med lagret nøkkel,
+  `connectQuiet`, eller slår ADB på med WRITE_SECURE_SETTINGS). `Takeover.healOnStart` (fra TosApp): ser med PackageManager om GMS er av
+  (`gmsDisabledNow`) og prøver hvert minutt i 30 min. Kobling = automatisk `pm enable` hvis merket står. Tjenestelista sendes i
+  anførselstegn (`shQuote` – «$» ødela FYT sine). `navUndo` godtar bare tall. KeyService rører ikke nedtrekksmenyen når
+  `Owner.shadeLocked` eller `Takeover.busy`; `ShadeLogic` tar «UsbDebuggingActivity» som dialog, aldri som meny. Sjekklista pauser når
+  T'OS ikke vises; ADB lukkes når siden lukkes (`Takeover.leave`); ingen oppdatering mens «Ta over» kjører; Takeover-scope har
+  `CrashLog.handler`. tos-oppsett.bat: samme rekkefølge, kobler til igjen før `pm enable`, UTF-8 fra ADB, `dumpsys account` (e-post)
+  skrives ikke i loggen. Tester TryggLogicTest (5) + TryggSmokeTest (2).
+  (stil) Prikkstil på ALLE sider: én sidetopp `PageTitle` (Pages.kt; `Page` og Screens.kt `PageHeader` bruker den). `Section` og
+  innstillingsgruppene, «Favoritter», «Stereoens radio», «Varsler» (hurtigpanel), «Prøv selv», «Min tuningboks», akselerasjon og «Hvor
+  står bilen?» bruker `capsStyle`. Hvit fylt `PlayButton` også på musikk- og BT-siden. Prikktall for samtaletid («SAMTALE» + tid),
+  telefontastaturet og tonevalget (`keyStyle()` i Theme.kt: siffer i prikkskrift, * og # i vanlig skrift) og motordata (`Gauge`).
+  Forbokstaven i samtalebildet står i vanlig skrift (prikk-«O» ligner «0»). T'OS-sidene i app-skuffen har `RingIcon`. «Høyeste fart»
+  heter nå «maks km/t». `FontScaleSmokeTest.resten` tegner resten av sidene og overleggene. Ingen nye farger.
+  (kjerne) Feil i bakgrunnsjobber tar ikke lenger ned T'OS: `Hub.scope` og app-lista (`Apps.kt`) har `CrashLog.handler` – feilen
+  skrives i krasj.txt som «FANGET i <navn> – T'OS fortsatte», `CrashLog.caughtCount` i oppsettrapporten, FYT-feil telles fortsatt for
+  FytSafety. `Power.uiDelay(ms)` = pause + vent til T'OS vises: brukes i alle skjerm-løkker (BT-status, Wi-Fi, oppsett, Knapper,
+  volumglider, tid, telefon, parkering, skjermsparer, BT-ikonet). Telefonboken og anropslista (`fyt_book`/`fyt_calls`) ligger i egen
+  fil `Store` («tos_lager», flyttes automatisk, ikke med i sikkerhetskopien). Turen og parkeringen lagres med én skriving
+  (`Prefs.setQuietAll`). «Full kontroll» ved oppstart kjøres på IO (låst mot bryterne). Tester KjerneLogicTest (1) + KjerneSmokeTest (4).
+  ÅPENT: APK 33 MB (material-icons-extended, minify av – R8 må prøves på stereoen først), hele UI tegnes på nytt ved hver `Prefs.set`.
+  Totalt 328 tester. Alt UVERIFISERT på stereoen.
 - v5.13 (15. nov): brukeren: «så lett som overhodet mulig for min del» (har Windows-PC). Plan A uten PC, plan B ett dobbeltklikk.
   (ta over uten PC) «Ta over stereoen» (`Takeover.kt`, Screen.TAKEOVER; rad øverst i Om stereoen → Full kontroll og i
   førstegangsoppsettet på FYT): T'OS kobler seg til sin EGEN ADB på 127.0.0.1:5555 med dadb 1.2.9 (Apache-2.0, nøkkel i filesDir/adb)

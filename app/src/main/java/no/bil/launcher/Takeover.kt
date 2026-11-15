@@ -205,7 +205,7 @@ object Takeover {
     /** Sist målt: port 5555 åpen (siden sjekker hvert sekund). */
     @Volatile var portOpenLast: Boolean? = null; private set
 
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO + CrashLog.handler)
     @Volatile private var adb: Dadb? = null
 
     fun devOn(c: Context) = runCatching { Settings.Global.getInt(c.contentResolver, Settings.Global.DEVELOPMENT_SETTINGS_ENABLED, 0) == 1 }.getOrDefault(false)
