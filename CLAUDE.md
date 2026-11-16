@@ -31,7 +31,21 @@ Snakk norsk med brukeren. Han er ikke utvikler – forklar enkelt, ikke bruk fag
 - Løsningen han godkjente: **tre ting** – (1) bilkort med klokke, stort bilbilde og fart som stort tall, (2) ekte kart, (3) én rad nederst: musikk/telefon/apper. Ingen kalender, ingen vær.
 - Kalkulator skal være skjult i app-skuffen (`HiddenApps` i `Apps.kt`).
 
-## Nåværende tilstand (v5.16)
+## Nåværende tilstand (v5.17)
+- v5.17 (16. nov): FØRSTE EKTE «Send alt» (5.16.20, 15. nov 23:05). «Ta over» KJØRT 22:59 – BEKREFTET PÅ STEREOEN: FYT cmd 161
+  åpnet porten, «Tillat USB-feilsøking» virket, alle grants/appops ✓, WRITE_SECURE_SETTINGS, batteri-unntak, FYT-linja skjult
+  (show_navigationbar=0), knappestyring + varseltilgang på, feilsøking av igjen (adb_enabled 0, port -1). Android 12/13-linjer «–»
+  (riktig). MEN: dpm sa «Success», likevel «Enhetseier: nei» kl. 23:05 og nedtrekksmenyen kom i opptaket 23:03 → full kontroll
+  falt bort (eller ble aldri aktiv) – ÅRSAK UKJENT. Oppstartstider (StartTiming): første bilde 1,7–1,8 s, stereo 1,6–2,0 s, GPS
+  1,6–2,4 s, musikk 0,5–4,1 s. Kartbuffer 196 fliser, 100 % treff uten nett. Radio: FYT-radio på (AM 522), last_player com.syu.music.
+  Rettet/lagt til: `TosAdmin` onEnabled/onDisableRequested/onDisabled + `Owner.event` → filesDir/eier-hendelser.txt (40 linjer,
+  i Owner.report/«Send alt»), `Owner.noteStatus` (ved oppstart og på Ta over-siden: logger når sjef-status endres, Prefs
+  «ownerfix_last_active»), «Aktiv administrator» i rapporten. Ta over: etter dpm «Success» sjekkes `Owner.active` i 3 s – ellers ✗
+  «Android sa ja, men T'OS ble ikke sjef»; dpm-svaret logges; Prefs «takeover_owner_ok». Siden: «FERDIG» bare når T'OS er sjef;
+  `lostOwner` → forklaring + «Ta over igjen» (punkt 2: T'OS slår feilsøking på selv med WRITE_SECURE_SETTINGS, punkt 3/4 automatisk).
+  `classify`: «does not have access to wifi commands» = SKIP. `CrashLogLogic.clean`: avc/gralloc/mali-støy fjernet fra loggen.
+  Kartbuffer i kB/MB (`TileCacheLogic.sizeText`). Test V517LogicTest (3). NESTE: les eier-hendelser.txt i neste «Send alt».
+  Totalt 346 tester.
 - v5.16 (16. nov): brukeren oppdaterte og kjørte «Ta over»: punkt 1–2 hake, punkt 3 «stereoen åpner ikke» (BEKREFTET: port 5555
   er lukket selv med USB-feilsøking på – Android 10 trenger `adb tcpip`). Brukeren: «jeg trenger en enda lettere måte».
   LØSNING (fra github.com/DJ-MARINO/atoto-adb-via-wifi, MIT, ingen kode kopiert): stereoens FYT-tjeneste kan sette systemverdier –

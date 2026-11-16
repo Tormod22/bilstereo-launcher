@@ -15,8 +15,8 @@ android {
         // På GitHub: byggnummeret (1000 + nr.) så hver nye versjon alltid får høyere tall enn den forrige.
         // Lokalt: tallet under. (versionName = «x.y» lokalt, «x.y.nr» på GitHub.)
         val ciRun = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull()
-        versionCode = if (ciRun != null) 1000 + ciRun else 38
-        versionName = if (ciRun != null) "5.16.$ciRun" else "5.16"
+        versionCode = if (ciRun != null) 1000 + ciRun else 39
+        versionName = if (ciRun != null) "5.17.$ciRun" else "5.17"
         // Bilstereoen er 64-bit ARM (kartleggingen: ro.product.cpu.abi = arm64-v8a). Bare den kopien av kartmotoren
         // (libmaplibre.so) tas med – 32-bit-kopien var 8 MB ekstra i hver nedlasting. T'OS kjører allerede som 64-bit der.
         ndk { abiFilters += listOf("arm64-v8a") }

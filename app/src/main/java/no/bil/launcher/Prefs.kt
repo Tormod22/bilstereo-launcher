@@ -40,6 +40,8 @@ class TosApp : Application() {
         }
         // «Ta over»: ble Google Play-tjenester stående av (avbrutt kjøring)? Slå dem på igjen i bakgrunnen (Takeover.kt)
         runCatching { Takeover.healOnStart(this) }
+        // Full kontroll: skriv ned om sjef-statusen har endret seg siden sist (v5.17 – den falt bort på stereoen)
+        Hub.scope.launch(kotlinx.coroutines.Dispatchers.IO) { runCatching { Owner.noteStatus(this@TosApp) } }
         if (runCatching { Owner.escaped }.getOrDefault(false)) Hub.scope.launch {
             kotlinx.coroutines.delay(4_000)
             Notify.show("T'OS krasjet flere ganger, så stereoens egen startskjerm brukes nå. Se Innstillinger → Om stereoen.", true)
@@ -322,7 +324,7 @@ object CrashLog {
             appendLine("Android: ${android.os.Build.VERSION.RELEASE} (SDK ${android.os.Build.VERSION.SDK_INT})")
             appendLine("Enhet: ${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL} / ${android.os.Build.HARDWARE}")
             appendLine(); appendLine("--- Siste krasj ---"); appendLine(crash)
-            appendLine(); appendLine("--- Logg ---"); append(log.takeLast(20000))
+            appendLine(); appendLine("--- Logg ---"); append(CrashLogLogic.clean(log).takeLast(20000))
         }
     }
 }
@@ -491,5 +493,16 @@ object SetupReport {
                 val shell = if (isStockShellApp(ai.packageName, label, AppRepository.isSystemApp(ai), false, c.packageName)) " [skall]" else ""
                 appendLine("${ai.packageName} – $label$ver$sys$start$shell")
             }
+    }
+}
+
+/** v5.17: stereoens logg var full av støy (SELinux «avc: denied», grafikkdriveren) – den gjemte de linjene som betyr noe. */
+internal object CrashLogLogic {
+    private val noise = listOf("avc: denied", " gralloc ", "gralloc_", "mali_winsys", "libEGL  : EGLNativeWindowType", "Compiler allocated")
+    fun clean(log: String): String {
+        val lines = log.lineSequence().toList()
+        val kept = lines.filter { l -> noise.none { it in l } }
+        val dropped = lines.size - kept.size
+        return kept.joinToString("\n") + if (dropped > 0) "\n($dropped linjer med støy fra stereoen er tatt bort)\n" else ""
     }
 }

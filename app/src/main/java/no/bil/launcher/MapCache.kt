@@ -26,6 +26,10 @@ import java.util.concurrent.atomic.AtomicLong
 
 /** Ren logikk for kartbufferen (testes i MapCacheTest). */
 internal object TileCacheLogic {
+    /** «820 kB» / «12,4 MB» (v5.17: «0 MB» for 196 fliser så ut som tom buffer). */
+    fun sizeText(bytes: Long): String = if (bytes < 1_048_576) "${(bytes + 1023) / 1024} kB"
+        else String.format(java.util.Locale.forLanguageTag("nb"), "%.1f MB", bytes / 1_048_576.0)
+
     /** Maks størrelse på disk. Over dette slettes de minst brukte flisene ned til [TARGET_BYTES]. */
     const val MAX_BYTES = 150L * 1024 * 1024
     const val TARGET_BYTES = 135L * 1024 * 1024
@@ -185,7 +189,7 @@ object TileCache {
         val asked = memHits.get() + diskHits.get() + netFetches.get() + misses.get()
         val fromCache = memHits.get() + diskHits.get()
         val pct = if (asked == 0) "-" else "${fromCache * 100 / asked} %"
-        return "Kartbuffer: $count fliser, ${bytes / 1_048_576} MB (maks ${TileCacheLogic.MAX_BYTES / 1_048_576} MB)  " +
+        return "Kartbuffer: $count fliser, ${TileCacheLogic.sizeText(bytes)} (maks ${TileCacheLogic.MAX_BYTES / 1_048_576} MB)  " +
             "siden start: minne ${memHits.get()}, disk ${diskHits.get()}, nett ${netFetches.get()}, mangler ${misses.get()}  " +
             "uten nett-treff: $pct  venter på oppfrisking: ${refresh.size}  forhåndshentet: ${MapPrefetch.fetched.get()}" +
             (MapPrefetch.pauseText()?.let { "  ($it)" } ?: "")

@@ -38,7 +38,18 @@ import java.io.File
  * startskjermene og oppdatere seg uten spørsmål. Alt kan angres med «Slå av full kontroll» (ingen PC trengs).
  */
 class TosAdmin : DeviceAdminReceiver() {
-    override fun onEnabled(context: Context, intent: Intent) { runCatching { Owner.apply(context) } }
+    override fun onEnabled(context: Context, intent: Intent) {
+        runCatching { Owner.event(context, "T'OS ble sjef (enhetseier)") }
+        runCatching { Owner.apply(context) }
+    }
+    // v5.17: på stereoen ble «Full kontroll» borte noen minutter etter «Ta over» (dpm sa Success). Disse skriver ned når og hvorfor.
+    override fun onDisableRequested(context: Context, intent: Intent): CharSequence? {
+        runCatching { Owner.event(context, "Noen ba om å fjerne T'OS som sjef") }
+        return null
+    }
+    override fun onDisabled(context: Context, intent: Intent) {
+        runCatching { Owner.event(context, "T'OS er ikke lenger sjef (Android meldte «onDisabled»)") }
+    }
 }
 
 /** Ren logikk (testes i OwnerLogicTest): hva som skal skjules og gjøres. Ingen Android-kall. */
@@ -143,6 +154,33 @@ object Owner {
 
     /** T'OS er enhetseier (satt med PC). */
     fun active(c: Context): Boolean = runCatching { dpm(c)?.isDeviceOwnerApp(c.packageName) == true }.getOrDefault(false)
+
+    /* ---------- Hendelseslogg for full kontroll (v5.17) ---------- */
+
+    private fun eventFile(c: Context) = java.io.File(c.filesDir, "eier-hendelser.txt")
+
+    /** Skriver en linje med tid (maks 40 linjer). Brukes i rapporten og «Send alt». */
+    fun event(c: Context, what: String) {
+        val f = eventFile(c)
+        val line = "${java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.ROOT).format(java.util.Date())}  $what"
+        val old = runCatching { f.readLines() }.getOrDefault(emptyList())
+        runCatching { f.writeText((old + line).takeLast(40).joinToString("\n", postfix = "\n")) }
+    }
+
+    fun events(c: Context): String = runCatching { eventFile(c).readText() }.getOrDefault("").ifBlank { "(ingen)\n" }
+
+    /** Sist kjente status (for å merke når den endrer seg mellom oppstarter/sjekker). */
+    private const val LAST_ACTIVE = "ownerfix_last_active"
+
+    /** Kalles ved oppstart og når «Ta over»-siden åpnes: skriver ned hvis sjef-statusen har endret seg siden sist. */
+    fun noteStatus(c: Context) {
+        val now = active(c)
+        val before = Prefs.str(LAST_ACTIVE)
+        if (before != now.toString()) {
+            if (before.isNotEmpty()) event(c, if (now) "Sjekk: T'OS er sjef" else "Sjekk: T'OS er IKKE lenger sjef (var det før)")
+            Prefs.setQuiet(LAST_ACTIVE, now.toString())
+        }
+    }
 
     /** T'OS har fått WRITE_SECURE_SETTINGS med PC (`pm grant`) – da holder T'OS knappestyringen og varseltilgangen på selv. */
     fun canWriteSecure(c: Context) = c.checkSelfPermission(Manifest.permission.WRITE_SECURE_SETTINGS) == PackageManager.PERMISSION_GRANTED
@@ -296,6 +334,9 @@ object Owner {
     fun report(c: Context): String = buildString {
         val act = active(c)
         appendLine("Enhetseier (full kontroll): ${if (act) "JA" else "nei"}")
+        appendLine("Aktiv administrator (TosAdmin): ${runCatching { dpm(c)?.isAdminActive(admin(c)) }.getOrNull()}")
+        appendLine("Hendelser for full kontroll:")
+        append(events(c).prependIndent("  "))
         appendLine("WRITE_SECURE_SETTINGS (holder knappestyring/varseltilgang på): ${canWriteSecure(c)}")
         if (act) {
             OwnerLogic.DEFAULTS.keys.forEach { appendLine("$it: ${on(it)}") }
